@@ -433,3 +433,126 @@ def abc_summary(rows):
         "grade_changed": len([r for r in rows if r["grade_changed"]]),
         "cut": PARETO_CUT,
     }
+
+
+# ── 입출고 이력 화면 ─────────────────────────────────────────
+def transaction_list(conn):
+    """입출고 1,075건. 자재 정보는 tx_products() 조회표로 분리해 중복을 없앤다.
+
+    (자재명·규격·분류를 1,075행마다 반복하면 응답이 1.5MB까지 커진다.
+     P_ID 만 담고 화면에서 조회표와 합치면 1/3 이하로 줄어든다.)
+    """
+    return _rows(conn, """
+        SELECT t.T_ID, t.T_Type, t.T_Date, t.T_Num,
+               t.Lot_ID, l.P_ID, l.Loc_ID,
+               u.Name AS worker, u.Position AS worker_pos
+          FROM Transaction_tb t
+          JOIN Lot_tb l     ON t.Lot_ID = l.Lot_ID
+          LEFT JOIN User_tb u ON t.EP_ID = u.EP_ID
+         ORDER BY t.T_Date DESC, t.T_ID DESC
+    """)
+
+
+def tx_products(conn):
+    """P_ID → 자재 정보 조회표 (200건). 거래 목록과 합쳐 쓴다."""
+    out = {}
+    for r in _rows(conn, """
+        SELECT p.P_ID, p.P_N, p.Spec, p.P_Price,
+               cat.Cat_Name AS cat_name,
+               c.CP_N       AS supplier,
+               s.Sf_Lv      AS grade
+          FROM Product_tb p
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Cat_tb cat   ON p.MainCat=cat.MainCat AND p.SubCat=cat.SubCat
+                                AND p.DetailCat=cat.DetailCat
+          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+    """):
+        out[r.pop("P_ID")] = r
+    return out
+
+
+def tx_locations(conn):
+    """Loc_ID → 창고명 조회표."""
+    return {r["Loc_ID"]: r["Loc_N"] for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
+
+
+def lot_trace(conn):
+    """LOT별 전체 이력 — 발주→입고→불출들→잔량. 추적(traceability)용."""
+    lots = _rows(conn, """
+        SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date, l.P_Qty,
+               l.Loc_ID, lo.Loc_N AS loc_name, l.H_ID,
+               h.P_Date           AS order_date,
+               c.CP_N             AS supplier,
+               u.Name             AS receiver,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
+               COALESCE(x.out_qty, 0)  AS out_qty,
+               COALESCE(x.out_cnt, 0)  AS out_cnt
+          FROM Lot_tb l
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+          LEFT JOIN Company_tb c ON h.BRN = c.BRN
+          LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty, COUNT(*) out_cnt
+                       FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
+                 ON x.Lot_ID = l.Lot_ID
+    """)
+    # 생산 투입 이력 (그 LOT이 어느 완제품에 쓰였나)
+    used = {}
+    for r in _rows(conn, """
+        SELECT Lot_ID, FG_ID, Work_Order, Prod_Date, SUM(Prod_Qty) qty
+          FROM Production_tb GROUP BY Lot_ID, FG_ID, Work_Order, Prod_Date
+         ORDER BY Prod_Date
+    """):
+        used.setdefault(r["Lot_ID"], []).append(r)
+    # 화면에는 LOT당 상위 몇 건만 보여주므로 전량(4,535건)을 실어 보내지 않는다.
+    # 전부 담으면 응답이 500KB 이상 불어난다.
+    SHOW = 6
+    for l in lots:
+        u = used.get(l["Lot_ID"], [])
+        l["used_in"] = u[:SHOW]
+        l["used_total"] = len(u)
+        l["used_fgs"] = sorted({x["FG_ID"] for x in u})
+        l["used_qty"] = sum(x["qty"] or 0 for x in u)
+    return lots
+
+
+def tx_monthly(conn):
+    """월별 입출고 추이 (차트용)."""
+    return _rows(conn, """
+        SELECT substr(t.T_Date,1,7) AS ym,
+               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num ELSE 0 END) AS in_qty,
+               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num ELSE 0 END) AS out_qty,
+               SUM(CASE WHEN t.T_Type='입고' THEN 1 ELSE 0 END)       AS in_cnt,
+               SUM(CASE WHEN t.T_Type='불출' THEN 1 ELSE 0 END)       AS out_cnt,
+               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
+               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt
+          FROM Transaction_tb t
+          JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+         GROUP BY ym ORDER BY ym
+    """)
+
+
+def tx_summary(rows, lots, prods=None):
+    prods = prods or {}
+    price = lambda r: (prods.get(r["P_ID"], {}).get("P_Price") or 0)
+    ins = [r for r in rows if r["T_Type"] == "입고"]
+    outs = [r for r in rows if r["T_Type"] == "불출"]
+    dates = [r["T_Date"] for r in rows if r["T_Date"]]
+    return {
+        "total": len(rows),
+        "in_cnt": len(ins),
+        "out_cnt": len(outs),
+        "in_qty": sum(r["T_Num"] or 0 for r in ins),
+        "out_qty": sum(r["T_Num"] or 0 for r in outs),
+        "in_amt": sum((r["T_Num"] or 0) * price(r) for r in ins),
+        "out_amt": sum((r["T_Num"] or 0) * price(r) for r in outs),
+        "date_from": min(dates) if dates else "-",
+        "date_to": max(dates) if dates else "-",
+        "lot_total": len(lots),
+        "lot_live": len([l for l in lots if (l["remain"] or 0) > 0]),
+        "lot_done": len([l for l in lots if (l["remain"] or 0) <= 0]),
+        "workers": len({r["worker"] for r in rows if r["worker"]}),
+    }

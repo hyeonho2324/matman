@@ -2,34 +2,431 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>입출고 이력</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.in{color:var(--acc)}.kv.out{color:var(--wn)}
+
+.chartbox{padding:9px 14px 4px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.charthead{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.charthead .t{font-size:11px;font-weight:500}
+.leg{display:flex;gap:10px;margin-left:auto;font-size:10px;color:var(--txt3)}
+.leg span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+svg{display:block;width:100%;height:96px}
+
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+select{padding:3px 8px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt)}
+.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
+.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:160px;color:var(--txt)}
+.cnt{font-size:11px;color:var(--txt3)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.listwrap{flex:1;overflow:auto;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
+thead th:hover{background:var(--s2)}
+thead th.num{text-align:right}
+tbody td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tbody td.num{text-align:right}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--s1)}
+tbody tr.on{background:var(--bg-ac)}
+.tt{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:500}
+.tt-in{background:var(--bg-ac);color:#185FA5}
+.tt-out{background:var(--bg-wn);color:#854F0B}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.lotid{color:var(--acc);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+
+.detail{width:336px;border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.dh{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.dh-t{font-size:12px;font-weight:500;margin-bottom:3px}
+.dh-s{font-size:10px;color:var(--txt3);line-height:1.5}
+.dbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
+.pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s2)}
+.pnh-t{font-size:11px;font-weight:500;flex:1}
+.ir{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:0.5px solid var(--border);font-size:11px}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);font-size:10px;flex-shrink:0}
+.iv{font-weight:500;text-align:right;word-break:break-all}
+.note{padding:7px 10px;font-size:10px;color:var(--txt3);line-height:1.6}
+
+/* LOT 추적 타임라인 */
+.tl{padding:4px 10px 8px}
+.step{display:flex;gap:9px;position:relative;padding-bottom:11px}
+.step:last-child{padding-bottom:0}
+.step::before{content:'';position:absolute;left:7px;top:17px;bottom:-2px;width:1.5px;background:var(--border)}
+.step:last-child::before{display:none}
+.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;margin-top:2px;z-index:1}
+.d-ord{background:var(--txt3)}.d-in{background:var(--acc)}.d-out{background:var(--wn)}.d-prod{background:var(--ok)}.d-rem{background:var(--s2);border:1.5px solid var(--border-s)}
+.st-b{flex:1;min-width:0}
+.st-t{font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.st-d{font-size:10px;color:var(--txt3);margin-top:1px;line-height:1.5}
+.prodlist{margin-top:4px;padding-left:0;display:flex;flex-direction:column;gap:2px}
+.prodrow{font-size:10px;color:var(--txt2);display:flex;gap:6px;background:var(--s1);padding:2px 6px;border-radius:4px}
+.prodrow b{color:var(--ok);font-weight:500}
+
+@media(max-width:820px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .main{flex-direction:column}
+  .detail{width:100%;max-height:48%;border-left:none;border-top:0.5px solid var(--border-s)}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .hide-sm{display:none}
+  svg{height:78px}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-history"></i></div>
-    <div class="title">입출고 이력</div>
-    <div class="sub">전체 트랜잭션의 발주→입고→불출→생산 흐름을 추적합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-route"></i></div><div class="feat-t">전체 흐름 추적</div><div class="feat-s">발주→LOT→불출→생산</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-database"></i></div><div class="feat-t">연결 테이블</div><div class="feat-s">4개 테이블 레코드</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-list"></i></div><div class="feat-t">관련 TX</div><div class="feat-s">같은 LOT 전체 이력</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-filter"></i></div><div class="feat-t">유형 필터</div><div class="feat-s">입고/불출/생산/불량</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-history" style="color:var(--acc)"></i>입출고 이력 · LOT 추적
+      <span class="tag">실제 DB · {{ summary.total }}건 · {{ summary.date_from }} ~ {{ summary.date_to }}</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-arrows-exchange"></i>총 거래</div>
+      <div class="kv">{{ summary.total }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
+      <div class="ks">담당자 {{ summary.workers }}명</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-arrow-bar-to-down"></i>입고</div>
+      <div class="kv in">{{ summary.in_cnt }}<span style="font-size:11px">건</span></div>
+      <div class="ks">{{ "{:,}".format(summary.in_qty) }}개 · {{ (summary.in_amt/100000000)|round(1) }}억</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-arrow-bar-up"></i>불출</div>
+      <div class="kv out">{{ summary.out_cnt }}<span style="font-size:11px">건</span></div>
+      <div class="ks">{{ "{:,}".format(summary.out_qty) }}개 · {{ (summary.out_amt/100000000)|round(1) }}억</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-stack-2"></i>LOT 현황</div>
+      <div class="kv">{{ summary.lot_total }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
+      <div class="ks">잔여 {{ summary.lot_live }} · 소진 {{ summary.lot_done }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-percentage"></i>소진율</div>
+      <div class="kv">{{ ((summary.out_qty / summary.in_qty * 100) if summary.in_qty else 0)|round(1) }}<span style="font-size:11px">%</span></div>
+      <div class="ks">불출량 ÷ 입고량</div>
+    </div>
+  </div>
+
+  <div class="chartbox">
+    <div class="charthead">
+      <span class="t">월별 입출고 추이</span>
+      <span class="leg">
+        <span><i class="sw" style="background:#2a78d6"></i>입고</span>
+        <span><i class="sw" style="background:#EF9F27"></i>불출</span>
+      </span>
+    </div>
+    <svg id="chart" viewBox="0 0 1000 96" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="filter-bar">
+    <button class="pill on" data-f="all" onclick="setF('all')">전체</button>
+    <button class="pill"    data-f="입고" onclick="setF('입고')">입고</button>
+    <button class="pill"    data-f="불출" onclick="setF('불출')">불출</button>
+    <select id="loc" onchange="render()"><option value="">전체 창고</option></select>
+    <select id="ym" onchange="render()"><option value="">전체 기간</option></select>
+    <span class="cnt" id="cnt"></span>
+    <div class="search">
+      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+      <input id="q" placeholder="LOT · 품번 · 품명 · 담당자" oninput="render()">
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="listwrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortBy('T_Date')">일자</th>
+          <th>구분</th>
+          <th class="hide-sm" onclick="sortBy('Lot_ID')">LOT</th>
+          <th onclick="sortBy('P_N')">자재</th>
+          <th class="num" onclick="sortBy('T_Num')">수량</th>
+          <th class="num hide-sm" onclick="sortBy('amount')">금액</th>
+          <th class="hide-sm" onclick="sortBy('loc_name')">창고</th>
+          <th class="hide-sm" onclick="sortBy('worker')">담당</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+
+    <div class="detail">
+      <div class="dh">
+        <div class="dh-t" id="dt">거래를 선택하세요</div>
+        <div class="dh-s" id="ds">행을 클릭하면 그 LOT의 전체 이력(발주 → 입고 → 불출 → 생산투입)이 표시됩니다.</div>
+      </div>
+      <div class="dbody" id="db"></div>
+    </div>
   </div>
 </div>
+
+<script>
+const ROWS  = {{ rows|tojson }};
+const LOTS  = {{ lots|tojson }};
+const MON   = {{ monthly|tojson }};
+const PRODS = {{ prods|tojson }};   // P_ID → {P_N, Spec, P_Price, cat_name, supplier, grade}
+const LOCS  = {{ locs|tojson }};    // Loc_ID → 창고명
+
+const LOTMAP = {}; LOTS.forEach(function(l){ LOTMAP[l.Lot_ID]=l; });
+
+// 거래행에 자재·창고 정보를 붙여준다 (응답 용량을 줄이려고 분리해 받았다)
+const EMPTY = {};
+function P(r){ return PRODS[r.P_ID] || EMPTY; }
+function locName(r){ return LOCS[r.Loc_ID] || '-'; }
+function amountOf(r){ return (r.T_Num||0) * (P(r).P_Price||0); }
+
+let filter='all', sortKey='T_Date', sortAsc=false, sel=null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// ── 필터 옵션 채우기 ──
+(function(){
+  const locs=[], yms=[];
+  ROWS.forEach(function(r){
+    const ln=locName(r); if(ln!=='-' && locs.indexOf(ln)<0) locs.push(ln);
+  });
+  MON.forEach(function(m){ yms.push(m.ym); });
+  locs.sort();
+  const ls=document.getElementById('loc');
+  locs.forEach(function(v){ ls.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
+  const ys=document.getElementById('ym');
+  yms.forEach(function(v){ ys.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
+})();
+
+// ── 월별 차트 ──
+function drawChart(){
+  const W=1000,H=96,pad={t:14,b:16},n=MON.length;
+  const gw=W/n, bw=Math.min(gw*0.3,34);
+  const mx=Math.max.apply(null, MON.map(function(m){return Math.max(m.in_qty,m.out_qty);}))||1;
+  const ph=H-pad.t-pad.b;
+  let h='';
+  MON.forEach(function(m,i){
+    const cx=gw*i+gw/2;
+    [[m.in_qty,'#2a78d6',-1],[m.out_qty,'#EF9F27',1]].forEach(function(d){
+      const bh=d[0]/mx*ph;
+      const x=cx+(d[2]<0?-bw-1:1);
+      h+='<rect x="'+x.toFixed(1)+'" y="'+(pad.t+ph-bh).toFixed(1)+'" width="'+bw.toFixed(1)
+       + '" height="'+Math.max(bh,0.5).toFixed(1)+'" fill="'+d[1]+'" opacity=".85" rx="1">'
+       + '<title>'+m.ym+' '+(d[2]<0?'입고':'불출')+' '+nf(d[0])+'개</title></rect>';
+    });
+    h+='<text x="'+cx.toFixed(1)+'" y="'+(H-4)+'" font-size="9" fill="#898781" text-anchor="middle">'+m.ym.slice(2)+'</text>';
+  });
+  h+='<line x1="0" y1="'+(pad.t+ph)+'" x2="'+W+'" y2="'+(pad.t+ph)+'" stroke="#D4D3CE" stroke-width="1"/>';
+  document.getElementById('chart').innerHTML=h;
+}
+
+function view(){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  const loc=document.getElementById('loc').value;
+  const ym=document.getElementById('ym').value;
+  let r=ROWS.filter(function(x){
+    if(filter!=='all' && x.T_Type!==filter) return false;
+    if(loc && locName(x)!==loc)             return false;
+    if(ym && (x.T_Date||'').slice(0,7)!==ym) return false;
+    if(q){
+      const p=P(x);
+      const hay=(x.T_ID+' '+x.Lot_ID+' '+x.P_ID+' '+(p.P_N||'')+' '+(p.Spec||'')+' '+(x.worker||'')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+  r.sort(function(a,b){
+    let x, y;
+    if(sortKey==='P_N'){ x=P(a).P_N; y=P(b).P_N; }
+    else if(sortKey==='amount'){ x=amountOf(a); y=amountOf(b); }
+    else if(sortKey==='loc_name'){ x=locName(a); y=locName(b); }
+    else { x=a[sortKey]; y=b[sortKey]; }
+    if(typeof x==='string'||typeof y==='string'){
+      x=(x||'')+''; y=(y||'')+'';
+      return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
+    }
+    x=x||0; y=y||0;
+    return sortAsc ? (x-y) : (y-x);
+  });
+  return r;
+}
+
+function render(){
+  const r=view();
+  document.getElementById('cnt').textContent=r.length+'건';
+  const tb=document.getElementById('tb');
+  if(!r.length){
+    tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 거래가 없습니다.</div></td></tr>';
+    return;
+  }
+  tb.innerHTML=r.slice(0,400).map(function(x){
+    const isIn = x.T_Type==='입고';
+    const p = P(x);
+    return '<tr onclick="pick(\'' + x.T_ID + '\')" class="' + (sel===x.T_ID?'on':'') + '">'
+      + '<td class="mono">' + x.T_Date + '</td>'
+      + '<td><span class="tt ' + (isIn?'tt-in':'tt-out') + '">'
+      +   '<i class="ti ti-' + (isIn?'arrow-bar-to-down':'arrow-bar-up') + '"></i>' + x.T_Type + '</span></td>'
+      + '<td class="hide-sm"><span class="lotid">' + x.Lot_ID + '</span></td>'
+      + '<td><div class="nm">' + esc(p.P_N)
+      +   (p.grade ? ' <span class="gr gr'+p.grade+'">'+p.grade+'</span>' : '')
+      +   '</div><div class="sp">' + esc(p.Spec) + '</div></td>'
+      + '<td class="num">' + nf(x.T_Num) + '</td>'
+      + '<td class="num hide-sm">' + won(amountOf(x)) + '원</td>'
+      + '<td class="hide-sm">' + esc(locName(x)) + '</td>'
+      + '<td class="hide-sm">' + esc(x.worker||'-') + '</td>'
+      + '</tr>';
+  }).join('') + (r.length>400
+    ? '<tr><td colspan="8"><div class="empty">상위 400건만 표시 중 (전체 '+r.length+'건). 필터나 검색으로 좁혀보세요.</div></td></tr>'
+    : '');
+}
+
+function pick(tid){
+  sel=tid;
+  const x=ROWS.filter(function(v){return v.T_ID===tid;})[0];
+  render();
+  const lot=LOTMAP[x.Lot_ID];
+  if(!lot) return;
+
+  const outs=ROWS.filter(function(v){return v.Lot_ID===x.Lot_ID && v.T_Type==='불출';})
+                 .sort(function(a,b){return (a.T_Date>b.T_Date)?1:-1;});
+  const pct = lot.P_Qty ? (lot.remain/lot.P_Qty*100) : 0;
+
+  document.getElementById('dt').textContent = x.Lot_ID;
+  const px = P(x);
+  document.getElementById('ds').innerHTML =
+    esc(x.P_ID) + ' · ' + esc(px.P_N) + '<br>' + esc(px.Spec||'') + ' · ' + esc(px.cat_name||'');
+
+  // ── 추적 타임라인 ──
+  let tl = '';
+  // 1) 발주
+  if(lot.H_ID){
+    tl += '<div class="step"><div class="dot d-ord"><i class="ti ti-file-text"></i></div>'
+        + '<div class="st-b"><div class="st-t">발주 <span class="bg bmu">' + lot.H_ID + '</span></div>'
+        + '<div class="st-d">' + (lot.order_date||'-') + ' · ' + esc(lot.supplier||'-') + '</div></div></div>';
+  }
+  // 2) 입고
+  tl += '<div class="step"><div class="dot d-in"><i class="ti ti-arrow-bar-to-down"></i></div>'
+      + '<div class="st-b"><div class="st-t">입고 ' + nf(lot.P_Qty) + '개</div>'
+      + '<div class="st-d">' + lot.Lot_Date + ' · ' + esc(lot.loc_name||'-')
+      + (lot.lead_days!=null ? ' · 리드타임 <b>' + lot.lead_days + '일</b>' : '')
+      + '<br>담당 ' + esc(lot.receiver||'-') + '</div></div></div>';
+  // 3) 불출들
+  outs.forEach(function(o){
+    tl += '<div class="step"><div class="dot d-out"><i class="ti ti-arrow-bar-up"></i></div>'
+        + '<div class="st-b"><div class="st-t">불출 ' + nf(o.T_Num) + '개'
+        + (o.T_ID===x.T_ID ? ' <span class="bg bac">선택한 거래</span>' : '') + '</div>'
+        + '<div class="st-d">' + o.T_Date + ' · 담당 ' + esc(o.worker||'-') + '</div></div></div>';
+  });
+  // 4) 생산 투입
+  if(lot.used_total){
+    const shown = lot.used_in || [];
+    const more = lot.used_total - shown.length;
+    tl += '<div class="step"><div class="dot d-prod"><i class="ti ti-tool"></i></div>'
+        + '<div class="st-b"><div class="st-t">생산 투입 ' + lot.used_total + '건</div>'
+        + '<div class="st-d">완제품 ' + (lot.used_fgs||[]).join(', ')
+        + ' · 총 ' + nf(lot.used_qty) + '개 투입</div>'
+        + '<div class="prodlist">'
+        + shown.map(function(u){
+            return '<div class="prodrow"><span>' + u.Prod_Date + '</span>'
+                 + '<span>' + u.Work_Order + '</span>'
+                 + '<b>' + u.FG_ID + '</b><span style="margin-left:auto">' + nf(u.qty) + '개</span></div>';
+          }).join('')
+        + (more>0 ? '<div class="prodrow" style="justify-content:center;color:var(--txt3)">외 ' + more + '건</div>' : '')
+        + '</div></div></div>';
+  }
+  // 5) 잔량
+  tl += '<div class="step"><div class="dot d-rem"></div>'
+      + '<div class="st-b"><div class="st-t">현재 잔량 ' + nf(lot.remain) + '개 '
+      + (lot.remain>0 ? '<span class="bg bok">보유중</span>' : '<span class="bg bmu">소진완료</span>') + '</div>'
+      + '<div class="st-d">입고 ' + nf(lot.P_Qty) + ' − 불출 ' + nf(lot.out_qty) + ' = ' + nf(lot.remain) + '</div></div></div>';
+
+  document.getElementById('db').innerHTML =
+    '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-route"></i><span class="pnh-t">LOT 추적</span>'
+  +     '<span class="bg ' + (lot.remain>0?'bok':'bmu') + '">' + Math.round(pct) + '% 잔여</span></div>'
+  +   '<div class="tl">' + tl + '</div>'
+  + '</div>'
+
+  + '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-receipt"></i><span class="pnh-t">선택한 거래</span></div>'
+  +   '<div class="ir"><span class="ik">거래번호</span><span class="iv mono">' + x.T_ID + '</span></div>'
+  +   '<div class="ir"><span class="ik">구분 · 일자</span><span class="iv">' + x.T_Type + ' · ' + x.T_Date + '</span></div>'
+  +   '<div class="ir"><span class="ik">수량</span><span class="iv">' + nf(x.T_Num) + '개</span></div>'
+  +   '<div class="ir"><span class="ik">금액</span><span class="iv">' + nf(amountOf(x)) + '원</span></div>'
+  +   '<div class="ir"><span class="ik">담당자</span><span class="iv">' + esc(x.worker||'-')
+  +     (x.worker_pos ? ' <span class="bg bmu">'+esc(x.worker_pos)+'</span>' : '') + '</span></div>'
+  + '</div>'
+
+  + '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-package"></i><span class="pnh-t">자재 정보</span></div>'
+  +   '<div class="ir"><span class="ik">품번</span><span class="iv mono">' + x.P_ID + '</span></div>'
+  +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(px.P_Price) + '원</span></div>'
+  +   '<div class="ir"><span class="ik">분류</span><span class="iv">' + esc(px.cat_name||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">공급사</span><span class="iv">' + esc(px.supplier||'-') + '</span></div>'
+  + '</div>';
+}
+
+function setF(f){
+  filter=f;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+function sortBy(k){
+  if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=(k!=='T_Date'); }
+  render();
+}
+function dl(){
+  const r=view();
+  const head=['거래번호','일자','구분','LOT','품번','자재명','규격','수량','금액','창고','담당자','공급사'];
+  const lines=[head.join(',')];
+  r.forEach(function(x){
+    const p=P(x);
+    lines.push([x.T_ID,x.T_Date,x.T_Type,x.Lot_ID,x.P_ID,p.P_N,p.Spec,x.T_Num,Math.round(amountOf(x)),locName(x),x.worker,p.supplier]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='입출고이력.csv';
+  a.click();
+}
+
+drawChart();
+render();
+</script>
 </body>
 </html>

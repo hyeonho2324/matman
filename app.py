@@ -255,11 +255,30 @@ def _ctx_abc():
         conn.close()
 
 
+def _ctx_tx_history():
+    conn = db.connect()
+    try:
+        rows = db.transaction_list(conn)
+        lots = db.lot_trace(conn)
+        prods = db.tx_products(conn)
+        return {
+            "rows": rows,
+            "lots": lots,
+            "prods": prods,
+            "locs": db.tx_locations(conn),
+            "monthly": db.tx_monthly(conn),
+            "summary": db.tx_summary(rows, lots, prods),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
     "bom":          _ctx_bom,
     "abc":          _ctx_abc,
+    "tx_history":   _ctx_tx_history,
 }
 
 
