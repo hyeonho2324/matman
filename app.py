@@ -78,7 +78,13 @@ def get_menu_context(active_id):
 # ── 라우팅 ──────────────────────────────────────────────────
 @app.route("/")
 def dashboard():
-    return render_template("dashboard.html", **get_menu_context("dashboard"), page_title="메인 대시보드")
+    conn = db.connect()
+    try:
+        data = db.dashboard(conn)
+    finally:
+        conn.close()
+    return render_template("dashboard.html", **get_menu_context("dashboard"),
+                           page_title="메인 대시보드", d=data)
 
 @app.route("/products")
 def products():

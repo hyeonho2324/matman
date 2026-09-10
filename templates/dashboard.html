@@ -1,159 +1,164 @@
 {% extends "base.html" %}
 {% block content %}
+
+{# 숫자 포맷 헬퍼 — 억/만 단위로 줄여 표기 #}
+{% macro won(n) -%}
+{%- if n >= 100000000 -%}{{ "%.2f"|format(n/100000000) }}억
+{%- elif n >= 10000 -%}{{ "{:,.0f}".format(n/10000) }}만
+{%- else -%}{{ "{:,.0f}".format(n) }}{%- endif -%}
+{%- endmacro %}
+
 <div class="page-header">
   <div>
     <div class="page-title">메인 대시보드</div>
-    <div class="page-subtitle">2025년 12월 08일 (월) · 자재관리 시스템 현황</div>
+    <div class="page-subtitle">
+      실제 데이터 기준 · 최종 거래일 {{ d.date_to }} · 자재 {{ d.kpi.item_cnt }}종 / 협력사 {{ d.kpi.supplier_cnt }}개사
+    </div>
   </div>
   <div class="page-actions">
-    <button class="btn"><i class="ti ti-refresh"></i>새로고침</button>
-    <a href="/report" class="btn btn-primary"><i class="ti ti-file-text"></i>월간 리포트</a>
+    <a href="/stock-map" class="btn"><i class="ti ti-building-warehouse"></i>재고 지도</a>
+    <a href="/safety-stock" class="btn btn-primary"><i class="ti ti-shield-check"></i>안전재고 점검</a>
   </div>
 </div>
 
-<!-- KPI -->
-<div class="kpi-grid kpi-grid-4">
+<!-- ── KPI ──────────────────────────────────────────── -->
+<div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
   <div class="kpi-card">
-    <div class="kpi-label">총 보유 품목</div>
-    <div class="kpi-value kpi-ac">200종</div>
-    <div class="kpi-sub">자재창고 5구역 + 현장 2구역</div>
+    <div class="kpi-label">재고자산</div>
+    <div class="kpi-value kpi-ac">{{ "%.2f"|format(d.kpi.stock_value/100000000) }}억</div>
+    <div class="kpi-sub">{{ d.kpi.item_cnt }}종 보유 · <a href="/products">자재 목록 →</a></div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">안전재고 미달</div>
-    <div class="kpi-value kpi-dn">8종</div>
-    <div class="kpi-sub"><a href="/risk-radar" style="color:var(--fill-danger)">납기 리스크 레이더 →</a></div>
+    <div class="kpi-value kpi-dn">{{ d.kpi.short_cnt }}종</div>
+    <div class="kpi-sub">전체의 {{ d.kpi.short_pct }}% · <a href="/safety-stock" style="color:var(--fill-danger)">점검 →</a></div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">이번 달 입고</div>
-    <div class="kpi-value">7건</div>
-    <div class="kpi-sub">LOT 22개 생성</div>
+    <div class="kpi-label">즉시 생산 가능</div>
+    <div class="kpi-value {% if d.kpi.makeable == 0 %}kpi-dn{% else %}kpi-ok{% endif %}">{{ d.kpi.makeable }}/{{ d.kpi.fg_cnt }}</div>
+    <div class="kpi-sub">완제품 · <a href="/bom">소요계획 →</a></div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">진행중 발주</div>
-    <div class="kpi-value kpi-wn">23건</div>
-    <div class="kpi-sub">입고 대기 중</div>
+    <div class="kpi-label">공급 리스크 높음</div>
+    <div class="kpi-value kpi-wn">{{ d.kpi.risk_high }}개사</div>
+    <div class="kpi-sub">협력사 {{ d.kpi.supplier_cnt }}개 중 · <a href="/suppliers">보기 →</a></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">잔여 LOT</div>
+    <div class="kpi-value">{{ d.kpi.lot_live }}</div>
+    <div class="kpi-sub">전체 {{ d.kpi.lot_total }} 중 · <a href="/tx-history">이력 →</a></div>
   </div>
 </div>
 
-<!-- 대시보드 그리드 -->
-<div class="dash-grid">
+<!-- ── 3단 패널 ─────────────────────────────────────── -->
+<div class="dash-grid" style="margin-top:14px">
 
-  <!-- 납기 리스크 요약 -->
+  <!-- 안전재고 긴급 -->
   <div class="card">
     <div class="card-header">
-      <i class="ti ti-radar" style="color:var(--fill-danger)"></i>
-      <span class="card-title">납기 리스크</span>
-      <a href="/risk-radar" class="badge badge-primary">전체 보기</a>
+      <i class="ti ti-alert-triangle" style="color:var(--fill-danger)"></i>
+      <span class="card-title">안전재고 긴급</span>
+      <a href="/safety-stock" class="badge badge-danger">{{ d.kpi.short_cnt }}종 미달</a>
     </div>
     <div class="card-body">
-      {% set risks = [
-        ("E01010001", "후방카메라 LCD", "crit", "위험", "재고 공백 41일"),
-        ("U01010001", "SUS304 탱크바디", "crit", "발주미등록", "즉시 발주 필요"),
-        ("V02040001", "오링 Ø25 NBR", "high", "경고", "여유 3일"),
-        ("E01010003", "후방카메라 1080P", "high", "경고", "여유 5일"),
-        ("S02010001", "압력센서 5bar", "mid", "주의", "여유 22일"),
-      ] %}
-      {% for pid, nm, lv, badge, desc in risks %}
+      {% for r in d.urgent %}
       <div class="risk-row">
-        <div class="risk-level lv-{{ lv }}"></div>
+        <div class="risk-level lv-crit"></div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:500">{{ pid }}</div>
-          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nm }}</div>
+          <div style="font-size:11px;font-weight:500">{{ r.P_ID }}
+            <span class="badge badge-muted" style="font-size:9px">{{ r.grade }}</span>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            {{ r.P_N }} · {{ r.supplier or '-' }} · LT {{ r.lead_time }}일
+          </div>
         </div>
-        <span class="badge {% if lv == 'crit' %}badge-danger{% elif lv == 'high' %}badge-warning{% else %}badge-primary{% endif %}">{{ badge }}</span>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:12px;font-weight:600;color:var(--fill-danger)">{{ r.diff }}</div>
+          <div style="font-size:9px;color:var(--text-muted)">{{ r.stock }}/{{ r.safe_qty }}</div>
+        </div>
       </div>
       {% endfor %}
+      <div style="font-size:10px;color:var(--text-muted);padding-top:8px">부족량이 큰 순 · 안전재고 대비 현재고</div>
     </div>
   </div>
 
-  <!-- 오늘의 처리 현황 -->
+  <!-- 창고별 재고 -->
   <div class="card">
     <div class="card-header">
-      <i class="ti ti-calendar-check" style="color:var(--fill-accent)"></i>
-      <span class="card-title">오늘의 처리 현황</span>
-      <span class="card-meta">12/08</span>
+      <i class="ti ti-building-warehouse" style="color:var(--fill-accent)"></i>
+      <span class="card-title">창고별 재고</span>
+      <a href="/stock-map" class="badge badge-primary">지도 보기</a>
     </div>
     <div class="card-body">
-      {% set activities = [
-        ("in", "bg-success", "입고", "E01040001 방수가스켓 500개 입고", "이입고", "11:20"),
-        ("out", "bg-accent", "불출", "E01010001 후방카메라 LCD 8개 → F01", "박불출", "14:32"),
-        ("out", "bg-accent", "불출", "E01020001 상단커버 15개 → F01", "박불출", "14:28"),
-        ("mfg", "bg-warning", "생산", "WO202512080001 공기조정기 30대 완료", "김작업", "09:45"),
-        ("in", "bg-success", "입고", "V01030001 볼트 4,000개 입고", "이입고", "15:10"),
-      ] %}
-      {% for type, bg, label, desc, ep, time in activities %}
-      <div class="act-row">
-        <div class="act-dot" style="background:var(--{{ bg }});color:var(--text-{{ 'success' if bg == 'bg-success' else 'accent' if bg == 'bg-accent' else 'warning' }})">{{ label[0] }}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:500">{{ desc }}</div>
-          <div style="font-size:10px;color:var(--text-muted)">{{ ep }}</div>
+      {% for z in d.zones %}
+      <div style="padding:7px 0;border-bottom:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:var(--fill-accent)">{{ z.Loc_ID }}</span>
+          <span style="font-size:11px;flex:1">{{ z.Loc_N }}</span>
+          <span style="font-size:11px;font-weight:600">{{ won(z.value) }}원</span>
         </div>
-        <div style="font-size:10px;color:var(--text-muted);flex-shrink:0">{{ time }}</div>
+        <div class="progress">
+          <div class="progress-fill {% if z.short_cnt >= 14 %}progress-dn{% elif z.short_cnt >= 13 %}progress-wn{% else %}progress-ok{% endif %}"
+               style="width:{{ (z.value / d.zone_max * 100)|round(1) }}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:3px">
+          <span>{{ z.item_cnt }}종 · {{ "{:,}".format(z.qty) }}개</span>
+          <span style="color:var(--fill-danger)">미달 {{ z.short_cnt }}</span>
+        </div>
       </div>
       {% endfor %}
     </div>
   </div>
 
-  <!-- 빠른 메뉴 -->
+  <!-- 공급 리스크 -->
   <div class="card">
     <div class="card-header">
-      <i class="ti ti-grid-dots" style="color:var(--fill-accent)"></i>
-      <span class="card-title">빠른 메뉴</span>
+      <i class="ti ti-building-store" style="color:var(--fill-warning)"></i>
+      <span class="card-title">공급 리스크</span>
+      <a href="/suppliers" class="badge badge-warning">협력사 →</a>
     </div>
-    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      {% set quick = [
-        ("/inbound",    "ti-arrow-bar-to-down", "입고 처리",    "bg-success"),
-        ("/disburse",   "ti-arrow-bar-up",      "불출 처리",    "bg-accent"),
-        ("/picking",    "ti-list-check",         "피킹리스트",   "bg-warning"),
-        ("/scanner",    "ti-scan",               "스캐너",       "bg-accent"),
-        ("/purchase",   "ti-truck-delivery",     "발주 등록",    "bg-warning"),
-        ("/risk-radar", "ti-radar",              "리스크 레이더","bg-danger"),
-        ("/forecast",   "ti-chart-line",         "수요 예측",    "bg-accent"),
-        ("/simulator",  "ti-adjustments",        "발주 시뮬",    "bg-success"),
-      ] %}
-      {% for url, icon, label, bg in quick %}
-      <a href="{{ url }}" style="display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--surface-2);border-radius:var(--radius);border:0.5px solid var(--border);font-size:12px;font-weight:500;transition:all .15s;color:var(--text-primary)"
-         onmouseover="this.style.borderColor='var(--fill-accent)'"
-         onmouseout="this.style.borderColor='var(--border)'">
-        <div style="width:28px;height:28px;border-radius:var(--radius);background:var(--{{ bg }});display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text-{{ 'success' if bg == 'bg-success' else 'danger' if bg == 'bg-danger' else 'accent' if bg == 'bg-accent' else 'warning' }})">
-          <i class="ti {{ icon }}"></i>
+    <div class="card-body">
+      {% for c in d.risk_suppliers %}
+      <div class="risk-row">
+        <div class="risk-level {% if c.risk_lv == '높음' %}lv-crit{% elif c.risk_lv == '보통' %}lv-high{% else %}lv-ok{% endif %}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:500">{{ c.CP_N }}
+            {% if c.is_foreign == 'Y' %}<span class="badge badge-primary" style="font-size:9px">해외</span>{% endif %}
+          </div>
+          <div style="font-size:10px;color:var(--text-muted)">
+            리드타임 {{ c.lt_avg }}일 · A등급 {{ c.grade_a }}종 · 미달 {{ c.short_cnt }}종
+          </div>
         </div>
-        {{ label }}
-      </a>
+        <span class="badge {% if c.risk_lv == '높음' %}badge-danger{% elif c.risk_lv == '보통' %}badge-warning{% else %}badge-success{% endif %}">{{ c.risk }}</span>
+      </div>
       {% endfor %}
+      <div style="font-size:10px;color:var(--text-muted);padding-top:8px">리드타임·납기변동·A등급공급·미달·해외조달 합산 점수</div>
     </div>
   </div>
-
 </div>
 
-<!-- 하단 2열 -->
-<div class="two-col">
+<!-- ── 2단 패널 ─────────────────────────────────────── -->
+<div class="dash-grid" style="margin-top:14px;grid-template-columns:1.1fr 1fr 1fr">
 
-  <!-- 이번달 입고 예정 -->
+  <!-- 최근 입출고 -->
   <div class="card">
     <div class="card-header">
-      <i class="ti ti-calendar" style="color:var(--fill-accent)"></i>
-      <span class="card-title">입고 예정 현황 (12월)</span>
-      <a href="/calendar" class="badge badge-primary">캘린더</a>
+      <i class="ti ti-history" style="color:var(--fill-accent)"></i>
+      <span class="card-title">최근 입출고</span>
+      <a href="/tx-history" class="badge badge-primary">전체 →</a>
     </div>
-    <div class="table-wrap">
+    <div class="card-body" style="padding:0">
       <table class="table">
-        <thead><tr><th>협력사</th><th>품목</th><th>예정일</th><th>D-Day</th><th>상태</th></tr></thead>
+        <thead><tr><th>일자</th><th>구분</th><th>자재</th><th style="text-align:right">수량</th></tr></thead>
         <tbody>
-          {% set upcoming = [
-            ("비테스코센서",   "S02010001 외 1종", "12-08", "오늘",  "warning"),
-            ("전진탱크산업",   "U01010001 외 2종", "12-10", "D-2",   "warning"),
-            ("현대호스",       "T01010001 외 3종", "12-14", "D-6",   "primary"),
-            ("삼양오링",       "V02040001 외 4종", "12-15", "5일 지연", "danger"),
-            ("세종볼트",       "E01030001 외 1종", "12-18", "D-10",  "muted"),
-          ] %}
-          {% for sup, item, date, dday, cls in upcoming %}
+          {% for t in d.recent_tx %}
           <tr>
-            <td style="font-weight:500">{{ sup }}</td>
-            <td class="td-muted">{{ item }}</td>
-            <td>{{ date }}</td>
-            <td><span class="badge badge-{{ cls }}">{{ dday }}</span></td>
-            <td><a href="/calendar" style="font-size:10px;color:var(--fill-accent)">보기</a></td>
+            <td style="font-family:ui-monospace,monospace;font-size:10px">{{ t.T_Date }}</td>
+            <td><span class="badge {% if t.T_Type == '입고' %}badge-primary{% else %}badge-warning{% endif %}">{{ t.T_Type }}</span></td>
+            <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ t.P_N }}{% if t.grade %} <span class="badge badge-muted" style="font-size:9px">{{ t.grade }}</span>{% endif %}
+            </td>
+            <td style="text-align:right">{{ "{:,}".format(t.T_Num) }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -161,38 +166,95 @@
     </div>
   </div>
 
-  <!-- 최근 발주 현황 -->
+  <!-- 최근 발주 -->
   <div class="card">
     <div class="card-header">
-      <i class="ti ti-truck-delivery" style="color:var(--fill-accent)"></i>
+      <i class="ti ti-truck-delivery" style="color:var(--fill-success)"></i>
       <span class="card-title">최근 발주</span>
-      <a href="/purchase" class="badge badge-primary">전체 보기</a>
+      <a href="/purchase" class="badge badge-success">전체 →</a>
     </div>
-    <div class="table-wrap">
+    <div class="card-body" style="padding:0">
       <table class="table">
-        <thead><tr><th>수주번호</th><th>협력사</th><th>금액</th><th>상태</th></tr></thead>
+        <thead><tr><th>발주일</th><th>협력사</th><th style="text-align:right">금액</th><th>입고</th></tr></thead>
         <tbody>
-          {% set orders = [
-            ("PO202512200001", "인영오토밸브",   "350만원",   "발주중"),
-            ("PO202512120001", "경진케미컬",     "124만원",   "발주중"),
-            ("PO202512030001", "세종볼트",       "42만원",    "입고완료"),
-            ("PO202512010001", "글로벌디스플레이","5,203만원", "발주중"),
-            ("PO202511280001", "전진탱크산업",   "280만원",   "발주중"),
-          ] %}
-          {% for po, sup, amt, status in orders %}
+          {% for o in d.recent_po %}
           <tr>
-            <td><a href="/purchase" style="color:var(--fill-accent);font-size:11px">{{ po[-8:] }}</a></td>
-            <td style="font-weight:500">{{ sup }}</td>
-            <td style="font-weight:500">{{ amt }}</td>
+            <td style="font-family:ui-monospace,monospace;font-size:10px">{{ o.date }}</td>
+            <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.supplier }}</td>
+            <td style="text-align:right">{{ won(o.amount) }}원</td>
             <td>
-              <span class="badge {{ 'badge-success' if status == '입고완료' else 'badge-warning' }}">{{ status }}</span>
+              {% if o.short %}<span class="badge badge-danger">부족 {{ o.short }}</span>
+              {% else %}<span class="badge badge-success">완료</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      <div style="padding:8px 12px;font-size:10px;color:var(--text-muted);border-top:0.5px solid var(--border)">
+        누적 {{ d.po_sum.order_cnt }}건 · {{ won(d.po_sum.amount) }}원 · 입고 일치율 {{ d.po_sum.ok_pct }}% · 평균 LT {{ d.po_sum.lead_avg }}일
+      </div>
     </div>
   </div>
 
+  <!-- 생산 병목 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-tool" style="color:var(--fill-danger)"></i>
+      <span class="card-title">생산 병목</span>
+      <a href="/bom" class="badge badge-danger">소요계획 →</a>
+    </div>
+    <div class="card-body">
+      {% for f in d.fg_blocked %}
+      <div style="padding:7px 0;border-bottom:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-family:ui-monospace,monospace;font-size:10px;color:var(--fill-accent)">{{ f.FG_ID }}</span>
+          <span style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.FG_N }}</span>
+          <span class="badge badge-danger">{{ f.zero_parts }}/{{ f.part_cnt }} 부족</span>
+        </div>
+        <div class="progress" style="margin-top:4px">
+          <div class="progress-fill progress-dn" style="width:{{ (f.zero_parts / f.part_cnt * 100)|round(0) }}%"></div>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:3px">
+          최대 병목: {{ f.neck_pid }} {{ f.neck_name }}
+        </div>
+      </div>
+      {% endfor %}
+      <div style="font-size:10px;color:var(--text-muted);padding-top:8px">자재 부족 비율이 높은 순</div>
+    </div>
+  </div>
 </div>
+
+<!-- ── ABC 분석 요약 ────────────────────────────────── -->
+<div class="card" style="margin-top:14px">
+  <div class="card-header">
+    <i class="ti ti-chart-bar" style="color:var(--fill-accent)"></i>
+    <span class="card-title">ABC 분석 — 사용금액 집중도</span>
+    <span class="card-meta">불출 이력 기준 총 {{ won(d.abc_total) }}원</span>
+    <a href="/abc" class="badge badge-primary">파레토 보기 →</a>
+  </div>
+  <div class="card-body">
+    <div style="display:flex;height:26px;border-radius:5px;overflow:hidden;border:0.5px solid var(--border)">
+      {% for g, col in [('A','var(--fill-danger)'), ('B','var(--fill-warning)'), ('C','var(--fill-success)')] %}
+      <div style="width:{{ d.abc[g].share }}%;background:{{ col }};opacity:.85;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600"
+           title="{{ g }}등급 {{ d.abc[g].count }}종 · {{ won(d.abc[g].amount) }}원">
+        {% if d.abc[g].share > 8 %}{{ g }} {{ d.abc[g].share }}%{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="kpi-grid kpi-grid-3" style="margin-top:10px">
+      {% for g in ['A','B','C'] %}
+      <div style="text-align:center;padding:6px;background:var(--surface-1);border-radius:6px">
+        <div style="font-size:10px;color:var(--text-muted)">{{ g }}등급 (사용금액)</div>
+        <div style="font-size:15px;font-weight:600">{{ d.abc[g].count }}종</div>
+        <div style="font-size:10px;color:var(--text-muted)">{{ won(d.abc[g].amount) }}원 · {{ d.abc[g].share }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:9px;line-height:1.6">
+      상위 {{ d.abc.A.count }}종({{ (d.abc.A.count / d.kpi.item_cnt * 100)|round(0) }}%)이 사용금액의 <b>{{ d.abc.A.share }}%</b>를 차지한다.
+      안전재고 등급은 별도로 5개 항목 점수제로 산정하며 현재 A {{ d.grade_dist.A.count }} · B {{ d.grade_dist.B.count }} · C {{ d.grade_dist.C.count }}종이다.
+    </div>
+  </div>
+</div>
+
 {% endblock %}

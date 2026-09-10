@@ -1053,3 +1053,89 @@ def stock_summary(zones):
         "max_value": max((z["value"] or 0) for z in zones) if zones else 1,
         "max_qty": max((z["qty"] or 0) for z in zones) if zones else 1,
     }
+
+
+# ── 메인 대시보드 ────────────────────────────────────────────
+def dashboard(conn):
+    """대시보드 한 화면에 필요한 집계를 모아 돌려준다.
+
+    개별 화면들의 조회 함수를 재사용해 숫자가 서로 어긋나지 않게 한다.
+    """
+    safe = safety_stock_list(conn)
+    safe_sum = safety_stock_summary(safe)
+    prods = product_list(conn)
+    prod_sum = product_summary(prods)
+    zones = stock_zones(conn)
+    comps = supplier_list(conn)
+    brows = bom_rows(conn)
+    fgs = fg_list(conn, brows)
+    tx = transaction_list(conn)
+    txp = tx_products(conn)
+    po = purchase_orders(conn)
+    po_sum = purchase_summary(po)
+    abc = abc_analysis(conn)
+    abc_sum = abc_summary(abc)
+
+    # 최근 입출고 8건 (자재명 붙여서)
+    recent_tx = []
+    for r in tx[:8]:
+        p = txp.get(r["P_ID"], {})
+        recent_tx.append({
+            "T_ID": r["T_ID"], "T_Type": r["T_Type"], "T_Date": r["T_Date"],
+            "T_Num": r["T_Num"], "P_ID": r["P_ID"],
+            "P_N": p.get("P_N"), "grade": p.get("grade"),
+            "worker": r["worker"],
+        })
+
+    # 안전재고 긴급 — 부족량이 큰 순
+    urgent = [{
+        "P_ID": r["P_ID"], "P_N": r["P_N"], "grade": r["grade"],
+        "safe_qty": r["safe_qty"], "stock": r["stock"], "diff": r["diff"],
+        "lead_time": r["lead_time"], "supplier": r["supplier"],
+    } for r in safe if r["diff"] < 0][:6]
+
+    return {
+        "kpi": {
+            "item_cnt": prod_sum["total"],
+            "stock_value": prod_sum["stock_value"],
+            "short_cnt": safe_sum["short"],
+            "short_pct": safe_sum["short_pct"],
+            "lot_live": sum(z["lot_live"] or 0 for z in zones),
+            "lot_total": sum(z["lot_total"] or 0 for z in zones),
+            "makeable": len([f for f in fgs if f["can_make"] > 0]),
+            "fg_cnt": len(fgs),
+            "risk_high": len([c for c in comps if c["risk_lv"] == "높음"]),
+            "supplier_cnt": len(comps),
+        },
+        "urgent": urgent,
+        "zones": [{
+            "Loc_ID": z["Loc_ID"], "Loc_N": z["Loc_N"], "qty": z["qty"],
+            "value": z["value"], "item_cnt": z["item_cnt"],
+            "short_cnt": z["short_cnt"],
+        } for z in zones],
+        "zone_max": max((z["value"] or 0) for z in zones) if zones else 1,
+        "recent_tx": recent_tx,
+        "recent_po": [{
+            "H_ID": o["H_ID"], "date": o["date"], "supplier": o["supplier"],
+            "line_cnt": o["line_cnt"], "amount": o["amount"],
+            "short": o["short"], "lead_days": o["lead_days"],
+        } for o in po[:6]],
+        "risk_suppliers": sorted(
+            [{"CP_N": c["CP_N"], "risk": c["risk"], "risk_lv": c["risk_lv"],
+              "lt_avg": c["lt_avg"], "grade_a": c["grade_a"],
+              "short_cnt": c["short_cnt"], "is_foreign": c["Is_Foreign"]}
+             for c in comps], key=lambda c: -c["risk"])[:5],
+        "abc": abc_sum["by_grade"],
+        "abc_total": abc_sum["total_amount"],
+        "grade_dist": {g: safe_sum["by_grade"][g] for g in ("A", "B", "C")},
+        "po_sum": {
+            "order_cnt": po_sum["order_cnt"], "amount": po_sum["amount"],
+            "ok_pct": po_sum["ok_pct"], "lead_avg": po_sum["lead_avg"],
+        },
+        "fg_blocked": sorted(
+            [{"FG_ID": f["FG_ID"], "FG_N": f["FG_N"], "part_cnt": f["part_cnt"],
+              "zero_parts": f["zero_parts"], "neck_name": f["neck_name"],
+              "neck_pid": f["neck_pid"]} for f in fgs],
+            key=lambda f: -(f["zero_parts"] / (f["part_cnt"] or 1)))[:5],
+        "date_to": max((r["T_Date"] for r in tx if r["T_Date"]), default="-"),
+    }
