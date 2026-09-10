@@ -80,6 +80,24 @@ def norm_str(v):
     return s or None
 
 
+def mask_phone(v):
+    """전화번호 가운데 4자리를 가린다.  01032181960 → 010-****-1960
+
+    공개 저장소에 올라가는 데이터라 원본을 그대로 두지 않는다.
+    (생성된 가상 데이터지만 개인정보 형태를 띠므로)
+    """
+    s = "".join(ch for ch in str(v or "") if ch.isdigit())
+    if len(s) < 7:
+        return None if not s else s
+    return f"{s[:3]}-****-{s[-4:]}"
+
+
+def mask_birth(v):
+    """생년월일을 연도만 남긴다.  19980508 → 1998"""
+    s = "".join(ch for ch in str(v or "") if ch.isdigit())
+    return s[:4] if len(s) >= 4 else None
+
+
 def read_csv(name):
     """DB_csv 폴더의 CSV 한 개를 읽어 딕셔너리 목록으로 돌려준다."""
     path = os.path.join(CSV_DIR, name)
@@ -135,8 +153,8 @@ DROP TABLE IF EXISTS User_tb;
 CREATE TABLE User_tb (
     EP_ID      TEXT PRIMARY KEY,       -- 사번 8자리
     Name       TEXT,
-    Birth      TEXT,
-    Phone      TEXT,
+    Birth      TEXT,                   -- 연도만 (마스킹)
+    Phone      TEXT,                   -- 가운데 4자리 가림 (마스킹)
     Position   TEXT                    -- 직급
     -- 원본 accdb 의 PS(평문 비밀번호) 컬럼은 외부 배포를 고려해 의도적으로 제외함
 );
@@ -273,8 +291,9 @@ JOBS = [
      {"BRN": S, "CP_N": S, "Is_Foreign": S}),
     ("Location_tb", "accdb", "Location_tb",
      {"Loc_ID": S, "Loc_N": S}),
+    # Birth/Phone 은 마스킹해서 적재한다 (공개 저장소 대비)
     ("User_tb", "accdb", "User_tb",
-     {"EP_ID": S, "Name": S, "Birth": S, "Phone": S, "Position": S}),
+     {"EP_ID": S, "Name": S, "Birth": mask_birth, "Phone": mask_phone, "Position": S}),
 
     # Product_tb 는 11차 회의(7/9) 재생성본인 CSV 사용 — accdb 판에는 Spec 컬럼이 없고
     # 자재명이 "123"인 불량행(U03040004)이 섞여 있어 CSV(200종)가 정본이다.

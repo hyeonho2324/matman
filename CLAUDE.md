@@ -112,7 +112,7 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | Cat_tb | 75 | MainCat+SubCat+DetailCat(PK), Cat_Name | accdb |
 | Company_tb | 20 | BRN(PK), CP_N, Is_Foreign | accdb |
 | Location_tb | 5 | Loc_ID(PK), Loc_N | accdb |
-| User_tb | 30 | EP_ID(PK,8자리), Name, Birth, Phone, Position | accdb |
+| User_tb | 30 | EP_ID(PK,8자리), Name, Birth·Phone(**마스킹**), Position | accdb |
 | Lot_tb | 636 | Lot_ID(PK), P_ID, Lot_Date, Loc_ID, P_Qty, EP_ID, H_ID | CSV |
 | Transaction_tb | 1,075 | T_ID(PK), Lot_ID, T_Type, T_Date, T_Num, EP_ID | CSV |
 | Purchase_Header_tb | 254 | H_ID(PK), BRN, P_Date | CSV |
@@ -132,7 +132,7 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | `Audit_Log_tb` | **없음** |
 | `Location_tb.Loc_DC` | **없음** |
 | `Purchase_Header_tb.Status` | **없음** (발주 상태값이 데이터에 없음) |
-| `User_tb.PS` | accdb에 평문 비밀번호로 존재하나 **외부 배포를 고려해 erp.db에서 의도적으로 제외** |
+| `User_tb.PS` | accdb에 평문 비밀번호로 존재하나 **외부 배포를 고려해 erp.db에서 의도적으로 제외**<br>전화번호·생년월일도 `build_db.py` 에서 마스킹 적재 |
 
 ### BOM 구조 (실제 테이블 확보됨)
 
