@@ -3,6 +3,7 @@
 > **관련 문서**
 > - [SAFE_STOCK_DESIGN.md](SAFE_STOCK_DESIGN.md) — 안전재고 전체 설계 명세 + 실측 검증
 > - [MEETING_LOG.md](MEETING_LOG.md) — 개발 회의록 11회분 + 결정사항 반영 여부 대조
+> - [DEPLOY.md](DEPLOY.md) — 배포 가이드 (PythonAnywhere / GitHub+Render)
 
 ## 프로젝트 개요
 Python/Flask 기반 자재관리 웹 애플리케이션.
@@ -314,12 +315,25 @@ A등급 = 30일     B등급 = 90일    C등급 = 180일
 ---
 
 ## 실행 방법
+
+### 로컬 개발
 ```bash
 cd matman
-pip install flask
-python app.py
+pip install -r requirements.txt
+py app.py
 # → http://localhost:5000
 ```
+`debug` 는 기본 꺼짐. 켜려면 `FLASK_DEBUG=1 py app.py`
+
+### DB 재생성 (원본 데이터가 바뀐 경우만 · 윈도우 전용)
+```bash
+py build_db.py
+```
+
+### 배포
+[DEPLOY.md](DEPLOY.md) 참조. 런타임 의존성은 `flask` + `gunicorn` 뿐이고
+`data/erp.db` 파일만 함께 올리면 DB 서버가 따로 필요 없다.
+`build_db.py` 의 `pyodbc` 는 개발 PC 전용이라 배포 환경에서는 설치·실행되지 않는다.
 
 ---
 
