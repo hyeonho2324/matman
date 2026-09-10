@@ -556,3 +556,130 @@ def tx_summary(rows, lots, prods=None):
         "lot_done": len([l for l in lots if (l["remain"] or 0) <= 0]),
         "workers": len({r["worker"] for r in rows if r["worker"]}),
     }
+
+
+# ── 협력사 화면 ──────────────────────────────────────────────
+import statistics as _st
+
+
+def supplier_list(conn):
+    """협력사 20개사 + 리드타임 통계 + 발주 실적 + 공급 리스크."""
+    comps = _rows(conn, "SELECT BRN, CP_N, Is_Foreign FROM Company_tb ORDER BY CP_N")
+
+    # 발주-입고 쌍에서 리드타임 실측
+    lt_raw = _rows(conn, """
+        SELECT h.BRN, l.Lot_ID, h.H_ID, h.P_Date, l.Lot_Date,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lt
+          FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+         ORDER BY h.P_Date
+    """)
+    by_brn = {}
+    for r in lt_raw:
+        by_brn.setdefault(r["BRN"], []).append(r)
+
+    # 발주 실적 (금액은 발주상세 × 단가)
+    orders = {r["BRN"]: r for r in _rows(conn, """
+        SELECT h.BRN,
+               COUNT(DISTINCT h.H_ID)   AS order_cnt,
+               COUNT(*)                 AS line_cnt,
+               SUM(d.P_Qty * p.P_Price) AS amount,
+               SUM(d.P_Qty)             AS qty,
+               MIN(h.P_Date)            AS first_order,
+               MAX(h.P_Date)            AS last_order
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         GROUP BY h.BRN
+    """)}
+
+    # 공급 품목 + 리스크 (A등급 / 안전재고 미달)
+    risk = {r["BRN"]: r for r in _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL})
+        SELECT p.BRN,
+               COUNT(*)                                              AS item_cnt,
+               SUM(CASE WHEN s.Sf_Lv='A' THEN 1 ELSE 0 END)          AS grade_a,
+               SUM(CASE WHEN COALESCE(st.stock,0) < s.Sf_Num THEN 1 ELSE 0 END) AS short_cnt,
+               SUM(COALESCE(st.stock,0) * p.P_Price)                 AS stock_value
+          FROM Product_tb p
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+          LEFT JOIN stock st  ON p.P_ID = st.P_ID
+         GROUP BY p.BRN
+    """)}
+
+    for c in comps:
+        b = c["BRN"]
+        lts = [r["lt"] for r in by_brn.get(b, []) if r["lt"] is not None]
+        c["lt_list"] = lts
+        c["lt_hist"] = [{"date": r["P_Date"], "lt": r["lt"], "hid": r["H_ID"]}
+                        for r in by_brn.get(b, [])][-40:]
+        if lts:
+            c["lt_n"] = len(lts)
+            c["lt_avg"] = round(_st.mean(lts), 1)
+            c["lt_med"] = int(_st.median(lts))
+            c["lt_min"] = min(lts)
+            c["lt_max"] = max(lts)
+            c["lt_sd"] = round(_st.stdev(lts), 1) if len(lts) > 1 else 0.0
+            # 변동계수 — 리드타임 길이가 달라도 공정하게 안정성을 비교할 수 있다
+            c["lt_cv"] = round(c["lt_sd"] / c["lt_avg"] * 100, 1) if c["lt_avg"] else 0.0
+        else:
+            c.update(lt_n=0, lt_avg=None, lt_med=None, lt_min=None,
+                     lt_max=None, lt_sd=None, lt_cv=None)
+
+        o = orders.get(b, {})
+        c["order_cnt"] = o.get("order_cnt", 0)
+        c["line_cnt"] = o.get("line_cnt", 0)
+        c["amount"] = o.get("amount", 0) or 0
+        c["qty"] = o.get("qty", 0) or 0
+        c["first_order"] = o.get("first_order")
+        c["last_order"] = o.get("last_order")
+
+        k = risk.get(b, {})
+        c["item_cnt"] = k.get("item_cnt", 0)
+        c["grade_a"] = k.get("grade_a", 0) or 0
+        c["short_cnt"] = k.get("short_cnt", 0) or 0
+        c["stock_value"] = k.get("stock_value", 0) or 0
+
+        # 공급 리스크 점수 (높을수록 주의)
+        #   리드타임이 길수록 / 변동이 클수록 / A등급을 많이 댈수록 / 미달이 많을수록 / 해외일수록
+        score = 0
+        if c["lt_avg"]:
+            score += min(c["lt_avg"] / 10, 6)          # 최대 6점
+            score += min((c["lt_cv"] or 0) / 5, 4)     # 최대 4점
+        score += min(c["grade_a"] * 1.5, 4)            # 최대 4점
+        score += min(c["short_cnt"] * 0.5, 4)          # 최대 4점
+        if c["Is_Foreign"] == "Y":
+            score += 2
+        c["risk"] = round(score, 1)
+        c["risk_lv"] = "높음" if score >= 12 else ("보통" if score >= 7 else "낮음")
+    return comps
+
+
+def supplier_items(conn):
+    """협력사별 공급 품목 (상세 패널용)."""
+    return _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL})
+        SELECT p.BRN, p.P_ID, p.P_N, p.Spec, p.P_Price,
+               s.Sf_Lv AS grade, s.Sf_Num AS safe_qty, s.Lead_Time AS lead_time,
+               COALESCE(st.stock, 0) AS stock,
+               COALESCE(st.stock, 0) - COALESCE(s.Sf_Num, 0) AS diff
+          FROM Product_tb p
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+          LEFT JOIN stock st  ON p.P_ID = st.P_ID
+         ORDER BY p.BRN, (COALESCE(st.stock,0) - COALESCE(s.Sf_Num,0))
+    """)
+
+
+def supplier_summary(comps):
+    with_lt = [c for c in comps if c["lt_n"]]
+    return {
+        "total": len(comps),
+        "foreign": len([c for c in comps if c["Is_Foreign"] == "Y"]),
+        "domestic": len([c for c in comps if c["Is_Foreign"] != "Y"]),
+        "amount": sum(c["amount"] for c in comps),
+        "order_cnt": sum(c["order_cnt"] for c in comps),
+        "lt_avg": round(sum(c["lt_avg"] * c["lt_n"] for c in with_lt)
+                        / sum(c["lt_n"] for c in with_lt), 1) if with_lt else 0,
+        "risk_high": len([c for c in comps if c["risk_lv"] == "높음"]),
+        "risk_mid": len([c for c in comps if c["risk_lv"] == "보통"]),
+        "risk_low": len([c for c in comps if c["risk_lv"] == "낮음"]),
+    }

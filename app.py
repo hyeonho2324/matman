@@ -273,12 +273,26 @@ def _ctx_tx_history():
         conn.close()
 
 
+def _ctx_suppliers():
+    conn = db.connect()
+    try:
+        comps = db.supplier_list(conn)
+        return {
+            "comps": comps,
+            "items": db.supplier_items(conn),
+            "summary": db.supplier_summary(comps),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
     "bom":          _ctx_bom,
     "abc":          _ctx_abc,
     "tx_history":   _ctx_tx_history,
+    "suppliers":    _ctx_suppliers,
 }
 
 
