@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>바코드 / QR 스캐너</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
+.inner{text-align:center;max-width:500px;padding:24px}
+.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
+.title{font-size:18px;font-weight:600;margin-bottom:8px}
+.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
+.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
+.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.feat-icon{font-size:16px;margin-bottom:4px}
+.feat-t{font-size:12px;font-weight:500}
+.feat-s{font-size:11px;color:var(--txt3)}
+.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="inner">
+    <div class="icon"><i class="ti ti-scan"></i></div>
+    <div class="title">바코드 / QR 스캐너</div>
+    <div class="sub">LOT 라벨 스캔으로 즉시 상세 조회 및 빠른 처리(불출/이동/불량)가 가능합니다.</div>
+    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-qrcode"></i></div><div class="feat-t">QR 스캔</div><div class="feat-s">LOT·품목·발주서 식별</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-barcode"></i></div><div class="feat-t">바코드 지원</div><div class="feat-s">수동 입력 병행</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-history"></i></div><div class="feat-t">스캔 이력</div><div class="feat-s">최근 12건 유지</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-bolt"></i></div><div class="feat-t">빠른 처리</div><div class="feat-s">불출·이동·불량 원터치</div></div></div>
+    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+  </div>
+</div>
+</body>
+</html>

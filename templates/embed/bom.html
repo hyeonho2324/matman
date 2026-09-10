@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOM 관리</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.dn{color:var(--dn)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+
+/* 좌: 완제품 목록 */
+.fglist{width:262px;border-right:0.5px solid var(--border);overflow-y:auto;flex-shrink:0;background:var(--s1)}
+.fgh{padding:7px 12px;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);position:sticky;top:0;background:var(--s1);z-index:2}
+.fg{padding:9px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.fg:hover{background:var(--s2)}
+.fg.on{background:var(--bg-ac);box-shadow:inset 3px 0 0 var(--acc)}
+.fg-r1{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.fg-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc);font-weight:500}
+.fg-n{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fg-r2{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt3)}
+.fgbar{height:4px;border-radius:2px;background:var(--s2);overflow:hidden;margin-top:5px}
+.fgbar i{display:block;height:100%;border-radius:2px}
+
+/* 우: BOM 상세 */
+.detail{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.plan{padding:9px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0}
+.plan label{font-size:11px;color:var(--txt3)}
+.qty{display:flex;align-items:center;gap:0;border:0.5px solid var(--border-s);border-radius:var(--r);overflow:hidden;background:var(--s0)}
+.qty button{width:26px;height:26px;border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--txt2);font-family:inherit}
+.qty button:hover{background:var(--s2)}
+.qty input{width:56px;border:none;outline:none;text-align:center;font-size:13px;font-weight:500;font-family:inherit;background:transparent;color:var(--txt)}
+.sumbox{display:flex;gap:14px;margin-left:auto;flex-wrap:wrap}
+.sb{text-align:right}
+.sb-l{font-size:9px;color:var(--txt3)}
+.sb-v{font-size:13px;font-weight:500}
+.sb-v.dn{color:var(--dn)}.sb-v.ok{color:var(--ok)}
+
+.tblwrap{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
+thead th.num{text-align:right}
+tbody td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tbody td.num{text-align:right}
+tbody tr.lack{background:rgba(224,75,74,.045)}
+tbody tr.altrow{background:var(--s1)}
+tbody tr.altrow td{color:var(--txt3);font-size:11px}
+.pid{color:var(--acc);font-weight:500;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.short{color:var(--dn);font-weight:500}
+.okv{color:var(--ok)}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.arr{color:var(--txt3);margin-right:4px}
+.foot{padding:8px 14px;border-top:0.5px solid var(--border);background:var(--s1);font-size:10px;color:var(--txt3);line-height:1.6;flex-shrink:0}
+
+@media(max-width:820px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .kpi:nth-child(n+3){border-top:0.5px solid var(--border)}
+  .main{flex-direction:column}
+  .fglist{width:100%;max-height:33%;border-right:none;border-bottom:0.5px solid var(--border-s)}
+  .sumbox{margin-left:0;width:100%}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-sitemap" style="color:var(--acc)"></i>BOM 관리 · 자재소요계획
+      <span class="tag">실제 DB · 완제품 {{ summary.fg_count }}종</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>소요계획 CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-box-multiple"></i>완제품</div>
+      <div class="kv">{{ summary.fg_count }}<span style="font-size:11px;color:var(--txt3)">종</span></div>
+      <div class="ks">생산 실적 {{ summary.total_wo }}개 작업지시</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-sitemap"></i>BOM 등록</div>
+      <div class="kv">{{ summary.bom_rows }}<span style="font-size:11px;color:var(--txt3)">행</span></div>
+      <div class="ks">표준 {{ summary.std_rows }} · 대체 {{ summary.alt_rows }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-alert-triangle"></i>즉시 생산 가능</div>
+      <div class="kv dn">{{ summary.makeable }}<span style="font-size:11px">종</span></div>
+      <div class="ks">{{ summary.blocked }}종은 자재 부족</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-replace"></i>대체품 운영</div>
+      <div class="kv">{{ summary.alt_rows }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
+      <div class="ks">볼트·오링 등 호환 부품</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="fglist" id="fglist"></div>
+
+    <div class="detail">
+      <div class="plan">
+        <label>생산 목표</label>
+        <div class="qty">
+          <button onclick="bump(-10)">−</button>
+          <input id="target" type="number" min="1" value="10" oninput="render()">
+          <button onclick="bump(10)">+</button>
+        </div>
+        <label>대</label>
+        <label style="margin-left:6px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="useAlt" onchange="render()"> 대체품 재고 포함
+        </label>
+        <div class="sumbox" id="sumbox"></div>
+      </div>
+
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th>자재코드</th>
+            <th>자재명 / 규격</th>
+            <th class="hide-sm">협력사</th>
+            <th class="num">1대당</th>
+            <th class="num">소요량</th>
+            <th class="num">현재고</th>
+            <th class="num">부족</th>
+            <th class="num">발주필요</th>
+            <th class="num hide-sm">발주금액</th>
+            <th class="num hide-sm">LT</th>
+          </tr></thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+
+      <div class="foot" id="foot"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BOM = {{ bom|tojson }};
+const FGS = {{ fgs|tojson }};
+
+let sel = FGS.length ? FGS[0].FG_ID : null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 발주 필요량 — 최소발주수량(MOQ)과 포장단위를 반영해 실제 발주 가능한 수량으로 올림
+function orderQty(lack, moq, pkg){
+  if(lack<=0) return 0;
+  let q = Math.max(lack, moq||0);
+  if(pkg && pkg>0) q = Math.ceil(q/pkg)*pkg;
+  return q;
+}
+
+function renderFgList(){
+  document.getElementById('fglist').innerHTML =
+    '<div class="fgh">완제품 ' + FGS.length + '종 — 클릭해 BOM 확인</div>'
+  + FGS.map(function(f){
+      const ok = f.part_cnt - f.zero_parts;
+      const pct = f.part_cnt ? ok/f.part_cnt*100 : 0;
+      const col = pct>=80 ? 'var(--ok)' : (pct>=60 ? 'var(--wn)' : 'var(--dn)');
+      return '<div class="fg ' + (sel===f.FG_ID?'on':'') + '" onclick="pick(\'' + f.FG_ID + '\')">'
+        + '<div class="fg-r1"><span class="fg-id">' + f.FG_ID + '</span>'
+        +   '<span class="fg-n">' + esc(f.FG_N) + '</span></div>'
+        + '<div class="fg-r2"><span>자재 ' + f.part_cnt + '종</span>'
+        +   (f.alt_cnt ? '<span class="bg bmu">대체 ' + f.alt_cnt + '</span>' : '')
+        +   '<span style="margin-left:auto">' + won(f.unit_cost) + '원/대</span></div>'
+        + '<div class="fgbar"><i style="width:' + pct + '%;background:' + col + '"></i></div>'
+        + '<div class="fg-r2" style="margin-top:4px">'
+        +   '<span>재고 충족 ' + ok + '/' + f.part_cnt + '</span>'
+        +   (f.zero_parts ? '<span class="short" style="margin-left:auto">부족 ' + f.zero_parts + '종</span>' : '<span class="okv" style="margin-left:auto">전량 보유</span>')
+        + '</div>'
+        + '</div>';
+    }).join('');
+}
+
+function plan(){
+  const fg = FGS.filter(function(f){return f.FG_ID===sel;})[0];
+  const target = Math.max(parseInt(document.getElementById('target').value||'0',10), 0);
+  const useAlt = document.getElementById('useAlt').checked;
+
+  const mine = BOM.filter(function(b){return b.FG_ID===sel;});
+  const std  = mine.filter(function(b){return !b.is_alt;});
+  const alts = mine.filter(function(b){return b.is_alt;});
+
+  // 대체품 재고를 원자재에 합산할 준비
+  const altStock = {}, altOf = {};
+  alts.forEach(function(a){
+    if(!a.alt_for) return;
+    altStock[a.alt_for] = (altStock[a.alt_for]||0) + a.stock;
+    (altOf[a.alt_for] = altOf[a.alt_for] || []).push(a);
+  });
+
+  const items = std.map(function(b){
+    const need  = (b.BOM_Qty||0) * target;
+    const avail = b.stock + (useAlt ? (altStock[b.P_ID]||0) : 0);
+    const lack  = Math.max(need - avail, 0);
+    const oq    = orderQty(lack, b.MinOrderQty, b.PkgUnit);
+    return {
+      b: b, need: need, avail: avail, lack: lack, oq: oq,
+      cost: (b.BOM_Qty||0) * (b.P_Price||0) * target,
+      ocost: oq * (b.P_Price||0),
+      alts: altOf[b.P_ID] || []
+    };
+  });
+
+  return {fg: fg, target: target, useAlt: useAlt, items: items};
+}
+
+function render(){
+  if(!sel) return;
+  const p = plan();
+  renderFgList();
+
+  const lackItems = p.items.filter(function(i){return i.lack>0;});
+  const totalCost = p.items.reduce(function(a,i){return a+i.cost;},0);
+  const orderCost = p.items.reduce(function(a,i){return a+i.ocost;},0);
+  const maxLt = lackItems.length ? Math.max.apply(null, lackItems.map(function(i){return i.b.lead_time||0;})) : 0;
+
+  document.getElementById('sumbox').innerHTML =
+    '<div class="sb"><div class="sb-l">필요 자재비</div><div class="sb-v">' + won(totalCost) + '원</div></div>'
+  + '<div class="sb"><div class="sb-l">부족 자재</div><div class="sb-v ' + (lackItems.length?'dn':'ok') + '">'
+  +   lackItems.length + ' / ' + p.items.length + '종</div></div>'
+  + '<div class="sb"><div class="sb-l">발주 필요액</div><div class="sb-v ' + (orderCost?'dn':'ok') + '">' + won(orderCost) + '원</div></div>'
+  + '<div class="sb"><div class="sb-l">착수 가능</div><div class="sb-v">' + (maxLt ? maxLt + '일 후' : '즉시') + '</div></div>';
+
+  const rows = [];
+  p.items.forEach(function(i){
+    const b = i.b;
+    rows.push('<tr class="' + (i.lack>0?'lack':'') + '">'
+      + '<td><span class="pid">' + b.P_ID + '</span></td>'
+      + '<td><div class="nm">' + esc(b.P_N) + '</div><div class="sp">' + esc(b.Spec) + '</div></td>'
+      + '<td class="hide-sm">' + esc(b.supplier||'-')
+      +   (b.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</td>'
+      + '<td class="num">×' + b.BOM_Qty + '</td>'
+      + '<td class="num">' + nf(i.need) + '</td>'
+      + '<td class="num ' + (b.stock<=0?'short':'') + '">' + nf(b.stock)
+      +   (p.useAlt && i.alts.length ? '<span class="bg bmu" style="margin-left:4px">+' + nf(i.avail-b.stock) + '</span>' : '') + '</td>'
+      + '<td class="num ' + (i.lack>0?'short':'okv') + '">' + (i.lack>0 ? '-'+nf(i.lack) : '충족') + '</td>'
+      + '<td class="num">' + (i.oq ? nf(i.oq) : '-') + '</td>'
+      + '<td class="num hide-sm">' + (i.ocost ? won(i.ocost)+'원' : '-') + '</td>'
+      + '<td class="num hide-sm">' + (b.lead_time||'-') + '일</td>'
+      + '</tr>');
+    // 대체품은 원자재 바로 아래에 들여쓰기로
+    i.alts.forEach(function(a){
+      rows.push('<tr class="altrow">'
+        + '<td><span class="arr">└</span><span class="pid" style="opacity:.75">' + a.P_ID + '</span></td>'
+        + '<td>' + esc(a.P_N) + ' <span class="bg bmu">대체품</span><div class="sp">' + esc(a.Spec) + '</div></td>'
+        + '<td class="hide-sm">' + esc(a.supplier||'-') + '</td>'
+        + '<td class="num">×' + a.BOM_Qty + '</td>'
+        + '<td class="num">-</td>'
+        + '<td class="num">' + nf(a.stock) + '</td>'
+        + '<td class="num">-</td><td class="num">-</td>'
+        + '<td class="num hide-sm">-</td>'
+        + '<td class="num hide-sm">' + (a.lead_time||'-') + '일</td>'
+        + '</tr>');
+    });
+  });
+  document.getElementById('tb').innerHTML = rows.join('');
+
+  const neck = lackItems.slice().sort(function(a,b){return b.lack-a.lack;})[0];
+  document.getElementById('foot').innerHTML =
+    '<b>' + p.fg.FG_ID + ' ' + esc(p.fg.FG_N) + '</b> ' + nf(p.target) + '대 생산 기준 · '
+  + '1대당 자재비 ' + nf(p.fg.unit_cost) + '원 · 표준자재 ' + p.fg.part_cnt + '종'
+  + (p.fg.alt_cnt ? ' · 대체품 ' + p.fg.alt_cnt + '종' : '')
+  + (neck ? '<br>최대 병목: <b>' + neck.b.P_ID + ' ' + esc(neck.b.P_N) + '</b> ' + nf(neck.lack) + '개 부족 (리드타임 ' + (neck.b.lead_time||'-') + '일)' : '<br>모든 자재 충족 — 즉시 생산 가능')
+  + '<br>발주 필요량은 최소발주수량(MOQ)과 포장단위를 반영해 올림 계산한 값입니다.';
+}
+
+function pick(id){ sel=id; render(); }
+function bump(n){
+  const el=document.getElementById('target');
+  el.value = Math.max(parseInt(el.value||'0',10)+n, 1);
+  render();
+}
+function dl(){
+  const p=plan();
+  const head=['완제품','자재코드','자재명','규격','협력사','1대당소요','소요량','현재고','부족','발주필요','발주금액','리드타임'];
+  const lines=[head.join(',')];
+  p.items.forEach(function(i){
+    const b=i.b;
+    lines.push([p.fg.FG_ID+' '+p.fg.FG_N,b.P_ID,b.P_N,b.Spec,b.supplier,b.BOM_Qty,i.need,b.stock,i.lack,i.oq,Math.round(i.ocost),b.lead_time]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='자재소요계획_'+p.fg.FG_ID+'_'+p.target+'대.csv';
+  a.click();
+}
+
+render();
+</script>
+</body>
+</html>

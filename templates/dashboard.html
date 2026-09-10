@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">메인 대시보드</div>
+    <div class="page-subtitle">2025년 12월 08일 (월) · 자재관리 시스템 현황</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn"><i class="ti ti-refresh"></i>새로고침</button>
+    <a href="/report" class="btn btn-primary"><i class="ti ti-file-text"></i>월간 리포트</a>
+  </div>
+</div>
+
+<!-- KPI -->
+<div class="kpi-grid kpi-grid-4">
+  <div class="kpi-card">
+    <div class="kpi-label">총 보유 품목</div>
+    <div class="kpi-value kpi-ac">200종</div>
+    <div class="kpi-sub">자재창고 5구역 + 현장 2구역</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">안전재고 미달</div>
+    <div class="kpi-value kpi-dn">8종</div>
+    <div class="kpi-sub"><a href="/risk-radar" style="color:var(--fill-danger)">납기 리스크 레이더 →</a></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">이번 달 입고</div>
+    <div class="kpi-value">7건</div>
+    <div class="kpi-sub">LOT 22개 생성</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">진행중 발주</div>
+    <div class="kpi-value kpi-wn">23건</div>
+    <div class="kpi-sub">입고 대기 중</div>
+  </div>
+</div>
+
+<!-- 대시보드 그리드 -->
+<div class="dash-grid">
+
+  <!-- 납기 리스크 요약 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-radar" style="color:var(--fill-danger)"></i>
+      <span class="card-title">납기 리스크</span>
+      <a href="/risk-radar" class="badge badge-primary">전체 보기</a>
+    </div>
+    <div class="card-body">
+      {% set risks = [
+        ("E01010001", "후방카메라 LCD", "crit", "위험", "재고 공백 41일"),
+        ("U01010001", "SUS304 탱크바디", "crit", "발주미등록", "즉시 발주 필요"),
+        ("V02040001", "오링 Ø25 NBR", "high", "경고", "여유 3일"),
+        ("E01010003", "후방카메라 1080P", "high", "경고", "여유 5일"),
+        ("S02010001", "압력센서 5bar", "mid", "주의", "여유 22일"),
+      ] %}
+      {% for pid, nm, lv, badge, desc in risks %}
+      <div class="risk-row">
+        <div class="risk-level lv-{{ lv }}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:500">{{ pid }}</div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nm }}</div>
+        </div>
+        <span class="badge {% if lv == 'crit' %}badge-danger{% elif lv == 'high' %}badge-warning{% else %}badge-primary{% endif %}">{{ badge }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 오늘의 처리 현황 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-calendar-check" style="color:var(--fill-accent)"></i>
+      <span class="card-title">오늘의 처리 현황</span>
+      <span class="card-meta">12/08</span>
+    </div>
+    <div class="card-body">
+      {% set activities = [
+        ("in", "bg-success", "입고", "E01040001 방수가스켓 500개 입고", "이입고", "11:20"),
+        ("out", "bg-accent", "불출", "E01010001 후방카메라 LCD 8개 → F01", "박불출", "14:32"),
+        ("out", "bg-accent", "불출", "E01020001 상단커버 15개 → F01", "박불출", "14:28"),
+        ("mfg", "bg-warning", "생산", "WO202512080001 공기조정기 30대 완료", "김작업", "09:45"),
+        ("in", "bg-success", "입고", "V01030001 볼트 4,000개 입고", "이입고", "15:10"),
+      ] %}
+      {% for type, bg, label, desc, ep, time in activities %}
+      <div class="act-row">
+        <div class="act-dot" style="background:var(--{{ bg }});color:var(--text-{{ 'success' if bg == 'bg-success' else 'accent' if bg == 'bg-accent' else 'warning' }})">{{ label[0] }}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:500">{{ desc }}</div>
+          <div style="font-size:10px;color:var(--text-muted)">{{ ep }}</div>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);flex-shrink:0">{{ time }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 빠른 메뉴 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-grid-dots" style="color:var(--fill-accent)"></i>
+      <span class="card-title">빠른 메뉴</span>
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      {% set quick = [
+        ("/inbound",    "ti-arrow-bar-to-down", "입고 처리",    "bg-success"),
+        ("/disburse",   "ti-arrow-bar-up",      "불출 처리",    "bg-accent"),
+        ("/picking",    "ti-list-check",         "피킹리스트",   "bg-warning"),
+        ("/scanner",    "ti-scan",               "스캐너",       "bg-accent"),
+        ("/purchase",   "ti-truck-delivery",     "발주 등록",    "bg-warning"),
+        ("/risk-radar", "ti-radar",              "리스크 레이더","bg-danger"),
+        ("/forecast",   "ti-chart-line",         "수요 예측",    "bg-accent"),
+        ("/simulator",  "ti-adjustments",        "발주 시뮬",    "bg-success"),
+      ] %}
+      {% for url, icon, label, bg in quick %}
+      <a href="{{ url }}" style="display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--surface-2);border-radius:var(--radius);border:0.5px solid var(--border);font-size:12px;font-weight:500;transition:all .15s;color:var(--text-primary)"
+         onmouseover="this.style.borderColor='var(--fill-accent)'"
+         onmouseout="this.style.borderColor='var(--border)'">
+        <div style="width:28px;height:28px;border-radius:var(--radius);background:var(--{{ bg }});display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text-{{ 'success' if bg == 'bg-success' else 'danger' if bg == 'bg-danger' else 'accent' if bg == 'bg-accent' else 'warning' }})">
+          <i class="ti {{ icon }}"></i>
+        </div>
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- 하단 2열 -->
+<div class="two-col">
+
+  <!-- 이번달 입고 예정 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-calendar" style="color:var(--fill-accent)"></i>
+      <span class="card-title">입고 예정 현황 (12월)</span>
+      <a href="/calendar" class="badge badge-primary">캘린더</a>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>협력사</th><th>품목</th><th>예정일</th><th>D-Day</th><th>상태</th></tr></thead>
+        <tbody>
+          {% set upcoming = [
+            ("비테스코센서",   "S02010001 외 1종", "12-08", "오늘",  "warning"),
+            ("전진탱크산업",   "U01010001 외 2종", "12-10", "D-2",   "warning"),
+            ("현대호스",       "T01010001 외 3종", "12-14", "D-6",   "primary"),
+            ("삼양오링",       "V02040001 외 4종", "12-15", "5일 지연", "danger"),
+            ("세종볼트",       "E01030001 외 1종", "12-18", "D-10",  "muted"),
+          ] %}
+          {% for sup, item, date, dday, cls in upcoming %}
+          <tr>
+            <td style="font-weight:500">{{ sup }}</td>
+            <td class="td-muted">{{ item }}</td>
+            <td>{{ date }}</td>
+            <td><span class="badge badge-{{ cls }}">{{ dday }}</span></td>
+            <td><a href="/calendar" style="font-size:10px;color:var(--fill-accent)">보기</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 최근 발주 현황 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="ti ti-truck-delivery" style="color:var(--fill-accent)"></i>
+      <span class="card-title">최근 발주</span>
+      <a href="/purchase" class="badge badge-primary">전체 보기</a>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>수주번호</th><th>협력사</th><th>금액</th><th>상태</th></tr></thead>
+        <tbody>
+          {% set orders = [
+            ("PO202512200001", "인영오토밸브",   "350만원",   "발주중"),
+            ("PO202512120001", "경진케미컬",     "124만원",   "발주중"),
+            ("PO202512030001", "세종볼트",       "42만원",    "입고완료"),
+            ("PO202512010001", "글로벌디스플레이","5,203만원", "발주중"),
+            ("PO202511280001", "전진탱크산업",   "280만원",   "발주중"),
+          ] %}
+          {% for po, sup, amt, status in orders %}
+          <tr>
+            <td><a href="/purchase" style="color:var(--fill-accent);font-size:11px">{{ po[-8:] }}</a></td>
+            <td style="font-weight:500">{{ sup }}</td>
+            <td style="font-weight:500">{{ amt }}</td>
+            <td>
+              <span class="badge {{ 'badge-success' if status == '입고완료' else 'badge-warning' }}">{{ status }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

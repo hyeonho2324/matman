@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>발주 시뮬레이터</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit}
+.btn:hover{background:var(--s1)}
+.btns{background:var(--ok);color:#fff;border-color:transparent}
+.body{flex:1;display:flex;overflow:hidden}
+.ctrl{width:270px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.ch{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.ch-t{font-size:12px;font-weight:500;margin-bottom:2px}
+.ch-s{font-size:10px;color:var(--txt3)}
+.ctrl-body{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.ctrl-foot{padding:10px 14px;border-top:0.5px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+.sel{width:100%;padding:6px 9px;border-radius:var(--r);border:0.5px solid var(--border-s);background:var(--s2);color:var(--txt);font-size:12px;font-family:inherit}
+.sw{background:var(--s2);border-radius:var(--r);padding:10px 12px;border:0.5px solid var(--border)}
+.sw-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.sw-lbl{font-size:11px;font-weight:500}
+.sw-val{font-size:14px;font-weight:500;color:var(--acc)}
+.sw-sub{font-size:10px;color:var(--txt3);margin-top:2px}
+input[type=range]{width:100%;accent-color:var(--acc);height:4px;cursor:pointer}
+.result{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.rh{background:var(--s1);border-bottom:0.5px solid var(--border);padding:9px 14px;flex-shrink:0;display:flex;align-items:center;gap:10px}
+.rb{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.krow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.kc{background:var(--s1);border-radius:var(--r);padding:9px 11px;border:0.5px solid var(--border)}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:2px}
+.kv{font-size:15px;font-weight:500}
+.ks{font-size:10px;color:var(--txt3);margin-top:1px}
+.pn{background:var(--s2);border:0.5px solid var(--border);border-radius:10px;overflow:hidden}
+.pnh{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.pnh-t{font-size:12px;font-weight:500}
+.pnh-m{font-size:10px;color:var(--txt3);margin-left:auto}
+.ib{padding:9px 12px;border-radius:var(--r);font-size:11px;display:flex;align-items:flex-start;gap:7px;line-height:1.6}
+.ib-ok{background:var(--bg-ok);color:#1D6E52}.ib-wn{background:var(--bg-wn);color:#854F0B}.ib-dn{background:var(--bg-dn);color:#9B1C1C}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;color:var(--txt3);font-weight:500;text-align:left;padding:6px 10px;background:var(--s1);border-bottom:0.5px solid var(--border)}
+td{font-size:11px;padding:6px 10px;border-bottom:0.5px solid var(--border);color:var(--txt)}
+tr:last-child td{border-bottom:none}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:500}
+.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span class="pt">가상 발주 시뮬레이터</span>
+    <span style="font-size:11px;padding:3px 8px;background:var(--bg-ac);border-radius:99px;color:var(--acc)">실제 DB에 반영되지 않음</span>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn" onclick="resetAll()">↺ 초기화</button>
+      <button class="btns btn">✓ 실제 발주 등록</button>
+    </div>
+  </div>
+  <div class="body">
+    <aside class="ctrl">
+      <div class="ch"><div class="ch-t">시뮬레이션 설정</div><div class="ch-s">슬라이더 조정 → 실시간 반영</div></div>
+      <div class="ctrl-body">
+        <div><div style="font-size:10px;color:var(--txt3);margin-bottom:4px;font-weight:500">품목 선택</div>
+          <select class="sel" id="item-sel" onchange="onItemChange()">
+            <option value="0">E01010001 · 후방카메라 LCD</option>
+            <option value="1">U01010001 · SUS304 탱크바디</option>
+            <option value="2">S02010004 · 압력센서 100bar</option>
+            <option value="3">V02040001 · 오링 Ø25 NBR</option>
+            <option value="4">T01020001 · 앤드캡 Ø16</option>
+            <option value="5">V01030001 · 볼트 M6×12</option>
+          </select>
+        </div>
+        <div class="sw">
+          <div class="sw-row"><span class="sw-lbl">📦 발주량</span><span class="sw-val" id="v-qty">100개</span></div>
+          <input type="range" id="s-qty" min="10" max="500" step="10" value="100" oninput="sim()">
+          <div class="sw-sub" id="sub-qty">—</div>
+        </div>
+        <div class="sw">
+          <div class="sw-row"><span class="sw-lbl">📅 발주 시점</span><span class="sw-val" id="v-when">오늘</span></div>
+          <input type="range" id="s-when" min="0" max="60" step="1" value="0" oninput="sim()">
+          <div class="sw-sub" id="sub-when">—</div>
+        </div>
+        <div class="sw">
+          <div class="sw-row"><span class="sw-lbl">🚚 리드타임 조정</span><span class="sw-val" id="v-lt">—일</span></div>
+          <input type="range" id="s-lt" min="-20" max="30" step="1" value="0" oninput="sim()">
+          <div class="sw-sub" id="sub-lt">—</div>
+        </div>
+        <div class="sw">
+          <div class="sw-row"><span class="sw-lbl">📈 수요 변동</span><span class="sw-val" id="v-demand">+0%</span></div>
+          <input type="range" id="s-demand" min="-30" max="50" step="5" value="0" oninput="sim()">
+          <div class="sw-sub" id="sub-demand">—</div>
+        </div>
+        <div style="background:var(--s2);border-radius:var(--r);padding:9px 11px;border:0.5px solid var(--border)">
+          <div style="font-size:10px;font-weight:500;margin-bottom:5px;color:var(--txt3)">기본값</div>
+          <div id="base-info"></div>
+        </div>
+      </div>
+      <div class="ctrl-foot">
+        <div style="font-size:10px;color:var(--txt3);text-align:center">결과 요약</div>
+        <div id="ctrl-summary"></div>
+      </div>
+    </aside>
+    <div class="result">
+      <div class="rh">
+        <span style="font-size:13px;font-weight:500">시뮬레이션 결과</span>
+        <span id="rh-badge" class="bg bok" style="font-size:11px">안전</span>
+        <span id="rh-desc" style="font-size:11px;color:var(--txt3);margin-left:4px"></span>
+      </div>
+      <div class="rb" id="result-body"></div>
+    </div>
+  </div>
+</div>
+<script>
+const BASE=[
+  {pid:'E01010001',nm:'후방카메라 LCD',stock:8,daily:0.5,ss:16,rop:48,lt:64,price:2178,minQty:50},
+  {pid:'U01010001',nm:'SUS304 탱크바디',stock:3,daily:0.12,ss:5,rop:7,lt:14,price:1850,minQty:5},
+  {pid:'S02010004',nm:'압력센서 100bar',stock:180,daily:2.8,ss:25,rop:142,lt:42,price:200,minQty:30},
+  {pid:'V02040001',nm:'오링 Ø25 NBR',stock:180,daily:6.0,ss:200,rop:242,lt:7,price:8,minQty:100},
+  {pid:'T01020001',nm:'앤드캡 Ø16',stock:1240,daily:14.0,ss:1000,rop:1070,lt:5,price:6,minQty:500},
+  {pid:'V01030001',nm:'볼트 M6×12',stock:5600,daily:18.0,ss:3000,rop:3054,lt:3,price:4.2,minQty:1000},
+];
+let selIdx=0;
+function getItem(){return BASE[selIdx];}
+function addDays(d){const b=new Date(2025,11,8);b.setDate(b.getDate()+d);return`${b.getMonth()+1}/${b.getDate()}`;}
+function sim(){
+  const item=getItem();
+  const qty=parseInt(document.getElementById('s-qty').value);
+  const when=parseInt(document.getElementById('s-when').value);
+  const ltAdj=parseInt(document.getElementById('s-lt').value);
+  const dAdj=parseInt(document.getElementById('s-demand').value);
+  const realLt=item.lt+ltAdj;
+  const realD=item.daily*(1+dAdj/100);
+  const arrive=when+realLt;
+  document.getElementById('v-qty').textContent=qty+'개';
+  document.getElementById('v-when').textContent=when===0?'오늘':'D+'+when;
+  document.getElementById('v-lt').textContent=realLt+'일';
+  document.getElementById('v-demand').textContent=(dAdj>=0?'+':'')+dAdj+'%';
+  document.getElementById('sub-qty').textContent=`MOQ ${item.minQty}개 · 비용 ${(qty*item.price/10000).toFixed(1)}만원`;
+  document.getElementById('sub-when').textContent=`발주 ${addDays(when)} → 입고 ${addDays(arrive)}`;
+  document.getElementById('sub-lt').textContent=`표준 ${item.lt}일 대비 ${ltAdj>=0?'+':''}${ltAdj}일`;
+  document.getElementById('sub-demand').textContent=`일사용 ${realD.toFixed(2)}개/일`;
+  const months=[];let cur=item.stock;
+  for(let m=0;m<12;m++){
+    const s=m*30,e=(m+1)*30;
+    const used=realD*30;
+    let rcv=0;if(arrive>=s&&arrive<e)rcv=qty;
+    const before=cur;cur=Math.max(0,cur-used)+rcv;
+    months.push({m,before:Math.round(before),after:Math.round(cur),used:Math.round(used),rcv:Math.round(rcv)});
+  }
+  let stock2=item.stock,depDay=null;
+  for(let d=0;d<365;d++){stock2-=realD;if(d===arrive)stock2+=qty;if(stock2<=0&&depDay===null)depDay=d;}
+  const hasGap=depDay!==null&&depDay<arrive;
+  const atArrive=Math.max(0,item.stock-realD*arrive);
+  const afterArrive=atArrive+qty;
+  const ms=Math.round(afterArrive/realD/30*10)/10;
+  let status='ok',stTxt='안전',stCls='bok';
+  if(hasGap){status='dn';stTxt='재고 공백 발생';stCls='bdn';}
+  else if(atArrive<item.ss){status='wn';stTxt='입고 시 SS 미달';stCls='bwn';}
+  else if(ms<2){status='wn';stTxt='재고 부족 위험';stCls='bwn';}
+  document.getElementById('rh-badge').className='bg '+stCls;
+  document.getElementById('rh-badge').textContent=stTxt;
+  document.getElementById('rh-desc').textContent=`발주 ${qty}개 · D+${when} · ${realLt}일 리드타임`;
+  document.getElementById('ctrl-summary').innerHTML=[
+    ['입고 예정일',`<span style="font-weight:500;color:var(--acc)">${addDays(arrive)}</span>`],
+    ['입고 시 재고',`<span style="font-weight:500;color:${atArrive<item.ss?'var(--dn)':'var(--ok)'}">${Math.round(atArrive)}→${Math.round(afterArrive)}개</span>`],
+    ['발주 비용',`${(qty*item.price/10000).toFixed(1)}만원`],
+    ['재고 유지',`<span style="color:${ms<1?'var(--dn)':ms<2?'var(--wn)':'var(--ok)'}">${ms}개월</span>`],
+  ].map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--txt3)">${k}</span><span>${v}</span></div>`).join('');
+  const maxStock=Math.max(...months.map(m=>Math.max(m.before,m.after)),item.ss*2,qty+item.stock);
+  const MN=['12월','1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월'];
+  let barsHTML='<div style="display:flex;align-items:flex-end;gap:3px;height:100px;padding:2px 2px 0">';
+  months.forEach((mo,i)=>{
+    const bH=Math.max(2,Math.round(mo.after/maxStock*96));
+    const bc=mo.after<=0?'var(--dn)':mo.after<item.ss?'rgba(224,75,74,.5)':mo.after<item.rop?'var(--wn)':'var(--acc)';
+    const isA=arrive>=i*30&&arrive<(i+1)*30;
+    barsHTML+=`<div style="display:flex;flex-direction:column;align-items:center;flex:1">
+      <div style="font-size:7px;font-weight:500;color:${mo.after<=0?'var(--dn)':'var(--txt3)'};margin-bottom:1px">${mo.after>0?mo.after:0}</div>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${bH}px;background:${bc};border-radius:2px 2px 0 0;${isA?'outline:2px solid var(--acc)':''}"></div>
+      </div>
+      <div style="font-size:8px;color:var(--txt3);margin-top:3px">${MN[i]}</div>
+    </div>`;
+  });
+  barsHTML+='</div>';
+  const ibCls=status==='ok'?'ib-ok':status==='wn'?'ib-wn':'ib-dn';
+  const ibMsg=status==='ok'?`입고 후 <b>${Math.round(afterArrive)}개</b> 확보 · ${ms}개월 유지`:hasGap?`<b>재고 공백!</b> ${depDay}일째 소진 → ${arrive}일 입고 (${arrive-depDay}일 공백)`:
+    `입고 시 안전재고(${item.ss}개) 미달 · 발주 시점 앞당기세요`;
+  document.getElementById('result-body').innerHTML=`
+    <div class="ib ${ibCls}"><span>${status==='ok'?'✅':status==='wn'?'⚠️':'🚨'}</span><div>${ibMsg}</div></div>
+    <div class="krow">
+      <div class="kc"><div class="kl">발주량</div><div class="kv" style="color:var(--acc)">${qty}개</div><div class="ks">${(qty*item.price/10000).toFixed(1)}만원</div></div>
+      <div class="kc"><div class="kl">입고 예정</div><div class="kv" style="font-size:13px">${addDays(arrive)}</div><div class="ks">D+${arrive}일</div></div>
+      <div class="kc"><div class="kl">입고 시 재고</div><div class="kv" style="color:${atArrive<item.ss?'var(--dn)':'var(--ok)'}">${Math.round(afterArrive)}개</div><div class="ks">전 ${Math.round(atArrive)}</div></div>
+      <div class="kc"><div class="kl">재고 유지</div><div class="kv" style="color:${ms<1?'var(--dn)':ms<2?'var(--wn)':'var(--ok)'}">${ms}개월</div></div>
+    </div>
+    <div class="pn">
+      <div class="pnh"><span class="pnh-t">📊 월별 재고 시뮬레이션</span>
+        <div style="display:flex;gap:8px;font-size:10px;color:var(--txt3);margin-left:auto">
+          <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:var(--acc);display:inline-block"></span>정상</span>
+          <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:var(--wn);display:inline-block"></span>주의</span>
+          <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:var(--dn);display:inline-block"></span>위험</span>
+        </div>
+      </div>
+      <div style="padding:10px 12px">${barsHTML}</div>
+    </div>
+    <div class="two">
+      <div class="pn">
+        <div class="pnh"><span class="pnh-t">기준 vs 시뮬 비교</span></div>
+        ${[['발주량',`${Math.round(item.ss*6)}개`,`${qty}개`,qty>item.ss*3?'var(--ok)':'var(--dn)'],
+           ['리드타임',`${item.lt}일`,`${realLt}일`,ltAdj<=0?'var(--ok)':'var(--wn)'],
+           ['재고유지',`${Math.round((item.stock+item.ss*6)/item.daily/30*10)/10}개월`,`${ms}개월`,ms>=3?'var(--ok)':ms>=1?'var(--wn)':'var(--dn)'],
+        ].map(([k,b,a,c])=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:11px"><span style="width:55px;color:var(--txt3);font-size:10px">${k}</span><span style="color:var(--txt3)">${b}</span><span style="color:var(--txt3);margin:0 4px;font-size:10px">→</span><span style="font-weight:500;color:${c}">${a}</span></div>`).join('')}
+      </div>
+      <div class="pn">
+        <div class="pnh"><span class="pnh-t">월별 상세 (6개월)</span></div>
+        <table><thead><tr><th>월</th><th>사용</th><th>입고</th><th>월말재고</th></tr></thead>
+        <tbody>${months.slice(0,6).map((mo,i)=>{
+          const mn=MN[i];const isA=arrive>=i*30&&arrive<(i+1)*30;
+          return`<tr style="${isA?'background:var(--bg-ac)':''}"><td style="color:${isA?'var(--acc)':'var(--txt)'}">${mn}${isA?'📦':''}</td><td style="color:var(--txt3)">${mo.used}</td><td style="color:${mo.rcv>0?'var(--ok)':'var(--txt3)'}">${mo.rcv>0?'+'+mo.rcv:'—'}</td><td style="font-weight:500;color:${mo.after<=0?'var(--dn)':mo.after<item.ss?'var(--dn)':mo.after<item.rop?'var(--wn)':'var(--ok)'}">${mo.after}</td></tr>`;
+        }).join('')}</tbody></table>
+      </div>
+    </div>`;
+}
+document.getElementById('base-info').innerHTML='';
+function onItemChange(){
+  selIdx=parseInt(document.getElementById('item-sel').value);
+  const item=getItem();
+  document.getElementById('s-qty').value=Math.min(500,Math.round(item.ss*6/10)*10);
+  document.getElementById('s-lt').value=0;
+  document.getElementById('s-demand').value=0;
+  document.getElementById('s-when').value=0;
+  document.getElementById('base-info').innerHTML=[
+    ['현재고',item.stock+'개'],['안전재고',item.ss+'개'],['리드타임',item.lt+'일'],['일사용',item.daily+'개/일'],['단가',item.price+'원'],
+  ].map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0"><span style="color:var(--txt3)">${k}</span><span style="font-weight:500">${v}</span></div>`).join('');
+  sim();
+}
+function resetAll(){document.getElementById('item-sel').value='0';selIdx=0;onItemChange();}
+onItemChange();
+</script>
+</body>
+</html>

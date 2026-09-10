@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><i class="ti ti-calendar" style="margin-right:6px;color:var(--fill-accent)"></i>발주 캘린더</div>
+    <div class="page-subtitle">D-Day · 입고예정 일정</div>
+  </div>
+  <div class="page-actions">
+      <a href="/purchase" class="btn"><i class="ti ti-truck-delivery"></i>구매 발주</a>
+      <a href="/risk-radar" class="btn"><i class="ti ti-radar"></i>리스크 레이더</a>
+  </div>
+</div>
+
+<!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
+<div style="flex:1;display:flex;flex-direction:column;gap:14px">
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    <span>이 화면은 <strong>발주 캘린더</strong> 기능을 제공합니다. 아래 패널에서 모든 기능을 이용하세요.</span>
+  </div>
+  <div style="flex:1;border-radius:12px;overflow:hidden;border:0.5px solid var(--border);min-height:580px">
+    <iframe
+      src="/embed/calendar"
+      style="width:100%;height:100%;min-height:580px;border:none;display:block"
+      title="발주 캘린더">
+    </iframe>
+  </div>
+</div>
+{% endblock %}

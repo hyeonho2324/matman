@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABC 분석</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.ac{color:var(--acc)}.kv.dn{color:var(--dn)}
+
+/* 파레토 차트 */
+.chartbox{padding:10px 14px 4px;border-bottom:0.5px solid var(--border);flex-shrink:0;background:var(--s0)}
+.charthead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.charthead .t{font-size:11px;font-weight:500}
+.leg{display:flex;gap:10px;margin-left:auto;font-size:10px;color:var(--txt3);flex-wrap:wrap}
+.leg span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+svg{display:block;width:100%;height:132px}
+
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
+.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:150px;color:var(--txt)}
+.cnt{font-size:11px;color:var(--txt3)}
+
+.tblwrap{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
+thead th.num{text-align:right}
+tbody td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tbody td.num{text-align:right}
+tbody tr.hl{background:var(--bg-ac)}
+.rk{font-size:11px;color:var(--txt3);font-variant-numeric:tabular-nums}
+.pid{color:var(--acc);font-weight:500;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.gr{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;font-size:10px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
+.mini{height:4px;border-radius:2px;background:var(--s2);overflow:hidden;margin-top:3px;width:70px;margin-left:auto}
+.mini i{display:block;height:100%;border-radius:2px}
+.arrow{color:var(--txt3);margin:0 3px}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+.foot{padding:8px 14px;border-top:0.5px solid var(--border);background:var(--s1);font-size:10px;color:var(--txt3);line-height:1.7;flex-shrink:0}
+
+@media(max-width:820px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .hide-sm{display:none}
+  svg{height:104px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-chart-bar" style="color:var(--acc)"></i>ABC 분석 · 파레토
+      <span class="tag">실제 DB · 불출이력 기준 {{ summary.total }}종</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-coin"></i>총 사용금액</div>
+      <div class="kv">{{ (summary.total_amount / 100000000) | round(1) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
+      <div class="ks">불출수량 × 단가</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-trending-up"></i>상위 20% 비중</div>
+      <div class="kv ac">{{ summary.top20_share }}<span style="font-size:11px">%</span></div>
+      <div class="ks">파레토 집중도</div>
+    </div>
+    {% for g in ['A','B','C'] %}
+    <div class="kpi">
+      <div class="kl"><span class="gr gr{{ g }}">{{ g }}</span>{{ g }}등급</div>
+      <div class="kv">{{ summary.by_grade[g].count }}<span style="font-size:11px;color:var(--txt3)">종</span></div>
+      <div class="ks">{{ (summary.by_grade[g].amount / 100000000) | round(2) }}억 · {{ summary.by_grade[g].share }}%</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="chartbox">
+    <div class="charthead">
+      <span class="t">사용금액 파레토 (전 {{ summary.total }}종, 금액 내림차순)</span>
+      <span class="leg">
+        <span><i class="sw" style="background:#E24B4A"></i>A</span>
+        <span><i class="sw" style="background:#EF9F27"></i>B</span>
+        <span><i class="sw" style="background:#1D9E75"></i>C</span>
+        <span><i class="sw" style="background:#2a78d6;height:2px;border-radius:0"></i>누적비율</span>
+      </span>
+    </div>
+    <svg id="chart" viewBox="0 0 1000 132" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="filter-bar">
+    <button class="pill on" data-f="all"     onclick="setF('all')">전체</button>
+    <button class="pill"    data-f="A"       onclick="setF('A')">A등급</button>
+    <button class="pill"    data-f="B"       onclick="setF('B')">B등급</button>
+    <button class="pill"    data-f="C"       onclick="setF('C')">C등급</button>
+    <button class="pill"    data-f="missing" onclick="setF('missing')">결측 채움 {{ summary.missing }}</button>
+    <button class="pill"    data-f="changed" onclick="setF('changed')">점수 변동 {{ summary.changed }}</button>
+    <button class="pill"    data-f="gradech" onclick="setF('gradech')">등급 변동 {{ summary.grade_changed }}</button>
+    <span class="cnt" id="cnt"></span>
+    <div class="search">
+      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+      <input id="q" placeholder="품번 · 품명 · 협력사" oninput="render()">
+    </div>
+  </div>
+
+  <div class="tblwrap">
+    <table>
+      <thead><tr>
+        <th class="num">순위</th>
+        <th>자재코드</th>
+        <th>자재명 / 규격</th>
+        <th class="hide-sm">협력사</th>
+        <th class="num">불출량</th>
+        <th class="num">사용금액</th>
+        <th class="num hide-sm">구성비</th>
+        <th class="num">누적비</th>
+        <th>Usage 산정</th>
+        <th class="hide-sm">ABC 등급</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <b>산정 규칙</b> — 사용금액 = 불출수량 × 단가. 금액 내림차순 정렬 후 누적비율
+    <b>{{ summary.cut.A }}%</b> 이내 → A(3점), <b>{{ summary.cut.B }}%</b> 이내 → B(2점), 나머지 → C(1점).
+    사용실적이 없는 {{ summary.no_use }}종은 C로 분류.<br>
+    이 Usage 점수를 나머지 4개 항목(단가·대체가능성·품절영향·공급안정성)과 합산해 최종 ABC 등급을 재판정한다 (컷오프 13/8/7).
+  </div>
+</div>
+
+<script>
+const ROWS = {{ rows|tojson }};
+const SUM  = {{ summary|tojson }};
+
+let filter='all', hl=null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const GC  = {A:'#E24B4A', B:'#EF9F27', C:'#1D9E75'};
+
+// ── 파레토 차트 (SVG 직접 그리기) ──
+function drawChart(){
+  const W=1000, H=132, pad={t:6,b:14,l:0,r:0};
+  const n=ROWS.length;
+  const bw=(W-pad.l-pad.r)/n;
+  const maxAmt=Math.max.apply(null, ROWS.map(function(r){return r.amount||0;})) || 1;
+  const plotH=H-pad.t-pad.b;
+  let bars='', line='', marks='';
+
+  ROWS.forEach(function(r,i){
+    const h=(r.amount||0)/maxAmt*plotH;
+    const x=pad.l+i*bw;
+    bars+='<rect x="'+x.toFixed(2)+'" y="'+(pad.t+plotH-h).toFixed(2)+'" width="'+Math.max(bw-0.4,0.5).toFixed(2)
+        + '" height="'+h.toFixed(2)+'" fill="'+GC[r.calc_usage_grade]+'" opacity="'+(hl===r.P_ID?1:.78)+'">'
+        + '<title>'+r.rank+'. '+r.P_ID+' '+(r.P_N||'')+'\n'+won(r.amount||0)+'원 (누적 '+r.cum_share+'%)</title></rect>';
+    const px=(x+bw/2).toFixed(2);
+    const py=(pad.t+plotH-(r.cum_share/100*plotH)).toFixed(2);
+    line+=(i?' L':'M')+px+' '+py;
+  });
+
+  // 75% / 90% 컷 라인
+  [[SUM.cut.A,'A'],[SUM.cut.B,'B']].forEach(function(p){
+    const y=(pad.t+plotH-(p[0]/100*plotH)).toFixed(2);
+    marks+='<line x1="0" y1="'+y+'" x2="'+W+'" y2="'+y+'" stroke="#898781" stroke-width="0.8" stroke-dasharray="4 3" opacity=".65"/>'
+         + '<text x="6" y="'+(y-3)+'" font-size="9" fill="#898781">누적 '+p[0]+'% — '+p[1]+'등급 경계</text>';
+  });
+  // 등급 경계 세로선
+  ['A','B'].forEach(function(g){
+    const last=ROWS.filter(function(r){return r.calc_usage_grade===g;}).length;
+    const idx=(g==='A'?last:ROWS.filter(function(r){return r.calc_usage_grade==='A'||r.calc_usage_grade==='B';}).length);
+    const x=(pad.l+idx*bw).toFixed(2);
+    marks+='<line x1="'+x+'" y1="'+pad.t+'" x2="'+x+'" y2="'+(pad.t+plotH)+'" stroke="#B8B7B2" stroke-width="0.8"/>'
+         + '<text x="'+(+x+4)+'" y="'+(pad.t+10)+'" font-size="9" fill="#898781">'+idx+'종</text>';
+  });
+
+  document.getElementById('chart').innerHTML =
+      marks
+    + bars
+    + '<path d="'+line+'" fill="none" stroke="#2a78d6" stroke-width="1.6"/>'
+    + '<line x1="0" y1="'+(pad.t+plotH)+'" x2="'+W+'" y2="'+(pad.t+plotH)+'" stroke="#D4D3CE" stroke-width="1"/>';
+}
+
+function view(){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  return ROWS.filter(function(x){
+    if(['A','B','C'].indexOf(filter)>=0 && x.calc_usage_grade!==filter) return false;
+    if(filter==='missing' && !x.is_missing)     return false;
+    if(filter==='changed' && !x.changed)        return false;
+    if(filter==='gradech' && !x.grade_changed)  return false;
+    if(q){
+      const hay=(x.P_ID+' '+(x.P_N||'')+' '+(x.Spec||'')+' '+(x.supplier||'')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+}
+
+function render(){
+  const r=view();
+  document.getElementById('cnt').textContent=r.length+'종 표시';
+  const tb=document.getElementById('tb');
+  if(!r.length){
+    tb.innerHTML='<tr><td colspan="10"><div class="empty">조건에 맞는 자재가 없습니다.</div></td></tr>';
+    return;
+  }
+  const maxShare=Math.max.apply(null, r.map(function(x){return x.share||0;})) || 1;
+
+  tb.innerHTML=r.map(function(x){
+    // Usage 점수 산정 결과 표시
+    let usage;
+    if(x.is_missing){
+      usage='<span class="bg bac">신규</span><span class="arrow">→</span><b>'+x.calc_usage_score+'</b>';
+    }else if(x.changed){
+      usage='<span style="color:var(--txt3)">'+x.usage_score+'</span><span class="arrow">→</span><b>'+x.calc_usage_score+'</b>';
+    }else{
+      usage='<span style="color:var(--txt3)">'+x.calc_usage_score+' 유지</span>';
+    }
+    // 최종 ABC 등급 변동
+    let gradeCell='-';
+    if(x.grade){
+      gradeCell = x.grade_changed
+        ? '<span class="gr gr'+x.grade+'" style="opacity:.5">'+x.grade+'</span><span class="arrow">→</span>'
+          + '<span class="gr gr'+x.new_grade+'">'+x.new_grade+'</span>'
+          + ' <span class="bg bwn">변동</span>'
+        : '<span class="gr gr'+x.grade+'">'+x.grade+'</span>';
+    }
+    return '<tr class="' + (hl===x.P_ID?'hl':'') + '" onmouseenter="hover(\'' + x.P_ID + '\')">'
+      + '<td class="num rk">' + x.rank + '</td>'
+      + '<td><span class="pid">' + x.P_ID + '</span></td>'
+      + '<td><div class="nm">' + esc(x.P_N) + '</div><div class="sp">' + esc(x.Spec) + '</div></td>'
+      + '<td class="hide-sm">' + esc(x.supplier||'-')
+      +   (x.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</td>'
+      + '<td class="num">' + nf(x.used_qty) + '</td>'
+      + '<td class="num">' + won(x.amount||0) + '원</td>'
+      + '<td class="num hide-sm">' + (x.share||0).toFixed(2) + '%'
+      +   '<div class="mini"><i style="width:' + ((x.share||0)/maxShare*100) + '%;background:' + GC[x.calc_usage_grade] + '"></i></div></td>'
+      + '<td class="num">' + (x.cum_share||0).toFixed(1) + '%</td>'
+      + '<td><span class="gr gr' + x.calc_usage_grade + '">' + x.calc_usage_grade + '</span> ' + usage + '</td>'
+      + '<td class="hide-sm">' + gradeCell + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function hover(pid){ hl=pid; drawChart(); }
+function setF(f){
+  filter=f;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+function dl(){
+  const r=view();
+  const head=['순위','자재코드','자재명','규격','협력사','불출량','사용금액','구성비(%)','누적비(%)','기존Usage','산정Usage','기존등급','재산정등급'];
+  const lines=[head.join(',')];
+  r.forEach(function(x){
+    lines.push([x.rank,x.P_ID,x.P_N,x.Spec,x.supplier,x.used_qty,Math.round(x.amount||0),x.share,x.cum_share,
+                (x.usage_score==null?'(없음)':x.usage_score),x.calc_usage_score,x.grade,x.new_grade]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='ABC분석_파레토.csv';
+  a.click();
+}
+
+drawChart();
+render();
+</script>
+</body>
+</html>

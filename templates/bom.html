@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><i class="ti ti-sitemap" style="margin-right:6px;color:var(--fill-accent)"></i>BOM 관리</div>
+    <div class="page-subtitle">완제품 15종 · 부품 200항목</div>
+  </div>
+  <div class="page-actions">
+      <a href="/products" class="btn"><i class="ti ti-package"></i>자재 목록</a>
+      <a href="/production" class="btn"><i class="ti ti-tool"></i>생산 실적</a>
+  </div>
+</div>
+
+<!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
+<div style="flex:1;display:flex;flex-direction:column;gap:14px">
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    <span>이 화면은 <strong>BOM 관리</strong> 기능을 제공합니다. 아래 패널에서 모든 기능을 이용하세요.</span>
+  </div>
+  <div style="flex:1;border-radius:12px;overflow:hidden;border:0.5px solid var(--border);min-height:580px">
+    <iframe
+      src="/embed/bom"
+      style="width:100%;height:100%;min-height:580px;border:none;display:block"
+      title="BOM 관리">
+    </iframe>
+  </div>
+</div>
+{% endblock %}

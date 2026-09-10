@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} · 자재관리 시스템</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- 사이드바 -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon"><i class="ti ti-building-warehouse"></i></div>
+    <div class="sb-logo-text">
+      <div class="sb-logo-title">MatMan</div>
+      <div class="sb-logo-sub">자재관리 시스템</div>
+    </div>
+    <button class="sb-collapse-btn" id="sidebar-toggle" title="사이드바 접기">
+      <i class="ti ti-layout-sidebar-left-collapse"></i>
+    </button>
+  </div>
+
+  <nav class="sb-nav">
+    {% for group in menus %}
+    <div class="sb-group">
+      <div class="sb-group-label">{{ group.group }}</div>
+      {% for item in group.menu_items %}
+      <a href="{{ item.url }}" class="sb-item {% if item.id == active_id %}active{% endif %}" data-id="{{ item.id }}">
+        <i class="ti {{ item.icon }} sb-item-icon"></i>
+        <span class="sb-item-label">{{ item.label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </nav>
+
+  <div class="sb-footer">
+    <div class="sb-user">
+      <div class="sb-user-avatar">최</div>
+      <div class="sb-user-info">
+        <div class="sb-user-name">최관리</div>
+        <div class="sb-user-role">자재 관리자</div>
+      </div>
+      <a href="/users" class="sb-user-settings"><i class="ti ti-settings"></i></a>
+    </div>
+  </div>
+</aside>
+
+<!-- 메인 영역 -->
+<div class="main-wrap" id="main-wrap">
+
+  <!-- 상단 헤더 -->
+  <header class="topbar">
+    <button class="topbar-menu-btn" id="mobile-toggle">
+      <i class="ti ti-menu-2"></i>
+    </button>
+    <div class="topbar-breadcrumb">
+      <span class="tb-home"><i class="ti ti-home"></i></span>
+      <span class="tb-sep">/</span>
+      <span class="tb-current">{{ page_title }}</span>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-search">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="품번, LOT, 협력사 검색..." class="topbar-search-inp">
+      </div>
+      <button class="topbar-icon-btn" title="알림">
+        <i class="ti ti-bell"></i>
+        <span class="notif-badge">3</span>
+      </button>
+      <button class="topbar-icon-btn" title="납기 리스크">
+        <i class="ti ti-radar" style="color:#E24B4A"></i>
+      </button>
+      <button class="topbar-icon-btn" title="스캐너">
+        <i class="ti ti-scan"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- 페이지 콘텐츠 -->
+  <main class="page-content">
+    {% block content %}{% endblock %}
+  </main>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

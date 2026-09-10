@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>납기 리스크 레이더</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit}
+.btn:hover{background:var(--s1)}
+.btnp{background:var(--acc);color:#fff;border-color:transparent}
+.body{flex:1;display:flex;overflow:hidden}
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:10px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500}
+.ks{font-size:10px;color:var(--txt3);margin-top:2px}
+.filter-bar{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.main{flex:1;display:flex;overflow:hidden}
+.risk-list{flex:1;overflow-y:auto}
+.detail{width:300px;border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.dh{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.dh-t{font-size:12px;font-weight:500;margin-bottom:2px}
+.dh-s{font-size:10px;color:var(--txt3)}
+.detail-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.risk-card{display:flex;align-items:stretch;border-bottom:0.5px solid var(--border);cursor:pointer}
+.risk-card:hover{background:var(--s1)}
+.risk-card.on{background:var(--bg-ac)}
+.rc-level{width:5px;flex-shrink:0}
+.lv-crit{background:var(--dn)}.lv-high{background:var(--wn)}.lv-mid{background:var(--acc)}.lv-ok{background:var(--ok)}
+.rc-body{flex:1;padding:9px 12px;min-width:0}
+.rc-row1{display:flex;align-items:center;gap:7px;margin-bottom:4px;flex-wrap:wrap}
+.rc-pid{font-size:11px;font-weight:500;color:var(--acc)}
+.rc-nm{font-size:11px;color:var(--txt2)}
+.rc-row2{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px}
+.rc-stat{background:var(--s2);border-radius:var(--r);padding:4px 7px;border:0.5px solid var(--border)}
+.rsl{font-size:9px;color:var(--txt3);margin-bottom:1px}
+.rsv{font-size:11px;font-weight:500}
+.rc-timeline{position:relative;height:24px}
+.tl-track{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:var(--s0);border:0.5px solid var(--border);top:50%;transform:translateY(-50%)}
+.tl-sf{position:absolute;height:5px;border-radius:3px 0 0 3px;top:50%;transform:translateY(-50%)}
+.tl-m{position:absolute;width:2px;height:14px;top:50%;transform:translateY(-50%)}
+.tl-lbl{position:absolute;font-size:9px;top:0;white-space:nowrap}
+.tl-gap{position:absolute;height:5px;top:50%;transform:translateY(-50%);border-radius:0 3px 3px 0}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:500}
+.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}.bdn{background:var(--bg-dn);color:#9B1C1C}.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.pn{background:var(--s2);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{padding:7px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px}
+.pnh-t{font-size:11px;font-weight:500}
+.ir{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;border-bottom:0.5px solid var(--border);font-size:11px}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);font-size:10px}.iv{font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span class="pt">납기 리스크 레이더</span>
+    <span style="font-size:11px;color:var(--txt3)">기준일: 2025-12-08</span>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn"><i class="ti ti-refresh"></i>재계산</button>
+      <button class="btn btnp"><i class="ti ti-bell"></i>알림 설정</button>
+    </div>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kl"><span style="width:8px;height:8px;border-radius:50%;background:var(--dn);display:inline-block"></span>위험</div><div class="kv" style="color:var(--dn)" id="kpi-crit">0</div><div class="ks">재고공백 발생</div></div>
+    <div class="kpi"><div class="kl"><span style="width:8px;height:8px;border-radius:50%;background:var(--wn);display:inline-block"></span>경고</div><div class="kv" style="color:var(--wn)" id="kpi-high">0</div><div class="ks">여유 7일 미만</div></div>
+    <div class="kpi"><div class="kl"><span style="width:8px;height:8px;border-radius:50%;background:var(--acc);display:inline-block"></span>주의</div><div class="kv" style="color:var(--acc)" id="kpi-mid">0</div><div class="ks">7~30일 여유</div></div>
+    <div class="kpi"><div class="kl"><span style="width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block"></span>안전</div><div class="kv" style="color:var(--ok)" id="kpi-safe">0</div><div class="ks">30일 이상</div></div>
+    <div class="kpi"><div class="kl">발주미등록</div><div class="kv" style="color:var(--dn)" id="kpi-nopo">0</div><div class="ks">재고부족+미발주</div></div>
+  </div>
+  <div class="filter-bar">
+    <span style="font-size:11px;color:var(--txt3)">필터:</span>
+    <div class="pill on" data-f="all">전체</div>
+    <div class="pill" data-f="crit">위험</div>
+    <div class="pill" data-f="high">경고</div>
+    <div class="pill" data-f="mid">주의</div>
+    <div class="pill" data-f="safe">안전</div>
+    <div class="pill" data-f="nopo">발주미등록</div>
+    <span style="margin-left:auto;font-size:11px;color:var(--txt3)" id="list-count"></span>
+  </div>
+  <div class="main">
+    <div class="risk-list" id="risk-list"></div>
+    <div class="detail">
+      <div class="dh"><div class="dh-t" id="dh-t">품목을 선택하세요</div><div class="dh-s" id="dh-s">클릭 시 상세 분석 표시</div></div>
+      <div class="detail-body" id="detail-body"><div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px"><i class="ti ti-radar" style="font-size:28px;display:block;margin-bottom:8px"></i>좌측 품목 클릭</div></div>
+    </div>
+  </div>
+</div>
+<script>
+const TODAY=0;
+const ITEMS=[
+  {pid:'E01010001',nm:'후방카메라 LCD',spec:'CMOS 1/3" 720P',grade:'A',stock:8,daily:0.5,ss:16,lt:64,po:'PO202512010001',po_arrive:57,po_qty:100,sup:'글로벌디스플레이'},
+  {pid:'E01010003',nm:'후방카메라 1080P',spec:'CMOS 1/2.7"',grade:'A',stock:24,daily:0.8,ss:35,lt:64,po:'PO202512010001',po_arrive:57,po_qty:80,sup:'글로벌디스플레이'},
+  {pid:'U01010001',nm:'SUS304 탱크바디',spec:'50L',grade:'A',stock:3,daily:0.12,ss:5,lt:14,po:null,po_arrive:null,po_qty:0,sup:'전진탱크산업'},
+  {pid:'V02040001',nm:'오링 Ø25 NBR',spec:'70°',grade:'B',stock:180,daily:6.0,ss:200,lt:7,po:'PO202512030002',po_arrive:3,po_qty:500,sup:'삼양오링'},
+  {pid:'E01010002',nm:'LCD CMOS 1/4"',spec:'480P',grade:'A',stock:76,daily:2.5,ss:13,lt:64,po:'PO202511100002',po_arrive:36,po_qty:80,sup:'글로벌디스플레이'},
+  {pid:'S02010001',nm:'압력센서 5bar',spec:'본체',grade:'A',stock:18,daily:0.6,ss:25,lt:42,po:'PO202511100003',po_arrive:0,po_qty:50,sup:'비테스코센서'},
+  {pid:'E01040003',nm:'가스켓 좌측',spec:'Type-C',grade:'B',stock:55,daily:0.5,ss:60,lt:7,po:'PO202512120001',po_arrive:4,po_qty:200,sup:'경진케미컬'},
+  {pid:'T01010001',nm:'고무호스 단관',spec:'Ø16',grade:'B',stock:50,daily:1.8,ss:10,lt:5,po:'PO202511150001',po_arrive:6,po_qty:100,sup:'현대호스'},
+  {pid:'V01010001',nm:'Al 다이캐스팅',spec:'메인바디',grade:'B',stock:45,daily:1.2,ss:10,lt:35,po:'PO202512200001',po_arrive:12,po_qty:80,sup:'인영오토밸브'},
+  {pid:'V01030001',nm:'볼트 M6×12',spec:'SUS304',grade:'C',stock:5600,daily:18.0,ss:3000,lt:3,po:null,po_arrive:null,po_qty:0,sup:'세종볼트'},
+  {pid:'T01020001',nm:'앤드캡 Ø16',spec:'직선형',grade:'B',stock:1240,daily:14.0,ss:1000,lt:5,po:null,po_arrive:null,po_qty:0,sup:'아성앤드캡'},
+  {pid:'E01030001',nm:'볼트 PCB체결',spec:'M3×6',grade:'C',stock:320,daily:4.0,ss:100,lt:3,po:null,po_arrive:null,po_qty:0,sup:'세종볼트'},
+];
+function calc(i){
+  const dep=i.daily>0?Math.floor((i.stock-i.ss)/i.daily):999;
+  const depR=i.daily>0?Math.floor(i.stock/i.daily):999;
+  if(!i.po){return dep<=30?{level:'nopo',dep,depR,margin:null,urg:'발주미등록 · 즉시 발주 필요'}:{level:'safe',dep,depR,margin:dep,urg:'여유 충분'}}
+  const margin=dep-i.po_arrive;
+  if(margin<0)return{level:'crit',dep,depR,margin,urg:`공백 ${Math.abs(margin)}일`};
+  if(margin<7)return{level:'high',dep,depR,margin,urg:`여유 ${margin}일`};
+  if(margin<30)return{level:'mid',dep,depR,margin,urg:`여유 ${margin}일`};
+  return{level:'safe',dep,depR,margin,urg:'여유 충분'};
+}
+const LC={'crit':'lv-crit','high':'lv-high','mid':'lv-mid','safe':'lv-ok','nopo':'lv-crit'};
+const BC={'crit':'bdn','high':'bwn','mid':'bac','safe':'bok','nopo':'bdn'};
+const LT={'crit':'위험','high':'경고','mid':'주의','safe':'안전','nopo':'발주미등록'};
+const COL={'crit':'var(--dn)','high':'var(--wn)','mid':'var(--acc)','safe':'var(--ok)','nopo':'var(--dn)'};
+const RISKS=ITEMS.map(i=>({...i,risk:calc(i)})).sort((a,b)=>({'crit':0,'nopo':1,'high':2,'mid':3,'safe':4}[a.risk.level]-{'crit':0,'nopo':1,'high':2,'mid':3,'safe':4}[b.risk.level]));
+const cnt={crit:0,high:0,mid:0,safe:0,nopo:0};
+RISKS.forEach(r=>cnt[r.risk.level]++);
+document.getElementById('kpi-crit').textContent=cnt.crit;
+document.getElementById('kpi-high').textContent=cnt.high;
+document.getElementById('kpi-mid').textContent=cnt.mid;
+document.getElementById('kpi-safe').textContent=cnt.safe;
+document.getElementById('kpi-nopo').textContent=cnt.nopo;
+let selF='all',selPid=null;
+function addDays(d){if(d==null)return'—';const b=new Date(2025,11,8);b.setDate(b.getDate()+d);return`${b.getMonth()+1}/${b.getDate()}`;}
+function renderList(){
+  const rl=document.getElementById('risk-list');
+  const f=RISKS.filter(r=>selF==='all'||r.risk.level===selF);
+  document.getElementById('list-count').textContent=f.length+'개 품목';
+  rl.innerHTML='';
+  f.forEach(item=>{
+    const r=item.risk,c=COL[r.level],l=LT[r.level];
+    const maxD=Math.max(r.depR,item.po_arrive||0)+20;
+    const depPct=r.dep>0?Math.round(r.dep/maxD*100):0;
+    const arrPct=item.po_arrive!=null?Math.round(item.po_arrive/maxD*100):null;
+    const gc=item.grade==='A'?'background:#E6F1FB;color:#185FA5':item.grade==='B'?'background:#FAEEDA;color:#854F0B':'background:#EAF3DE;color:#3B6D11';
+    const el=document.createElement('div');
+    el.className='risk-card'+(item.pid===selPid?' on':'');
+    el.innerHTML=`<div class="rc-level ${LC[r.level]}"></div>
+    <div class="rc-body">
+      <div class="rc-row1">
+        <span class="rc-pid">${item.pid}</span><span class="rc-nm">${item.nm}</span>
+        <span class="bg" style="${gc};font-size:9px">${item.grade}</span>
+        <span class="bg ${BC[r.level]}" style="margin-left:auto">${l}</span>
+      </div>
+      <div class="rc-row2">
+        <div class="rc-stat"><div class="rsl">현재고</div><div class="rsv" style="color:${item.stock<=item.ss?'var(--dn)':'var(--txt)'}">${item.stock}</div></div>
+        <div class="rc-stat"><div class="rsl">소진예상</div><div class="rsv" style="color:${r.dep<=0?'var(--dn)':r.dep<7?'var(--wn)':'var(--txt)'}">${r.dep>0?r.dep+'일':'초과'}</div></div>
+        <div class="rc-stat"><div class="rsl">입고예정</div><div class="rsv" style="color:${!item.po?'var(--dn)':'var(--txt3)'}">${item.po_arrive!=null?item.po_arrive+'일':'미발주'}</div></div>
+        <div class="rc-stat"><div class="rsl">여유기간</div><div class="rsv" style="color:${!r.margin||r.margin<0?'var(--dn)':r.margin<7?'var(--wn)':'var(--ok)'}">${r.margin==null?'—':r.margin<0?r.margin+'일':'+'+r.margin+'일'}</div></div>
+      </div>
+      <div class="rc-timeline">
+        <div class="tl-track"></div>
+        <div class="tl-sf" style="width:${Math.min(100,depPct)}%;background:rgba(29,158,117,.3)"></div>
+        ${r.dep>0?`<div class="tl-m" style="left:${depPct}%;background:${c}"></div><div class="tl-lbl" style="left:${depPct}%;color:${c};transform:translateX(-50%)">D+${r.dep}</div>`:''}
+        ${arrPct!=null?`<div class="tl-m" style="left:${arrPct}%;background:var(--acc)"></div><div class="tl-lbl" style="left:${arrPct}%;color:var(--acc);transform:translateX(-50%);top:12px">D+${item.po_arrive}</div>`:''}
+        ${r.level==='crit'?`<div class="tl-gap" style="left:${depPct}%;width:${arrPct-depPct}%;background:rgba(224,75,74,.35)"></div>`:''}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:2px">
+        <span>오늘</span><span style="color:${c};font-weight:500">${r.urg}</span>
+        <span style="color:${item.po?'var(--acc)':'var(--dn)'}">${item.po?item.sup+' 입고':'발주 없음'}</span>
+      </div>
+    </div>`;
+    el.addEventListener('click',()=>{selPid=item.pid;renderList();renderDetail(item);});
+    rl.appendChild(el);
+  });
+}
+function renderDetail(item){
+  const r=item.risk,c=COL[r.level];
+  document.getElementById('dh-t').textContent=item.pid+' · '+item.nm;
+  document.getElementById('dh-s').textContent=item.spec+' · '+item.grade+'등급';
+  const db=document.getElementById('detail-body');
+  db.innerHTML=`
+  <div style="padding:9px 11px;border-radius:7px;border:1px solid ${c}33;background:${c}11;display:flex;gap:8px;align-items:flex-start">
+    <div style="width:9px;height:9px;border-radius:50%;background:${c};margin-top:3px;flex-shrink:0"></div>
+    <div><div style="font-size:12px;font-weight:500;color:${c}">${LT[r.level]}</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">${r.urg}</div></div>
+  </div>
+  <div class="pn">
+    <div class="pnh"><i class="ti ti-chart-line" style="font-size:12px;color:var(--acc)"></i><span class="pnh-t">재고 소진 시나리오</span></div>
+    <div class="ir"><span class="ik">현재고</span><span class="iv">${item.stock}개</span></div>
+    <div class="ir"><span class="ik">일평균 사용량</span><span class="iv">${item.daily}개/일</span></div>
+    <div class="ir"><span class="ik">전량 소진까지</span><span class="iv" style="color:${r.depR<(item.po_arrive||999)?'var(--dn)':'var(--txt)'}">${r.depR}일 (${addDays(r.depR)})</span></div>
+    <div class="ir"><span class="ik">안전재고 도달</span><span class="iv" style="color:${r.dep<0?'var(--dn)':r.dep<7?'var(--wn)':'var(--ok)'}">${r.dep>0?r.dep+'일 후':'-이미 미달'}</span></div>
+    <div class="ir"><span class="ik">안전재고 기준</span><span class="iv">${item.ss}개 (${item.grade}등급)</span></div>
+  </div>
+  <div class="pn">
+    <div class="pnh"><i class="ti ti-truck" style="font-size:12px;color:var(--acc)"></i><span class="pnh-t">발주 현황</span></div>
+    ${item.po?`
+    <div class="ir"><span class="ik">수주번호</span><span class="iv" style="color:var(--acc)">${item.po}</span></div>
+    <div class="ir"><span class="ik">협력사</span><span class="iv">${item.sup}</span></div>
+    <div class="ir"><span class="ik">발주수량</span><span class="iv">${item.po_qty}개</span></div>
+    <div class="ir"><span class="ik">입고예정</span><span class="iv" style="color:var(--acc)">${item.po_arrive}일 후 (${addDays(item.po_arrive)})</span></div>
+    `:`<div style="padding:12px;text-align:center;color:var(--dn);font-size:11px"><i class="ti ti-alert-triangle" style="display:block;font-size:18px;margin-bottom:4px"></i>발주 진행 없음</div>
+    <div style="padding:0 10px 10px"><button style="width:100%;padding:6px;background:var(--acc);color:#fff;border:none;border-radius:var(--r);font-size:11px;cursor:pointer">긴급 발주 등록</button></div>`}
+  </div>
+  <div style="display:flex;gap:6px">
+    <button class="btn" style="flex:1;justify-content:center;font-size:11px"><i class="ti ti-package"></i>품목 상세</button>
+    ${item.po?`<button class="btn" style="flex:1;justify-content:center;font-size:11px"><i class="ti ti-truck"></i>발주 상세</button>`:`<button class="btn btnp" style="flex:1;justify-content:center;font-size:11px"><i class="ti ti-truck-delivery"></i>즉시 발주</button>`}
+  </div>`;
+}
+document.querySelectorAll('.pill').forEach(p=>{
+  p.addEventListener('click',()=>{document.querySelectorAll('.pill').forEach(x=>x.classList.remove('on'));p.classList.add('on');selF=p.dataset.f;renderList();});
+});
+renderList();
+setTimeout(()=>{selPid=RISKS[0].pid;renderList();renderDetail(RISKS[0]);},100);
+</script>
+</body>
+</html>
