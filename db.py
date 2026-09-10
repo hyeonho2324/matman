@@ -683,3 +683,157 @@ def supplier_summary(comps):
         "risk_mid": len([c for c in comps if c["risk_lv"] == "보통"]),
         "risk_low": len([c for c in comps if c["risk_lv"] == "낮음"]),
     }
+
+
+# ── 생산 실적 화면 ───────────────────────────────────────────
+def production_orders(conn):
+    """작업지시 488건 + 투입 자재 + BOM 대비 검증.
+
+    완제품 생산 수량이 원본 데이터에 없어 추정해야 한다.
+    처음엔 '최소 투입량 = 1대당'으로 잡았으나, 최소 투입 자재가 1대당 1개가
+    아닌 경우 전체 비율이 어긋나 오탐이 대량 발생했다(423행).
+    → 표준 BOM이 있는 자재들의 (실투입 ÷ BOM소요량) 중앙값을 생산 대수로 삼는다.
+      일부 자재가 대체품으로 빠져도 중앙값이라 흔들리지 않는다.
+
+    또 한 자재를 여러 LOT에서 나눠 꺼내면 행이 쪼개지므로(FIFO 분할 출고),
+    BOM 비교 전에 작업지시 내에서 자재별로 합산한다.
+    """
+    raw = _rows(conn, """
+        SELECT r.Work_Order, r.FG_ID, r.P_ID, r.Prod_Qty, r.Prod_Date,
+               r.Lot_ID, r.EP_ID,
+               p.P_N, p.Spec, p.P_Price,
+               u.Name AS worker
+          FROM Production_tb r
+          JOIN Product_tb p ON r.P_ID = p.P_ID
+          LEFT JOIN User_tb u ON r.EP_ID = u.EP_ID
+         ORDER BY r.Prod_Date, r.Work_Order, r.P_ID
+    """)
+    fg_name = {r["FG_ID"]: r["FG_N"] for r in _rows(conn, "SELECT FG_ID, FG_N FROM FG_tb")}
+
+    # BOM 조회표
+    bom, alt_of = {}, {}
+    for b in _rows(conn, "SELECT FG_ID, P_ID, BOM_Qty, BOM_Type FROM BOM_tb"):
+        bom.setdefault(b["FG_ID"], {})[b["P_ID"]] = b
+        t = _alt_target(b["BOM_Type"])
+        if t:
+            alt_of[b["P_ID"]] = t
+
+    grouped = {}
+    for r in raw:
+        grouped.setdefault(r["Work_Order"], []).append(r)
+
+    orders = []
+    for wo, lines in grouped.items():
+        fg = lines[0]["FG_ID"]
+        std = bom.get(fg, {})
+        # 생산 대수 추정 — 표준 BOM 자재들의 (실투입 ÷ 소요량) 중앙값
+        # 자재별 합산 (같은 자재가 여러 LOT으로 쪼개진 경우 통합)
+        merged = {}
+        for l in lines:
+            m = merged.get(l["P_ID"])
+            if m:
+                m["Prod_Qty"] += l["Prod_Qty"]
+                m["lots"].append(l["Lot_ID"])
+            else:
+                merged[l["P_ID"]] = {
+                    "P_ID": l["P_ID"], "P_N": l["P_N"], "Spec": l["Spec"],
+                    "P_Price": l["P_Price"], "Prod_Qty": l["Prod_Qty"],
+                    "lots": [l["Lot_ID"]],
+                }
+        mlines = list(merged.values())
+
+        cands = []
+        for l in mlines:
+            b = std.get(l["P_ID"])
+            if b and not _alt_target(b["BOM_Type"]) and b["BOM_Qty"]:
+                cands.append(l["Prod_Qty"] / b["BOM_Qty"])
+        if cands:
+            base = round(_st.median(cands))
+        else:
+            base = min(l["Prod_Qty"] for l in mlines)
+        base = base or 1
+        items, match, diff, alt_used, extra = [], 0, 0, 0, 0
+        for l in mlines:
+            b = std.get(l["P_ID"])
+            per = l["Prod_Qty"] / base
+            if not b:
+                verdict, bq = "미등록", None
+                extra += 1
+            elif _alt_target(b["BOM_Type"]):
+                verdict, bq = "대체", b["BOM_Qty"]
+                alt_used += 1
+            elif abs(per - b["BOM_Qty"]) < 0.01:
+                verdict, bq = "일치", b["BOM_Qty"]
+                match += 1
+            else:
+                verdict, bq = "차이", b["BOM_Qty"]
+                diff += 1
+            # 자재명·규격은 prod_products() 조회표로 분리한다 (4,476개 항목에 중복되면 +450KB)
+            items.append({
+                "P_ID": l["P_ID"],
+                "qty": l["Prod_Qty"], "per": round(per, 2),
+                "bom_qty": bq, "verdict": verdict,
+                "alt_for": alt_of.get(l["P_ID"]),
+                "amount": round((l["Prod_Qty"] or 0) * (l["P_Price"] or 0)),
+                "lot_n": len(l["lots"]),
+            })
+        orders.append({
+            "wo": wo, "FG_ID": fg, "FG_N": fg_name.get(fg, fg),
+            "date": lines[0]["Prod_Date"],
+            "worker": lines[0]["worker"],
+            "units": base,                     # 추정 생산 대수
+            "line_cnt": len(mlines),
+            "raw_cnt": len(lines),
+            "amount": sum(i["amount"] for i in items),
+            "match": match, "diff": diff, "alt_used": alt_used, "extra": extra,
+            "items": items,
+        })
+    orders.sort(key=lambda o: (o["date"] or "", o["wo"]), reverse=True)
+    return orders
+
+
+def prod_products(conn):
+    """P_ID → 자재명·규격 조회표 (생산 화면 items 와 합쳐 쓴다)."""
+    return {r["P_ID"]: {"P_N": r["P_N"], "Spec": r["Spec"]}
+            for r in _rows(conn, "SELECT P_ID, P_N, Spec FROM Product_tb")}
+
+
+def production_monthly(conn):
+    return _rows(conn, """
+        SELECT substr(r.Prod_Date,1,7) AS ym,
+               COUNT(DISTINCT r.Work_Order) AS wo_cnt,
+               COUNT(*)                     AS line_cnt,
+               SUM(r.Prod_Qty * p.P_Price)  AS amount
+          FROM Production_tb r JOIN Product_tb p ON r.P_ID = p.P_ID
+         GROUP BY ym ORDER BY ym
+    """)
+
+
+def production_summary(orders, conn=None):
+    fgs = {}
+    for o in orders:
+        f = fgs.setdefault(o["FG_ID"], {"FG_N": o["FG_N"], "wo": 0, "units": 0, "amount": 0})
+        f["wo"] += 1
+        f["units"] += o["units"]
+        f["amount"] += o["amount"]
+    tot_line = sum(o["line_cnt"] for o in orders)
+    tot_match = sum(o["match"] for o in orders)
+    tot_alt = sum(o["alt_used"] for o in orders)
+    tot_diff = sum(o["diff"] for o in orders)
+    dates = [o["date"] for o in orders if o["date"]]
+    return {
+        "wo_cnt": len(orders),
+        "fg_cnt": len(fgs),
+        "line_cnt": tot_line,
+        "units": sum(o["units"] for o in orders),
+        "amount": sum(o["amount"] for o in orders),
+        "match": tot_match,
+        "match_pct": round(tot_match / tot_line * 100, 1) if tot_line else 0,
+        "alt_used": tot_alt,
+        "alt_wo": len([o for o in orders if o["alt_used"]]),
+        "alt_wo_pct": round(len([o for o in orders if o["alt_used"]]) / len(orders) * 100, 1) if orders else 0,
+        "diff": tot_diff,
+        "date_from": min(dates) if dates else "-",
+        "date_to": max(dates) if dates else "-",
+        "by_fg": fgs,
+    }
