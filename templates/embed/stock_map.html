@@ -2,34 +2,297 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>재고 현황 지도</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.dn{color:var(--dn)}
+
+/* 창고 배치도 */
+.mapbox{padding:12px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.maphead{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.maphead .t{font-size:11px;font-weight:500}
+.mapmode{margin-left:auto;display:flex;gap:4px}
+.mm{padding:2px 9px;border-radius:99px;border:0.5px solid var(--border);font-size:10px;cursor:pointer;background:transparent;color:var(--txt2);font-family:inherit}
+.mm.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.zones{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.zone{border:1px solid var(--border-s);border-radius:8px;overflow:hidden;cursor:pointer;background:var(--s0);position:relative;transition:box-shadow .12s}
+.zone:hover{box-shadow:0 0 0 2px rgba(42,120,214,.18)}
+.zone.on{border-color:var(--acc);box-shadow:0 0 0 2px rgba(42,120,214,.3)}
+.zh{padding:6px 9px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px}
+.zid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:600;color:var(--acc)}
+.zn{font-size:11px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zbody{padding:8px 9px}
+/* 재고 채움 게이지 */
+.gauge{height:56px;background:var(--s1);border:0.5px solid var(--border);border-radius:5px;position:relative;overflow:hidden;margin-bottom:7px}
+.fill{position:absolute;left:0;right:0;bottom:0;transition:height .25s}
+.gtxt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:600;z-index:1}
+.gtxt small{font-size:9px;font-weight:400;color:var(--txt3);margin-top:1px}
+.zrow{display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);padding:1px 0}
+.zrow b{color:var(--txt);font-weight:500}
+.zwarn{margin-top:5px;padding:2px 6px;border-radius:4px;background:var(--bg-dn);color:#9B1C1C;font-size:9px;font-weight:500;text-align:center}
+/* 소분류 스택바 */
+.stack{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;background:var(--s2)}
+.stack i{display:block;height:100%}
+
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
+.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:160px;color:var(--txt)}
+.cnt{font-size:11px;color:var(--txt3)}
+
+.listwrap{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
+thead th:hover{background:var(--s2)}
+thead th.num{text-align:right}
+tbody td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tbody td.num{text-align:right}
+.pid{color:var(--acc);font-weight:500;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.short{color:var(--dn);font-weight:500}
+.okv{color:var(--ok)}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .zones{grid-template-columns:repeat(2,1fr)}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .hide-sm{display:none}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-building-warehouse"></i></div>
-    <div class="title">재고 현황 지도</div>
-    <div class="sub">창고 구역별 재고 현황을 카드 형태로 시각화합니다. 구역 클릭 시 상세 재고 조회.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-map"></i></div><div class="feat-t">구역별 카드</div><div class="feat-s">L01~F02 전 구역</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-click"></i></div><div class="feat-t">클릭 상세</div><div class="feat-s">구역별 LOT 목록</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-filter"></i></div><div class="feat-t">뷰 필터</div><div class="feat-s">대분류/등급 필터</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-alert-triangle"></i></div><div class="feat-t">미달 표시</div><div class="feat-s">안전재고 미달 강조</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-building-warehouse" style="color:var(--acc)"></i>재고 현황 지도
+      <span class="tag">실제 DB · {{ summary.zone_cnt }}개 구역 · {{ summary.item_cnt }}종</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-building-warehouse"></i>창고 구역</div>
+      <div class="kv">{{ summary.zone_cnt }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
+      <div class="ks">대분류별 전용 구역</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-stack-2"></i>보관 수량</div>
+      <div class="kv">{{ "{:,}".format(summary.qty) }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
+      <div class="ks">{{ summary.item_cnt }}종</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-coin"></i>재고자산</div>
+      <div class="kv">{{ (summary.value/100000000)|round(2) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
+      <div class="ks">현재고 × 단가</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-box"></i>잔여 LOT</div>
+      <div class="kv">{{ summary.lot_live }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
+      <div class="ks">전체 {{ summary.lot_total }} 중</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-alert-triangle"></i>안전재고 미달</div>
+      <div class="kv dn">{{ summary.short_cnt }}<span style="font-size:11px">종</span></div>
+      <div class="ks">전 구역 합계</div>
+    </div>
+  </div>
+
+  <div class="mapbox">
+    <div class="maphead">
+      <span class="t">창고 배치도 — 구역을 클릭하면 보관 품목이 표시됩니다</span>
+      <span class="mapmode">
+        <button class="mm on" data-m="value" onclick="setMode('value')">재고자산 기준</button>
+        <button class="mm"    data-m="qty"   onclick="setMode('qty')">수량 기준</button>
+      </span>
+    </div>
+    <div class="zones" id="zones"></div>
+  </div>
+
+  <div class="filter-bar">
+    <button class="pill on" data-f="all"   onclick="setF('all')">전체</button>
+    <button class="pill"    data-f="short" onclick="setF('short')">안전재고 미달</button>
+    <button class="pill"    data-f="zero"  onclick="setF('zero')">재고 없음</button>
+    <button class="pill"    data-f="A"     onclick="setF('A')">A등급</button>
+    <span class="cnt" id="cnt"></span>
+    <div class="search">
+      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+      <input id="q" placeholder="품번 · 품명 · 협력사" oninput="render()">
+    </div>
+  </div>
+
+  <div class="listwrap">
+    <table>
+      <thead><tr>
+        <th onclick="sortBy('Loc_ID')">구역</th>
+        <th onclick="sortBy('P_ID')">자재코드</th>
+        <th onclick="sortBy('P_N')">자재명 / 규격</th>
+        <th class="hide-sm" onclick="sortBy('supplier')">협력사</th>
+        <th onclick="sortBy('grade')">등급</th>
+        <th class="num" onclick="sortBy('stock')">재고</th>
+        <th class="num" onclick="sortBy('diff')">과부족</th>
+        <th class="num hide-sm" onclick="sortBy('value')">재고금액</th>
+        <th class="num hide-sm" onclick="sortBy('lot_n')">LOT</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
   </div>
 </div>
+
+<script>
+const ZONES = {{ zones|tojson }};
+const ITEMS = {{ items|tojson }};
+const SUM   = {{ summary|tojson }};
+
+let mode='value', zone=null, filter='all', sortKey='diff', sortAsc=true;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const SUBC = ['#2a78d6','#1D9E75','#EF9F27','#E24B4A','#8B7BC7'];
+
+function drawZones(){
+  const maxV = mode==='value' ? SUM.max_value : SUM.max_qty;
+  document.getElementById('zones').innerHTML = ZONES.map(function(z){
+    const v = mode==='value' ? (z.value||0) : (z.qty||0);
+    const pct = maxV ? v/maxV*100 : 0;
+    // 미달 비율에 따라 채움 색을 바꾼다
+    const sr = z.item_cnt ? z.short_cnt/z.item_cnt : 0;
+    const col = sr>=0.4 ? 'rgba(224,75,74,.30)' : (sr>=0.25 ? 'rgba(239,159,39,.30)' : 'rgba(29,158,117,.28)');
+    const subTotal = z.sub.reduce(function(a,s){return a + (mode==='value' ? (s.value||0) : (s.qty||0));},0) || 1;
+    const stack = z.sub.map(function(s,i){
+      const sv = mode==='value' ? (s.value||0) : (s.qty||0);
+      const nm = (s.cat_name||'').split('-').pop();
+      return '<i style="width:' + (sv/subTotal*100).toFixed(1) + '%;background:' + SUBC[i%5] + '" title="'
+           + nm + ' ' + s.item_cnt + '종 · ' + (mode==='value'?won(sv)+'원':nf(sv)+'개') + '"></i>';
+    }).join('');
+    return '<div class="zone ' + (zone===z.Loc_ID?'on':'') + '" onclick="pickZone(\'' + z.Loc_ID + '\')">'
+      + '<div class="zh"><span class="zid">' + z.Loc_ID + '</span>'
+      +   '<span class="zn">' + esc(z.Loc_N) + '</span>'
+      +   '<span class="bg bmu">' + z.main_cat + '</span></div>'
+      + '<div class="zbody">'
+      +   '<div class="gauge"><div class="fill" style="height:' + pct + '%;background:' + col + '"></div>'
+      +     '<div class="gtxt">' + (mode==='value' ? won(z.value||0)+'원' : nf(z.qty)+'개')
+      +       '<small>' + (mode==='value' ? nf(z.qty)+'개' : won(z.value||0)+'원') + '</small></div></div>'
+      +   '<div class="zrow"><span>품목</span><b>' + z.item_cnt + '종</b></div>'
+      +   '<div class="zrow"><span>잔여 LOT</span><b>' + z.lot_live + '/' + z.lot_total + '</b></div>'
+      +   '<div class="stack">' + stack + '</div>'
+      +   (z.short_cnt ? '<div class="zwarn">안전재고 미달 ' + z.short_cnt + '종</div>' : '')
+      + '</div></div>';
+  }).join('');
+}
+
+function view(){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  let r=ITEMS.filter(function(x){
+    if(zone && x.Loc_ID!==zone)                       return false;
+    if(filter==='short' && !(x.grade && x.diff<0))    return false;
+    if(filter==='zero'  && (x.stock||0)>0)            return false;
+    if(filter==='A'     && x.grade!=='A')             return false;
+    if(q){
+      const hay=(x.P_ID+' '+(x.P_N||'')+' '+(x.Spec||'')+' '+(x.supplier||'')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+  r.sort(function(a,b){
+    let x=a[sortKey], y=b[sortKey];
+    if(typeof x==='string'||typeof y==='string'){
+      x=(x||'')+''; y=(y||'')+'';
+      return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
+    }
+    x=x||0; y=y||0;
+    return sortAsc ? (x-y) : (y-x);
+  });
+  return r;
+}
+
+function render(){
+  drawZones();
+  const r=view();
+  const zn = zone ? (ZONES.filter(function(z){return z.Loc_ID===zone;})[0].Loc_N + ' · ') : '';
+  document.getElementById('cnt').textContent = zn + r.length + '종 표시';
+  const tb=document.getElementById('tb');
+  if(!r.length){
+    tb.innerHTML='<tr><td colspan="9"><div class="empty">조건에 맞는 자재가 없습니다.</div></td></tr>';
+    return;
+  }
+  tb.innerHTML=r.map(function(x){
+    return '<tr>'
+      + '<td><span class="bg bmu">' + x.Loc_ID + '</span></td>'
+      + '<td><span class="pid">' + x.P_ID + '</span></td>'
+      + '<td><div class="nm">' + esc(x.P_N) + '</div><div class="sp">' + esc(x.Spec) + '</div></td>'
+      + '<td class="hide-sm">' + esc(x.supplier||'-') + '</td>'
+      + '<td>' + (x.grade ? '<span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '-') + '</td>'
+      + '<td class="num ' + ((x.stock||0)<=0?'short':'') + '">' + nf(x.stock) + '</td>'
+      + '<td class="num ' + (x.grade && x.diff<0 ? 'short' : (x.grade?'okv':'')) + '">'
+      +   (x.grade ? (x.diff>0?'+':'')+nf(x.diff) : '-') + '</td>'
+      + '<td class="num hide-sm">' + won(x.value||0) + '원</td>'
+      + '<td class="num hide-sm">' + x.lot_n + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function pickZone(id){ zone = (zone===id ? null : id); render(); }
+function setMode(m){
+  mode=m;
+  const ms=document.querySelectorAll('.mm');
+  for(let i=0;i<ms.length;i++) ms[i].classList.toggle('on', ms[i].dataset.m===m);
+  drawZones();
+}
+function setF(f){
+  filter=f;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+function sortBy(k){
+  if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; }
+  render();
+}
+function dl(){
+  const r=view();
+  const head=['구역','자재코드','자재명','규격','협력사','등급','재고','안전재고','과부족','재고금액','LOT수','최근입고'];
+  const lines=[head.join(',')];
+  r.forEach(function(x){
+    lines.push([x.Loc_ID,x.P_ID,x.P_N,x.Spec,x.supplier,x.grade,x.stock,x.safe_qty,x.diff,x.value,x.lot_n,x.last_in]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='재고현황_구역별.csv';
+  a.click();
+}
+
+render();
+</script>
 </body>
 </html>

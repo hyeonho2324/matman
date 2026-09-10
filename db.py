@@ -948,3 +948,108 @@ def purchase_summary(orders):
         "date_to": max(dates) if dates else "-",
         "suppliers": len({o["BRN"] for o in orders}),
     }
+
+
+# ── 재고 현황 지도 화면 ──────────────────────────────────────
+def stock_zones(conn):
+    """창고 5구역별 재고 현황 + 소분류 구성."""
+    zones = _rows(conn, f"""
+        WITH lot AS (
+            SELECT l.Lot_ID, l.Loc_ID, l.P_ID, l.Lot_Date,
+                   l.P_Qty - COALESCE(x.out_qty, 0) AS remain, l.P_Qty
+              FROM Lot_tb l
+              LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
+                          WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+        )
+        SELECT lo.Loc_ID, lo.Loc_N,
+               COUNT(*)                                        AS lot_total,
+               SUM(CASE WHEN t.remain > 0 THEN 1 ELSE 0 END)    AS lot_live,
+               COUNT(DISTINCT t.P_ID)                           AS item_cnt,
+               SUM(t.remain)                                    AS qty,
+               SUM(t.remain * p.P_Price)                        AS value,
+               MIN(p.MainCat)                                   AS main_cat
+          FROM lot t
+          JOIN Location_tb lo ON t.Loc_ID = lo.Loc_ID
+          JOIN Product_tb p   ON t.P_ID = p.P_ID
+         GROUP BY lo.Loc_ID, lo.Loc_N
+         ORDER BY lo.Loc_ID
+    """)
+
+    # 구역별 소분류 구성
+    sub = {}
+    # 주의: Lot_tb 를 그냥 조인하면 한 자재의 재고가 LOT 개수만큼 중복 합산된다.
+    #       구역-자재 조합을 먼저 DISTINCT 로 뽑고 나서 재고를 붙인다.
+    for r in _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL}),
+             zp AS (SELECT DISTINCT Loc_ID, P_ID FROM Lot_tb)
+        SELECT zp.Loc_ID, p.DetailCat,
+               MIN(cat.Cat_Name) AS cat_name,
+               COUNT(DISTINCT p.P_ID) AS item_cnt,
+               SUM(COALESCE(st.stock,0))              AS qty,
+               SUM(COALESCE(st.stock,0) * p.P_Price)  AS value
+          FROM zp
+          JOIN Product_tb p ON zp.P_ID = p.P_ID
+          LEFT JOIN stock st ON p.P_ID = st.P_ID
+          LEFT JOIN Cat_tb cat ON p.MainCat=cat.MainCat AND p.SubCat=cat.SubCat
+                              AND p.DetailCat=cat.DetailCat
+         GROUP BY zp.Loc_ID, p.DetailCat
+         ORDER BY zp.Loc_ID, p.DetailCat
+    """):
+        sub.setdefault(r["Loc_ID"], []).append(r)
+
+    # 구역별 안전재고 미달
+    short = {}
+    for r in _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL})
+        SELECT l.Loc_ID, COUNT(DISTINCT p.P_ID) AS n
+          FROM Lot_tb l
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          JOIN Safe_tb s    ON p.P_ID = s.P_ID
+          LEFT JOIN stock st ON p.P_ID = st.P_ID
+         WHERE COALESCE(st.stock,0) < s.Sf_Num
+         GROUP BY l.Loc_ID
+    """):
+        short[r["Loc_ID"]] = r["n"]
+
+    for z in zones:
+        z["sub"] = sub.get(z["Loc_ID"], [])
+        z["short_cnt"] = short.get(z["Loc_ID"], 0)
+    return zones
+
+
+def stock_items(conn):
+    """구역별 보유 품목 (지도 상세용)."""
+    return _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL}),
+             lots AS (
+                SELECT P_ID, Loc_ID, COUNT(*) AS lot_n, MAX(Lot_Date) AS last_in
+                  FROM Lot_tb GROUP BY P_ID, Loc_ID
+             )
+        SELECT lt.Loc_ID, p.P_ID, p.P_N, p.Spec, p.P_Price, p.DetailCat,
+               c.CP_N AS supplier,
+               s.Sf_Lv AS grade, s.Sf_Num AS safe_qty,
+               COALESCE(st.stock,0) AS stock,
+               COALESCE(st.stock,0) - COALESCE(s.Sf_Num,0) AS diff,
+               ROUND(COALESCE(st.stock,0) * p.P_Price) AS value,
+               lt.lot_n, lt.last_in
+          FROM lots lt
+          JOIN Product_tb p ON lt.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+          LEFT JOIN stock st  ON p.P_ID = st.P_ID
+         ORDER BY lt.Loc_ID, (COALESCE(st.stock,0) - COALESCE(s.Sf_Num,0))
+    """)
+
+
+def stock_summary(zones):
+    return {
+        "zone_cnt": len(zones),
+        "qty": sum(z["qty"] or 0 for z in zones),
+        "value": sum(z["value"] or 0 for z in zones),
+        "item_cnt": sum(z["item_cnt"] or 0 for z in zones),
+        "lot_live": sum(z["lot_live"] or 0 for z in zones),
+        "lot_total": sum(z["lot_total"] or 0 for z in zones),
+        "short_cnt": sum(z["short_cnt"] or 0 for z in zones),
+        "max_value": max((z["value"] or 0) for z in zones) if zones else 1,
+        "max_qty": max((z["qty"] or 0) for z in zones) if zones else 1,
+    }

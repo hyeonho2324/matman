@@ -314,6 +314,19 @@ def _ctx_purchase():
         conn.close()
 
 
+def _ctx_stock_map():
+    conn = db.connect()
+    try:
+        zones = db.stock_zones(conn)
+        return {
+            "zones": zones,
+            "items": db.stock_items(conn),
+            "summary": db.stock_summary(zones),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -323,6 +336,7 @@ EMBED_CONTEXT = {
     "suppliers":    _ctx_suppliers,
     "production":   _ctx_production,
     "purchase":     _ctx_purchase,
+    "stock_map":    _ctx_stock_map,
 }
 
 
