@@ -300,6 +300,20 @@ def _ctx_production():
         conn.close()
 
 
+def _ctx_purchase():
+    conn = db.connect()
+    try:
+        orders = db.purchase_orders(conn)
+        return {
+            "orders": orders,
+            "prods": db.prod_products(conn),
+            "monthly": db.purchase_monthly(conn),
+            "summary": db.purchase_summary(orders),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -308,6 +322,7 @@ EMBED_CONTEXT = {
     "tx_history":   _ctx_tx_history,
     "suppliers":    _ctx_suppliers,
     "production":   _ctx_production,
+    "purchase":     _ctx_purchase,
 }
 
 

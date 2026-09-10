@@ -837,3 +837,114 @@ def production_summary(orders, conn=None):
         "date_to": max(dates) if dates else "-",
         "by_fg": fgs,
     }
+
+
+# ── 구매 발주 화면 ───────────────────────────────────────────
+def purchase_orders(conn):
+    """발주 254건 + 품목별 발주/입고 대조.
+
+    발주 수량과 실제 입고 수량을 비교해 부족 입고를 잡아낸다.
+    (부족분은 예외 없이 포장단위 배수 — 상자 단위 출하라 반 상자는 없다)
+    """
+    lines = _rows(conn, """
+        SELECT h.H_ID, h.BRN, h.P_Date,
+               c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               d.Purchase_num, d.P_ID, d.P_Qty AS ord_qty,
+               p.P_N, p.P_Price, p.PkgUnit, p.MinOrderQty,
+               s.Sf_Lv AS grade,
+               l.Lot_ID, l.P_Qty AS in_qty, l.Lot_Date,
+               lo.Loc_N AS loc_name,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c    ON h.BRN = c.BRN
+          LEFT JOIN Safe_tb s       ON p.P_ID = s.P_ID
+          LEFT JOIN Lot_tb l        ON d.H_ID = l.H_ID AND d.P_ID = l.P_ID
+          LEFT JOIN Location_tb lo  ON l.Loc_ID = lo.Loc_ID
+         ORDER BY h.P_Date DESC, h.H_ID DESC, d.Purchase_num
+    """)
+
+    grouped = {}
+    for r in lines:
+        grouped.setdefault(r["H_ID"], []).append(r)
+
+    orders = []
+    for hid, ls in grouped.items():
+        h = ls[0]
+        items, short, ok, pending = [], 0, 0, 0
+        for l in ls:
+            gap = (l["in_qty"] - l["ord_qty"]) if l["in_qty"] is not None else None
+            if l["in_qty"] is None:
+                st = "미입고"; pending += 1
+            elif gap == 0:
+                st = "일치"; ok += 1
+            elif gap < 0:
+                st = "부족"; short += 1
+            else:
+                st = "초과"
+            items.append({
+                "num": l["Purchase_num"], "P_ID": l["P_ID"],
+                "grade": l["grade"],
+                "ord_qty": l["ord_qty"], "in_qty": l["in_qty"], "gap": gap,
+                "status": st,
+                "pkg": l["PkgUnit"], "moq": l["MinOrderQty"],
+                "pkg_multiple": (l["PkgUnit"] and gap is not None and gap != 0
+                                 and abs(gap) % l["PkgUnit"] == 0) or False,
+                "amount": round((l["ord_qty"] or 0) * (l["P_Price"] or 0)),
+                "in_amount": round((l["in_qty"] or 0) * (l["P_Price"] or 0)),
+                "Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
+                "loc_name": l["loc_name"], "lead_days": l["lead_days"],
+            })
+        lds = [i["lead_days"] for i in items if i["lead_days"] is not None]
+        orders.append({
+            "H_ID": hid, "BRN": h["BRN"], "supplier": h["supplier"],
+            "is_foreign": h["is_foreign"], "date": h["P_Date"],
+            "line_cnt": len(items),
+            "amount": sum(i["amount"] for i in items),
+            "in_amount": sum(i["in_amount"] for i in items),
+            "ok": ok, "short": short, "pending": pending,
+            "lead_days": round(sum(lds) / len(lds)) if lds else None,
+            "recv_date": max((i["Lot_Date"] for i in items if i["Lot_Date"]), default=None),
+            "items": items,
+        })
+    orders.sort(key=lambda o: (o["date"] or "", o["H_ID"]), reverse=True)
+    return orders
+
+
+def purchase_monthly(conn):
+    return _rows(conn, """
+        SELECT substr(h.P_Date,1,7) AS ym,
+               COUNT(DISTINCT h.H_ID)   AS order_cnt,
+               COUNT(*)                 AS line_cnt,
+               SUM(d.P_Qty * p.P_Price) AS amount
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         GROUP BY ym ORDER BY ym
+    """)
+
+
+def purchase_summary(orders):
+    lines = [i for o in orders for i in o["items"]]
+    ok = len([i for i in lines if i["status"] == "일치"])
+    short = [i for i in lines if i["status"] == "부족"]
+    dates = [o["date"] for o in orders if o["date"]]
+    lds = [o["lead_days"] for o in orders if o["lead_days"] is not None]
+    return {
+        "order_cnt": len(orders),
+        "line_cnt": len(lines),
+        "amount": sum(o["amount"] for o in orders),
+        "in_amount": sum(o["in_amount"] for o in orders),
+        "ok": ok,
+        "ok_pct": round(ok / len(lines) * 100, 1) if lines else 0,
+        "short": len(short),
+        "short_qty": sum(abs(i["gap"] or 0) for i in short),
+        "short_pkg_ok": len([i for i in short if i["pkg_multiple"]]),
+        "pending": len([i for i in lines if i["status"] == "미입고"]),
+        "short_orders": len([o for o in orders if o["short"]]),
+        "lead_avg": round(sum(lds) / len(lds), 1) if lds else 0,
+        "date_from": min(dates) if dates else "-",
+        "date_to": max(dates) if dates else "-",
+        "suppliers": len({o["BRN"] for o in orders}),
+    }
