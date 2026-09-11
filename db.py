@@ -1569,3 +1569,87 @@ def risk_summary(rows):
         "grade_a": len([r for r in danger if r["grade"] == "A"]),
         "max_lt": max((r["lead_time"] or 0) for r in danger) if danger else 0,
     }
+
+
+# ── 사용자 관리 화면 ─────────────────────────────────────────
+# 주의: Birth/Phone 은 build_db.py 에서 마스킹 적재된 값이다.
+POSITION_ORDER = ["부장", "차장", "과장", "대리", "주임", "사원"]
+
+
+def user_list(conn):
+    rows = _rows(conn, """
+        SELECT u.EP_ID, u.Name, u.Birth, u.Phone, u.Position,
+               COALESCE(l.n, 0)  AS lot_cnt,
+               COALESCE(l.qty, 0) AS lot_qty,
+               COALESCE(t.n, 0)  AS tx_cnt,
+               COALESCE(t.in_n, 0)  AS in_cnt,
+               COALESCE(t.out_n, 0) AS out_cnt,
+               COALESCE(p.wo, 0) AS wo_cnt,
+               COALESCE(p.n, 0)  AS prod_cnt,
+               t.first_tx, t.last_tx
+          FROM User_tb u
+          LEFT JOIN (SELECT EP_ID, COUNT(*) n, SUM(P_Qty) qty FROM Lot_tb GROUP BY EP_ID) l
+                 ON u.EP_ID = l.EP_ID
+          LEFT JOIN (SELECT EP_ID, COUNT(*) n,
+                            SUM(CASE WHEN T_Type='입고' THEN 1 ELSE 0 END) in_n,
+                            SUM(CASE WHEN T_Type='불출' THEN 1 ELSE 0 END) out_n,
+                            MIN(T_Date) first_tx, MAX(T_Date) last_tx
+                       FROM Transaction_tb GROUP BY EP_ID) t
+                 ON u.EP_ID = t.EP_ID
+          LEFT JOIN (SELECT EP_ID, COUNT(DISTINCT Work_Order) wo, COUNT(*) n
+                       FROM Production_tb GROUP BY EP_ID) p
+                 ON u.EP_ID = p.EP_ID
+    """)
+
+    # 담당 창고 분포 (LOT 등록 기준)
+    zones = {}
+    for r in _rows(conn, """
+        SELECT l.EP_ID, lo.Loc_N AS loc, COUNT(*) AS n
+          FROM Lot_tb l LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+         GROUP BY l.EP_ID, lo.Loc_N ORDER BY n DESC
+    """):
+        zones.setdefault(r["EP_ID"], []).append(r)
+
+    # 최근 처리 이력
+    recent = {}
+    for r in _rows(conn, """
+        SELECT t.EP_ID, t.T_ID, t.T_Type, t.T_Date, t.T_Num, p.P_N
+          FROM Transaction_tb t
+          JOIN Lot_tb l     ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+         ORDER BY t.T_Date DESC
+    """):
+        lst = recent.setdefault(r["EP_ID"], [])
+        if len(lst) < 5:
+            lst.append(r)
+
+    for r in rows:
+        r["zones"] = zones.get(r["EP_ID"], [])[:5]
+        r["recent"] = recent.get(r["EP_ID"], [])
+        r["total"] = (r["lot_cnt"] or 0) + (r["tx_cnt"] or 0) + (r["wo_cnt"] or 0)
+        r["pos_rank"] = (POSITION_ORDER.index(r["Position"])
+                         if r["Position"] in POSITION_ORDER else 99)
+    rows.sort(key=lambda r: -r["total"])
+    return rows
+
+
+def user_summary(rows, conn=None):
+    pos = {}
+    for p in POSITION_ORDER:
+        n = len([r for r in rows if r["Position"] == p])
+        if n:
+            pos[p] = n
+    return {
+        "total": len(rows),
+        "positions": pos,
+        "tx_total": sum(r["tx_cnt"] for r in rows),
+        "lot_total": sum(r["lot_cnt"] for r in rows),
+        # 주의: 사용자별 wo_cnt 를 그냥 더하면 한 작업지시에 여러 명이 참여한 만큼
+        #       중복 합산된다(3,874 vs 실제 488). 실제 건수를 따로 센다.
+        "wo_total": (conn.execute(
+            "SELECT COUNT(DISTINCT Work_Order) FROM Production_tb").fetchone()[0]
+            if conn else sum(r["wo_cnt"] for r in rows)),
+        "active": len([r for r in rows if r["total"] > 0]),
+        "max_total": max((r["total"] for r in rows), default=1),
+        "avg_total": round(sum(r["total"] for r in rows) / len(rows), 1) if rows else 0,
+    }
