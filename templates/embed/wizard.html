@@ -2,34 +2,378 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>안전재고 일괄 갱신 마법사</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>안전재고 일괄 갱신</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btn:disabled{opacity:.35;cursor:default}
+.btnp{background:var(--acc);color:#fff;border-color:transparent}
+.btnp:hover{background:#2268bd}
+
+/* 단계 표시 */
+.steps{display:flex;align-items:center;padding:11px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;gap:0;overflow-x:auto}
+.stp{display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap}
+.sdot{width:24px;height:24px;border-radius:50%;background:var(--s2);color:var(--txt3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.stp.done .sdot{background:var(--ok);color:#fff}
+.stp.on .sdot{background:var(--acc);color:#fff;box-shadow:0 0 0 3px rgba(42,120,214,.18)}
+.stxt{font-size:11px;color:var(--txt3);line-height:1.35}
+.stp.on .stxt{color:var(--txt);font-weight:500}
+.stxt b{display:block;font-size:12px}
+.sline{flex:1;height:1.5px;background:var(--border);margin:0 10px;min-width:18px}
+.stp.done + .sline{background:var(--ok)}
+
+.body{flex:1;overflow-y:auto;padding:14px}
+.stitle{font-size:16px;font-weight:600;margin-bottom:3px}
+.ssub{font-size:11px;color:var(--txt3);margin-bottom:12px;line-height:1.6}
+
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:11px 13px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:5px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:21px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:4px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}.c-v.ac{color:var(--acc)}.c-v.wn{color:var(--wn)}
+
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.sech-m{font-size:10px;color:var(--txt3)}
+.fx{padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.8;color:var(--txt2);white-space:pre-wrap;background:var(--s1);border-bottom:0.5px solid var(--border)}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.num{text-align:right}
+.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc)}
+.gr{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;font-size:10px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.arw{color:var(--txt3);margin:0 3px}
+.up{color:var(--ok);font-weight:600}.down{color:var(--dn);font-weight:600}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bac{background:var(--bg-ac);color:#185FA5}.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}
+.empty{padding:26px;text-align:center;color:var(--txt3);font-size:11px}
+
+/* 등급 분포 비교 */
+.dist{display:flex;gap:14px;padding:12px;align-items:center}
+.dcol{flex:1}
+.dlbl{font-size:10px;color:var(--txt3);margin-bottom:5px;text-align:center}
+.dbar{display:flex;height:28px;border-radius:5px;overflow:hidden;border:0.5px solid var(--border)}
+.db{display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600}
+.darw{font-size:18px;color:var(--txt3)}
+
+.foot{padding:10px 14px;border-top:0.5px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.foot .m{font-size:10px;color:var(--txt3);flex:1;line-height:1.5}
+
+@media(max-width:900px){
+  .cards{grid-template-columns:repeat(2,1fr)}
+  .dist{flex-direction:column;gap:8px}
+  .darw{transform:rotate(90deg)}
+  .stxt{display:none}
+  .stp{gap:0}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-wand"></i></div>
-    <div class="title">안전재고 일괄 갱신 마법사</div>
-    <div class="sub">180일/90일/30일 주기 갱신 대상을 4단계 wizard로 일괄 처리합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-list-check"></i></div><div class="feat-t">1단계 대상 확인</div><div class="feat-s">등급별 갱신 대상 자동 선별</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-star"></i></div><div class="feat-t">2단계 점수 검토</div><div class="feat-s">1·2·3점 버튼 인터랙티브</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-table"></i></div><div class="feat-t">3단계 결과 확인</div><div class="feat-s">등급/SS 변경 사항 비교</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-check"></i></div><div class="feat-t">4단계 확정</div><div class="feat-s">DB 반영 및 로그 자동 기록</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-wand" style="color:var(--acc)"></i>안전재고 일괄 갱신
+      <span class="tag">실제 DB · 기준일 {{ summary.base_date }} · 대상 {{ summary.total }}종</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="steps" id="steps"></div>
+  <div class="body" id="body"></div>
+
+  <div class="foot">
+    <button class="btn" id="prev" onclick="go(-1)"><i class="ti ti-chevron-left"></i>이전</button>
+    <button class="btn btnp" id="next" onclick="go(1)">다음<i class="ti ti-chevron-right"></i></button>
+    <span class="m" id="foot-msg"></span>
   </div>
 </div>
+
+<script>
+const ROWS = {{ rows|tojson }};
+const SUM  = {{ summary|tojson }};
+const SPAN = {{ span }};
+
+const STEPS = [
+  {t:'대상 선정',   s:'재검토 기한 도래'},
+  {t:'파레토 산정', s:'Usage_Score 계산'},
+  {t:'등급 재판정', s:'5항목 합산'},
+  {t:'안전재고 재계산', s:'공식 적용'}
+];
+let si = 0;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const GC = {A:'#E24B4A', B:'#EF9F27', C:'#1D9E75'};
+
+function drawSteps(){
+  let h='';
+  STEPS.forEach(function(s,i){
+    h += '<div class="stp ' + (i<si?'done':'') + (i===si?' on':'') + '" onclick="jump(' + i + ')">'
+       + '<div class="sdot">' + (i<si ? '<i class="ti ti-check"></i>' : (i+1)) + '</div>'
+       + '<div class="stxt"><b>' + s.t + '</b>' + s.s + '</div></div>';
+    if(i < STEPS.length-1) h += '<div class="sline"></div>';
+  });
+  document.getElementById('steps').innerHTML = h;
+  document.getElementById('prev').disabled = (si===0);
+  document.getElementById('next').disabled = (si===STEPS.length-1);
+}
+
+function tbl(head, rows){
+  if(!rows.length) return '<div class="empty">해당하는 품목이 없습니다.</div>';
+  return '<table><thead><tr>' + head.map(function(h){
+      return '<th' + (h[1]?' class="num"':'') + '>' + h[0] + '</th>';
+    }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+}
+
+function render(){
+  drawSteps();
+  const b = document.getElementById('body');
+  const msg = document.getElementById('foot-msg');
+
+  // ── 1단계 : 대상 선정 ──
+  if(si===0){
+    const due = ROWS.filter(function(r){return r.due;});
+    const byCycle = {};
+    ROWS.forEach(function(r){
+      const k = r.old_grade;
+      byCycle[k] = byCycle[k] || {n:0, due:0, cycle:r.cycle};
+      byCycle[k].n++; if(r.due) byCycle[k].due++;
+    });
+    b.innerHTML =
+      '<div class="stitle">1단계 · 재검토 대상 선정</div>'
+    + '<div class="ssub">등급별 재검토 주기가 지난 품목을 골라낸다. '
+    + '<code>Update_Log_tb.Next_Date</code> 가 기준일(' + SUM.base_date + ') 이전이면 대상이다.</div>'
+    + '<div class="cards">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-package"></i>전체 등록</div>'
+    +     '<div class="c-v">' + SUM.total + '<small>종</small></div><div class="c-s">안전재고 관리 품목</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-calendar-due"></i>재검토 대상</div>'
+    +     '<div class="c-v ac">' + SUM.due + '<small>종</small></div>'
+    +     '<div class="c-s">전체의 ' + (SUM.due/SUM.total*100).toFixed(0) + '%</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-check"></i>기한 내</div>'
+    +     '<div class="c-v ok">' + (SUM.total-SUM.due) + '<small>종</small></div>'
+    +     '<div class="c-s">아직 주기 미도래</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-clock"></i>기준일</div>'
+    +     '<div class="c-v" style="font-size:15px">' + SUM.base_date + '</div>'
+    +     '<div class="c-s">마지막 거래일 기준</div></div>'
+    + '</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-calendar-repeat"></i>'
+    +   '<span class="sech-t">등급별 재검토 주기</span>'
+    +   '<span class="sech-m">고가·핵심 자재일수록 자주 검토한다</span></div>'
+    +   tbl([['등급'],['주기',1],['등록',1],['대상',1],['비율',1]],
+          ['A','B','C'].filter(function(g){return byCycle[g];}).map(function(g){
+            const c=byCycle[g];
+            return '<tr><td><span class="gr gr'+g+'">'+g+'</span></td>'
+                 + '<td class="num">'+c.cycle+'일</td>'
+                 + '<td class="num">'+c.n+'종</td>'
+                 + '<td class="num" style="font-weight:600;color:var(--acc)">'+c.due+'종</td>'
+                 + '<td class="num">'+(c.due/c.n*100).toFixed(0)+'%</td></tr>';
+          }))
+    +   '<div class="note">A등급 30일 · B등급 90일 · C등급 180일. 표준 ABC 재고관리 원칙에 따라 '
+    +     '중요 자재를 더 자주 본다.</div></div>';
+    msg.innerHTML = '대상 <b>' + SUM.due + '종</b>을 선정했다. 다음 단계에서 사용 실적을 분석한다.';
+  }
+
+  // ── 2단계 : 파레토 산정 ──
+  else if(si===1){
+    const filled = ROWS.filter(function(r){return r.usage_filled;})
+                       .sort(function(a,b){return b.amount-a.amount;}).slice(0,8);
+    b.innerHTML =
+      '<div class="stitle">2단계 · 파레토 분석으로 Usage_Score 산정</div>'
+    + '<div class="ssub">불출 이력 ' + SPAN + '일치를 사용금액 기준으로 내림차순 정렬해 누적비율을 구한다. '
+    + '사람이 매기는 점수가 아니라 <b>실적에서 자동 산출</b>되는 항목이다.</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-math-function"></i>'
+    +   '<span class="sech-t">산정 규칙</span></div>'
+    +   '<div class="fx">사용금액 = 불출수량 × 단가\n'
+    +   '내림차순 정렬 후 누적비율 계산\n\n'
+    +   '  누적 75% 이내  → A (3점)\n'
+    +   '  누적 90% 이내  → B (2점)\n'
+    +   '  그 외          → C (1점)</div>'
+    +   '<div class="note">신규 등록 품목은 사용 이력이 없어 이 점수가 비어 있다(NULL). '
+    +     '갱신 시점에 비로소 채워진다.</div></div>'
+    + '<div class="cards">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-plus"></i>결측 채움</div>'
+    +     '<div class="c-v ac">' + SUM.usage_filled + '<small>종</small></div>'
+    +     '<div class="c-s">신규 등록 상태였던 품목</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>값 변경</div>'
+    +     '<div class="c-v wn">' + SUM.usage_changed + '<small>종</small></div>'
+    +     '<div class="c-s">기존 점수와 달라짐</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-equal"></i>유지</div>'
+    +     '<div class="c-v ok">' + (SUM.total-SUM.usage_filled-SUM.usage_changed) + '<small>종</small></div>'
+    +     '<div class="c-s">기존 점수와 동일</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-calendar"></i>분석 기간</div>'
+    +     '<div class="c-v">' + SPAN + '<small>일</small></div>'
+    +     '<div class="c-s">불출 이력 관측 구간</div></div>'
+    + '</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-list-numbers"></i>'
+    +   '<span class="sech-t">결측이 채워진 품목</span>'
+    +   '<span class="sech-m">사용금액 상위 8종</span></div>'
+    +   tbl([['순위',1],['자재'],['품명'],['사용금액',1],['누적비율',1],['산정 점수',1]],
+          filled.map(function(r){
+            return '<tr><td class="num">'+(r.rank||'-')+'</td>'
+                 + '<td><span class="pid">'+r.P_ID+'</span></td>'
+                 + '<td>'+esc(r.P_N)+'</td>'
+                 + '<td class="num">'+won(r.amount)+'원</td>'
+                 + '<td class="num">'+(r.cum_share!=null?r.cum_share+'%':'-')+'</td>'
+                 + '<td class="num"><span class="bg bac">'+r.new_usage+'점</span></td></tr>';
+          }))
+    + '</div>';
+    msg.innerHTML = '결측 <b>' + SUM.usage_filled + '종</b>을 채우고 <b>' + SUM.usage_changed + '종</b>의 점수가 바뀌었다.';
+  }
+
+  // ── 3단계 : 등급 재판정 ──
+  else if(si===2){
+    const ch = ROWS.filter(function(r){return r.grade_changed;});
+    const od=SUM.grade_dist_old, nd=SUM.grade_dist_new;
+    const bar = function(d){
+      return '<div class="dbar">' + ['A','B','C'].map(function(g){
+        const w=d[g]/SUM.total*100;
+        return '<div class="db" style="width:'+w.toFixed(1)+'%;background:'+GC[g]+'" title="'+g+'등급 '+d[g]+'종">'
+             + (w>8 ? g+' '+d[g] : '') + '</div>';
+      }).join('') + '</div>';
+    };
+    b.innerHTML =
+      '<div class="stitle">3단계 · 등급 재판정</div>'
+    + '<div class="ssub">기존 4개 항목(단가·대체가능성·품절영향·공급안정성)에 새로 산정한 '
+    + 'Usage_Score 를 더해 5개 항목 합계로 등급을 다시 매긴다.</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-adjustments"></i>'
+    +   '<span class="sech-t">컷오프</span></div>'
+    +   '<div class="fx">5개 항목 합계 (만점 15점)\n\n'
+    +   '  13점 이상  → A등급\n'
+    +   '   8 ~ 12점  → B등급\n'
+    +   '   7점 이하  → C등급</div>'
+    +   '<div class="note">신규 등록 시엔 Usage_Score 가 없어 4개 항목(만점 12점) 컷오프 '
+    +     '10/6/5 를 쓴다. 갱신 후에는 이 5항목 기준으로 넘어간다.</div></div>'
+    + '<div class="cards">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-exchange"></i>등급 변동</div>'
+    +     '<div class="c-v ac">' + SUM.grade_changed + '<small>종</small></div>'
+    +     '<div class="c-s">전체의 ' + (SUM.grade_changed/SUM.total*100).toFixed(0) + '%</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-up"></i>등급 상향</div>'
+    +     '<div class="c-v dn">' + SUM.grade_up + '<small>종</small></div>'
+    +     '<div class="c-s">관리 강화 필요</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-down"></i>등급 하향</div>'
+    +     '<div class="c-v ok">' + SUM.grade_down + '<small>종</small></div>'
+    +     '<div class="c-s">관리 부담 완화</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-equal"></i>유지</div>'
+    +     '<div class="c-v">' + (SUM.total-SUM.grade_changed) + '<small>종</small></div>'
+    +     '<div class="c-s">등급 그대로</div></div>'
+    + '</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-chart-pie"></i>'
+    +   '<span class="sech-t">등급 분포 변화</span></div>'
+    +   '<div class="dist">'
+    +     '<div class="dcol"><div class="dlbl">기존</div>' + bar(od) + '</div>'
+    +     '<div class="darw">→</div>'
+    +     '<div class="dcol"><div class="dlbl">재산정 후</div>' + bar(nd) + '</div>'
+    +   '</div>'
+    +   '<div class="note">A ' + od.A + '→' + nd.A + ' · B ' + od.B + '→' + nd.B + ' · C ' + od.C + '→' + nd.C + '종</div></div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-list-check"></i>'
+    +   '<span class="sech-t">등급이 바뀌는 품목</span><span class="sech-m">' + ch.length + '종</span></div>'
+    +   tbl([['자재'],['품명'],['Usage',1],['합계',1],['등급 변경'],['재검토 주기']],
+          ch.map(function(r){
+            const up = ['C','B','A'].indexOf(r.new_grade) > ['C','B','A'].indexOf(r.old_grade);
+            return '<tr><td><span class="pid">'+r.P_ID+'</span></td>'
+                 + '<td>'+esc(r.P_N)+'</td>'
+                 + '<td class="num">'+(r.old_usage==null?'—':r.old_usage)+'<span class="arw">→</span><b>'+r.new_usage+'</b></td>'
+                 + '<td class="num">'+r.new_sum+'점</td>'
+                 + '<td><span class="gr gr'+r.old_grade+'">'+r.old_grade+'</span>'
+                 +   '<span class="arw">→</span><span class="gr gr'+r.new_grade+'">'+r.new_grade+'</span> '
+                 +   '<span class="'+(up?'up':'down')+'">'+(up?'▲':'▼')+'</span></td>'
+                 + '<td>'+r.cycle+'일<span class="arw">→</span><b>'+r.new_cycle+'일</b></td></tr>';
+          }))
+    + '</div>';
+    msg.innerHTML = '<b>' + SUM.grade_changed + '종</b>의 등급이 바뀐다 (상향 ' + SUM.grade_up + ' · 하향 ' + SUM.grade_down + ').';
+  }
+
+  // ── 4단계 : 안전재고 재계산 ──
+  else {
+    const big = ROWS.filter(function(r){return r.ss_diff;})
+                    .sort(function(a,b){return Math.abs(b.ss_diff)-Math.abs(a.ss_diff);}).slice(0,10);
+    b.innerHTML =
+      '<div class="stitle">4단계 · 안전재고 수량 재계산</div>'
+    + '<div class="ssub">재판정된 등급의 서비스 수준(Z)과 변동 계수를 적용해 <code>Sf_Num</code> 을 다시 계산한다.</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-math-function"></i>'
+    +   '<span class="sech-t">계산식</span></div>'
+    +   '<div class="fx">SS = Z × √(L×σd² + d²×σL²)\n\n'
+    +   '  Z   A=2.33(99%)  B=1.65(95%)  C=1.28(90%)\n'
+    +   '  L   발주→입고 실측 평균 리드타임\n'
+    +   '  d   불출 합계 ÷ ' + SPAN + '일\n'
+    +   '  σd  d × 계수 (A 0.20 / B 0.25 / C 0.30)\n'
+    +   '  σL  L × 계수 (동일)</div>'
+    +   '<div class="note">등급이 바뀌면 Z 와 σ 계수가 함께 바뀌므로 안전재고 수량도 달라진다.</div></div>'
+    + '<div class="cards">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>수량 변동</div>'
+    +     '<div class="c-v ac">' + SUM.ss_changed + '<small>종</small></div>'
+    +     '<div class="c-s">전체 ' + SUM.total + '종 중</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-up"></i>상향</div>'
+    +     '<div class="c-v dn">' + SUM.ss_up + '<small>종</small></div>'
+    +     '<div class="c-s">보유량을 늘려야 함</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-down"></i>하향</div>'
+    +     '<div class="c-v ok">' + SUM.ss_down + '<small>종</small></div>'
+    +     '<div class="c-s">과잉 재고 해소</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-sum"></i>순 증감</div>'
+    +     '<div class="c-v ' + (SUM.ss_total_diff>=0?'dn':'ok') + '">'
+    +       (SUM.ss_total_diff>=0?'+':'') + nf(SUM.ss_total_diff) + '<small>개</small></div>'
+    +     '<div class="c-s">전 품목 합계</div></div>'
+    + '</div>'
+    + '<div class="sec"><div class="sech"><i class="ti ti-arrows-sort"></i>'
+    +   '<span class="sech-t">변동 폭이 큰 품목</span><span class="sech-m">상위 10종</span></div>'
+    +   tbl([['자재'],['품명'],['등급'],['일평균',1],['LT',1],['기존 SS',1],['재계산 SS',1],['증감',1]],
+          big.map(function(r){
+            return '<tr><td><span class="pid">'+r.P_ID+'</span></td>'
+                 + '<td>'+esc(r.P_N)+'</td>'
+                 + '<td><span class="gr gr'+r.old_grade+'">'+r.old_grade+'</span>'
+                 +   (r.grade_changed ? '<span class="arw">→</span><span class="gr gr'+r.new_grade+'">'+r.new_grade+'</span>' : '') + '</td>'
+                 + '<td class="num">'+r.daily+'</td>'
+                 + '<td class="num">'+r.lead_time+'일</td>'
+                 + '<td class="num">'+nf(r.old_ss)+'</td>'
+                 + '<td class="num"><b>'+nf(r.new_ss)+'</b></td>'
+                 + '<td class="num '+(r.ss_diff>0?'up':'down')+'">'+(r.ss_diff>0?'+':'')+nf(r.ss_diff)+'</td></tr>';
+          }))
+    +   '<div class="note">⚠️ 이 화면은 <b>조회 전용</b>이다. 실제로 DB 를 수정하지 않고 '
+    +     '"적용하면 이렇게 된다"를 보여준다. 반영하려면 <code>Safe_tb</code> 와 '
+    +     '<code>Update_Log_tb</code> 쓰기 기능이 필요하다.</div></div>';
+    msg.innerHTML = '재계산 완료. <b>' + SUM.ss_changed + '종</b>의 안전재고가 조정된다 (순증 ' + nf(SUM.ss_total_diff) + '개).';
+  }
+}
+
+function go(d){ const n=si+d; if(n<0||n>=STEPS.length) return; si=n; render(); document.getElementById('body').scrollTop=0; }
+function jump(i){ si=i; render(); document.getElementById('body').scrollTop=0; }
+
+function dl(){
+  const head=['품번','품명','재검토대상','최근갱신','다음예정','기존등급','재산정등급','등급변동',
+              '기존Usage','재산정Usage','5항목합계','기존안전재고','재계산안전재고','증감','일평균사용','리드타임'];
+  const lines=[head.join(',')];
+  ROWS.forEach(function(r){
+    lines.push([r.P_ID,r.P_N,(r.due?'대상':''),r.updated_date,r.next_date,r.old_grade,r.new_grade,
+                (r.grade_changed?'변동':''),(r.old_usage==null?'':r.old_usage),r.new_usage,r.new_sum,
+                r.old_ss,r.new_ss,r.ss_diff,r.daily,r.lead_time]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='안전재고_일괄갱신.csv';
+  a.click();
+}
+
+render();
+</script>
 </body>
 </html>

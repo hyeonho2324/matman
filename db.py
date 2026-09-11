@@ -1772,3 +1772,84 @@ def report_summary(months):
         "max_out": max((m["out_qty"] for m in months), default=1),
         "max_amt": max((max(m["in_amt"], m["out_amt"], m["po_amt"]) for m in months), default=1),
     }
+
+
+# ── 안전재고 일괄 갱신 마법사 ────────────────────────────────
+# SAFE_STOCK_DESIGN.md 의 갱신 절차를 화면에서 단계별로 재현한다.
+#   1) Update_Log_tb.Next_Date 로 재검토 대상 선정
+#   2) 불출 이력 파레토 분석으로 Usage_Score 산출
+#   3) 5개 항목 합산으로 등급 재판정 (컷오프 13/8/7)
+#   4) 공식으로 Sf_Num 재계산
+# 실제로 DB 를 쓰지는 않는다 — 조회 전용이므로 "적용하면 이렇게 된다"를 보여준다.
+def wizard_data(conn):
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    span = operating_days(conn)
+    abc = {r["P_ID"]: r for r in abc_analysis(conn)}
+    safe = safety_stock_list(conn)
+
+    due, rows = 0, []
+    for r in safe:
+        a = abc.get(r["P_ID"], {})
+        is_due = bool(r["next_date"] and r["next_date"] <= base)
+        if is_due:
+            due += 1
+
+        old_g = r["grade"]
+        new_g = a.get("new_grade") or old_g
+        old_u = r["Usage_Score"]
+        new_u = a.get("calc_usage_score")
+
+        # 안전재고 재계산 (SAFE_STOCK_DESIGN 의 초기 추정 σ 사용)
+        Z = Z_BY_GRADE.get(new_g, 1.65)
+        k = {"A": 0.20, "B": 0.25, "C": 0.30}.get(new_g, 0.25)
+        L = r["lead_time_real"] or r["lead_time"] or 0
+        d = r["daily_use"] or 0
+        new_ss = round(Z * ((L * (d * k) ** 2 + d * d * (L * k) ** 2) ** 0.5)) if d and L else r["safe_qty"]
+
+        rows.append({
+            "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
+            "supplier": r["supplier"],
+            "due": 1 if is_due else 0,
+            "updated_date": r["updated_date"], "next_date": r["next_date"],
+            "cycle": REVIEW_CYCLE_DAYS.get(old_g, 90),
+            "old_grade": old_g, "new_grade": new_g,
+            "grade_changed": 1 if new_g != old_g else 0,
+            "old_usage": old_u, "new_usage": new_u,
+            "usage_filled": 1 if old_u is None else 0,
+            "usage_changed": 1 if (old_u is not None and new_u != old_u) else 0,
+            "score4": sum(r[k2] or 0 for k2 in
+                          ("Price_Score", "Sub_Score", "Impact_Score", "Supply_Score")),
+            "new_sum": a.get("new_score_sum"),
+            "amount": a.get("amount", 0) or 0,
+            "cum_share": a.get("cum_share"),
+            "rank": a.get("rank"),
+            "old_ss": r["safe_qty"], "new_ss": new_ss,
+            "ss_diff": (new_ss or 0) - (r["safe_qty"] or 0),
+            "stock": r["stock"], "daily": d, "lead_time": L,
+            "new_cycle": REVIEW_CYCLE_DAYS.get(new_g, 90),
+        })
+
+    rows.sort(key=lambda x: (-x["grade_changed"], -abs(x["ss_diff"])))
+    return rows, base, span, due
+
+
+def wizard_summary(rows, base, due):
+    gc = [r for r in rows if r["grade_changed"]]
+    up = [r for r in gc if ["C", "B", "A"].index(r["new_grade"]) > ["C", "B", "A"].index(r["old_grade"])]
+    ss = [r for r in rows if r["ss_diff"]]
+    return {
+        "base_date": base,
+        "total": len(rows),
+        "due": due,
+        "usage_filled": len([r for r in rows if r["usage_filled"]]),
+        "usage_changed": len([r for r in rows if r["usage_changed"]]),
+        "grade_changed": len(gc),
+        "grade_up": len(up),
+        "grade_down": len(gc) - len(up),
+        "ss_changed": len(ss),
+        "ss_up": len([r for r in ss if r["ss_diff"] > 0]),
+        "ss_down": len([r for r in ss if r["ss_diff"] < 0]),
+        "ss_total_diff": sum(r["ss_diff"] for r in rows),
+        "grade_dist_old": {g: len([r for r in rows if r["old_grade"] == g]) for g in "ABC"},
+        "grade_dist_new": {g: len([r for r in rows if r["new_grade"] == g]) for g in "ABC"},
+    }

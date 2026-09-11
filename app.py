@@ -394,6 +394,15 @@ def _ctx_report():
         conn.close()
 
 
+def _ctx_wizard():
+    conn = db.connect()
+    try:
+        rows, base, span, due = db.wizard_data(conn)
+        return {"rows": rows, "summary": db.wizard_summary(rows, base, due), "span": span}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -410,6 +419,7 @@ EMBED_CONTEXT = {
     "risk_radar":   _ctx_risk_radar,
     "users":        _ctx_users,
     "report":       _ctx_report,
+    "wizard":       _ctx_wizard,
 }
 
 
