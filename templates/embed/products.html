@@ -50,6 +50,11 @@ tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--s1)}
 tbody tr.on{background:var(--bg-ac)}
 .pid{color:var(--acc);font-weight:500;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+/* 목록의 품번은 클릭하면 전체 LOT 이력 모달이 열린다.
+   파란색이기만 하고 눌리지 않으면 '고장난 링크'로 보이므로 밑줄·커서로 눌린다는 걸 알린다. */
+.pidlink{cursor:pointer;border-bottom:1px dashed var(--border-s,#B9B8B3)}
+.pidlink:hover{border-bottom-color:var(--acc);background:var(--bg-ac);border-radius:3px}
+.pidlink .ti{font-size:10px;opacity:.55;margin-left:2px;vertical-align:-1px}
 .nm{font-size:12px}
 .sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:230px;overflow:hidden;text-overflow:ellipsis}
 .gr{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;font-size:10px;font-weight:600}
@@ -297,7 +302,9 @@ function render(){
   }
   tb.innerHTML=r.map(function(x){
     return '<tr onclick="pick(\'' + x.P_ID + '\')" class="' + (sel===x.P_ID?'on':'') + '">'
-      + '<td><span class="pid">' + x.P_ID + '</span>'
+      + '<td><span class="pid pidlink" title="전체 LOT 이력 보기"'
+      +     ' onclick="pidClick(event,&quot;' + x.P_ID + '&quot;)">' + x.P_ID
+      +     '<i class="ti ti-history"></i></span>'
       +   (x.is_alt?' <span class="bg bmu">대체</span>':'') + '</td>'
       + '<td><div class="nm">' + esc(x.P_N) + '</div><div class="sp">' + esc(x.Spec) + '</div></td>'
       + '<td class="hide-sm" style="font-size:11px;color:var(--txt2)">' + esc(x.cat_name||'-') + '</td>'
@@ -414,6 +421,14 @@ function pick(pid){
 }
 
 // ── LOT 전체 이력 모달 ──
+// 목록의 품번 클릭 — 행 선택(상세패널)과 LOT 이력 모달을 함께 연다.
+// event.stopPropagation() 이 없으면 tr 의 pick() 이 한 번 더 돌아 중복 렌더된다.
+function pidClick(ev, pid){
+  ev.stopPropagation();
+  if(sel !== pid) pick(pid);
+  openLots(pid);
+}
+
 function openLots(pid){
   const p = ROWS.filter(function(r){return r.P_ID===pid;})[0];
   const ls = LOTS.filter(function(l){return l.P_ID===pid;})
