@@ -2,34 +2,280 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>발주 캘린더</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btn:disabled{opacity:.35;cursor:default}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.ac{color:var(--acc)}.kv.ok{color:var(--ok)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.calwrap{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+.navbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.mtitle{font-size:15px;font-weight:600;min-width:105px}
+.mnav{display:flex;gap:4px}
+.leg{margin-left:auto;display:flex;gap:12px;font-size:10px;color:var(--txt3);align-items:center}
+.leg span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+.grid{flex:1;display:flex;flex-direction:column;overflow:auto;padding:0 14px 12px}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;flex-shrink:0;position:sticky;top:0;background:var(--s0);padding-top:8px;z-index:2}
+.dow div{text-align:center;font-size:10px;color:var(--txt3);font-weight:500;padding:2px 0}
+.dow div:first-child{color:var(--dn)}
+.dow div:last-child{color:var(--acc)}
+.weeks{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;flex:1;grid-auto-rows:minmax(72px,1fr)}
+.cell{border:0.5px solid var(--border);border-radius:6px;padding:5px 6px;background:var(--s0);display:flex;flex-direction:column;gap:3px;min-height:72px;overflow:hidden}
+.cell.pad{background:transparent;border-color:transparent}
+.cell.has{cursor:pointer}
+.cell.has:hover{border-color:var(--border-s);box-shadow:0 0 0 1.5px rgba(42,120,214,.15)}
+.cell.on{border-color:var(--acc);box-shadow:0 0 0 2px rgba(42,120,214,.28)}
+.dnum{font-size:11px;font-weight:500;display:flex;align-items:center;gap:4px}
+.dnum small{font-size:9px;color:var(--txt3);font-weight:400}
+.sun{color:var(--dn)}.sat{color:var(--acc)}
+.ev{display:flex;align-items:center;gap:4px;font-size:9px;padding:1px 4px;border-radius:3px;white-space:nowrap;overflow:hidden}
+.ev-po{background:var(--bg-ac);color:#185FA5}
+.ev-in{background:var(--bg-ok);color:#1D6E52}
+.ev b{font-weight:600}
+.ev span{margin-left:auto;opacity:.75}
+.heat{height:3px;border-radius:2px;margin-top:auto}
+
+.detail{width:340px;border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.dh{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.dh-t{font-size:13px;font-weight:500;margin-bottom:3px}
+.dh-s{font-size:10px;color:var(--txt3);line-height:1.5}
+.dbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
+.pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s2)}
+.pnh-t{font-size:11px;font-weight:500;flex:1}
+.ir{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:0.5px solid var(--border);font-size:11px}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);font-size:10px;flex-shrink:0;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.iv{font-weight:500;text-align:right;white-space:nowrap}
+.note{padding:7px 10px;font-size:10px;color:var(--txt3);line-height:1.6}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}
+.empty{padding:30px 20px;text-align:center;color:var(--txt3);font-size:11px}
+
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .main{flex-direction:column}
+  .detail{width:100%;max-height:46%;border-left:none;border-top:0.5px solid var(--border-s)}
+  .weeks{grid-auto-rows:minmax(58px,1fr)}
+  .cell{min-height:58px}
+  .leg{display:none}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-calendar"></i></div>
-    <div class="title">발주 캘린더</div>
-    <div class="sub">월간 발주 일정을 달력 형태로 시각화합니다. 날짜 클릭 시 D-Day 및 이벤트 상세가 표시됩니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-calendar"></i></div><div class="feat-t">월간 달력</div><div class="feat-s">발주/입고/지연 색상 구분</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-clock"></i></div><div class="feat-t">D-Day 표시</div><div class="feat-s">입고 예정일 카운트다운</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-alert-triangle"></i></div><div class="feat-t">지연 경고</div><div class="feat-s">납기 지연 즉시 표시</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-chevron-left"></i></div><div class="feat-t">월 이동</div><div class="feat-s">이전/다음 월 탐색</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-calendar" style="color:var(--acc)"></i>발주 캘린더
+      <span class="tag">실제 DB · {{ summary.date_from }} ~ {{ summary.date_to }} ({{ summary.months }}개월)</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-file-text"></i>발주</div>
+      <div class="kv ac">{{ summary.po_cnt }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
+      <div class="ks">{{ summary.po_days }}일 · 일평균 {{ summary.po_per_day }}건</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-arrow-bar-to-down"></i>입고</div>
+      <div class="kv ok">{{ summary.in_cnt }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
+      <div class="ks">{{ summary.in_days }}일 · 일평균 {{ summary.in_per_day }}건</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-coin"></i>발주 금액</div>
+      <div class="kv">{{ (summary.po_amount/100000000)|round(1) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
+      <div class="ks">입고 {{ (summary.in_amount/100000000)|round(1) }}억원</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-calendar-stats"></i>발주 활동일</div>
+      <div class="kv">{{ summary.po_days }}<span style="font-size:11px;color:var(--txt3)">일</span></div>
+      <div class="ks">입고는 {{ summary.in_days }}일에 분산</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-calendar-month"></i>기간</div>
+      <div class="kv">{{ summary.months }}<span style="font-size:11px;color:var(--txt3)">개월</span></div>
+      <div class="ks">{{ summary.date_from }} ~</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="calwrap">
+      <div class="navbar">
+        <div class="mnav">
+          <button class="btn" id="prev" onclick="move(-1)"><i class="ti ti-chevron-left"></i></button>
+          <button class="btn" id="next" onclick="move(1)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+        <div class="mtitle" id="mtitle"></div>
+        <div class="leg">
+          <span><i class="sw" style="background:#2a78d6"></i>발주</span>
+          <span><i class="sw" style="background:#1D9E75"></i>입고</span>
+          <span>날짜를 클릭하면 상세가 표시됩니다</span>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="dow"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div>
+        <div class="weeks" id="weeks"></div>
+      </div>
+    </div>
+
+    <div class="detail">
+      <div class="dh">
+        <div class="dh-t" id="dt">날짜를 선택하세요</div>
+        <div class="dh-s" id="ds">캘린더에서 날짜를 클릭하면 그날의 발주와 입고 내역이 표시됩니다.</div>
+      </div>
+      <div class="dbody" id="db"></div>
+    </div>
   </div>
 </div>
+
+<script>
+const CAL = {{ cal|tojson }};
+const SUM = {{ summary|tojson }};
+const MONTHS = CAL.months;
+
+let mi = 0, sel = null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const pad2 = n => (n<10 ? '0'+n : ''+n);
+
+function drawMonth(){
+  const ym = MONTHS[mi];
+  const y = +ym.slice(0,4), m = +ym.slice(5,7);
+  document.getElementById('mtitle').textContent = y + '년 ' + m + '월';
+  document.getElementById('prev').disabled = (mi===0);
+  document.getElementById('next').disabled = (mi===MONTHS.length-1);
+
+  const first = new Date(y, m-1, 1).getDay();      // 0=일
+  const last  = new Date(y, m, 0).getDate();
+  let html='';
+  for(let i=0;i<first;i++) html += '<div class="cell pad"></div>';
+
+  for(let d=1; d<=last; d++){
+    const key = ym + '-' + pad2(d);
+    const info = CAL.days[key];
+    const dow = new Date(y, m-1, d).getDay();
+    const dcls = dow===0 ? 'sun' : (dow===6 ? 'sat' : '');
+    if(!info){
+      html += '<div class="cell"><div class="dnum ' + dcls + '">' + d + '</div></div>';
+      continue;
+    }
+    const po = info.po, ins = info['in'];
+    const heat = Math.max(
+      po ? po.cnt/CAL.max_po : 0,
+      ins ? ins.cnt/CAL.max_in : 0);
+    html += '<div class="cell has ' + (sel===key?'on':'') + '" onclick="pick(\'' + key + '\')">'
+      + '<div class="dnum ' + dcls + '">' + d + '</div>'
+      + (po  ? '<div class="ev ev-po"><b>발주 ' + po.cnt + '</b><span>' + won(po.amount) + '</span></div>' : '')
+      + (ins ? '<div class="ev ev-in"><b>입고 ' + ins.cnt + '</b><span>' + won(ins.amount) + '</span></div>' : '')
+      + '<div class="heat" style="background:rgba(42,120,214,' + (0.12 + heat*0.55).toFixed(2) + ')"></div>'
+      + '</div>';
+  }
+  document.getElementById('weeks').innerHTML = html;
+}
+
+function pick(key){
+  sel = key;
+  drawMonth();
+  const info = CAL.days[key] || {};
+  const pos = CAL.po_list[key] || [];
+  const ins = CAL.in_list[key] || [];
+  const dt = new Date(+key.slice(0,4), +key.slice(5,7)-1, +key.slice(8,10));
+  const dowName = '일월화수목금토'[dt.getDay()];
+
+  document.getElementById('dt').textContent = key + ' (' + dowName + ')';
+  document.getElementById('ds').innerHTML =
+    '발주 ' + (info.po ? info.po.cnt + '건 · ' + won(info.po.amount) + '원' : '없음')
+    + ' · 입고 ' + (info['in'] ? info['in'].cnt + '건 · ' + won(info['in'].amount) + '원' : '없음');
+
+  let html = '';
+
+  if(pos.length){
+    html += '<div class="pn">'
+      + '<div class="pnh"><i class="ti ti-file-text" style="color:var(--acc)"></i>'
+      +   '<span class="pnh-t">발주</span><span class="bg bac">' + pos.length + '건</span></div>'
+      + pos.map(function(o){
+          return '<div class="ir"><span class="ik"><span class="mono">' + o.H_ID + '</span><br>'
+               + esc(o.supplier||'-') + (o.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</span>'
+               + '<span class="iv">' + won(o.amount) + '원<br>'
+               + '<span style="font-size:9px;color:var(--txt3);font-weight:400">' + o.line_cnt + '품목'
+               + (o.recv_date ? ' · 입고 ' + o.recv_date : '') + '</span></span></div>';
+        }).join('')
+      + '</div>';
+  }
+
+  if(ins.length){
+    html += '<div class="pn">'
+      + '<div class="pnh"><i class="ti ti-arrow-bar-to-down" style="color:var(--ok)"></i>'
+      +   '<span class="pnh-t">입고</span><span class="bg bok">' + ins.length + '건</span></div>'
+      + ins.slice(0,12).map(function(l){
+          return '<div class="ir"><span class="ik"><span class="mono">' + l.Lot_ID + '</span><br>'
+               + esc((l.P_N||'').slice(0,14)) + '</span>'
+               + '<span class="iv">' + nf(l.P_Qty) + '개<br>'
+               + '<span style="font-size:9px;color:var(--txt3);font-weight:400">' + esc(l.loc_name||'-')
+               + (l.lead_days!=null ? ' · LT ' + l.lead_days + '일' : '') + '</span></span></div>';
+        }).join('')
+      + (ins.length>12 ? '<div class="note">외 ' + (ins.length-12) + '건</div>' : '')
+      + '</div>';
+  }
+
+  if(!html) html = '<div class="pn"><div class="empty">이 날짜에는 발주도 입고도 없습니다.</div></div>';
+  document.getElementById('db').innerHTML = html;
+}
+
+function move(d){
+  const n = mi + d;
+  if(n < 0 || n >= MONTHS.length) return;
+  mi = n;
+  drawMonth();
+}
+
+function dl(){
+  const head=['날짜','요일','발주건수','발주수량','발주금액','입고건수','입고수량','입고금액'];
+  const lines=[head.join(',')];
+  Object.keys(CAL.days).sort().forEach(function(k){
+    const v=CAL.days[k], po=v.po, ins=v['in'];
+    const dt=new Date(+k.slice(0,4), +k.slice(5,7)-1, +k.slice(8,10));
+    lines.push([k,'일월화수목금토'[dt.getDay()],
+                po?po.cnt:0, po?po.qty:0, po?Math.round(po.amount):0,
+                ins?ins.cnt:0, ins?ins.qty:0, ins?Math.round(ins.amount):0]
+      .map(function(v2){ return '"' + v2 + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='발주캘린더_일별.csv';
+  a.click();
+}
+
+drawMonth();
+</script>
 </body>
 </html>

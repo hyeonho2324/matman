@@ -358,6 +358,15 @@ def _ctx_forecast():
         conn.close()
 
 
+def _ctx_calendar():
+    conn = db.connect()
+    try:
+        cal = db.calendar_data(conn)
+        return {"cal": cal, "summary": db.calendar_summary(cal)}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -370,6 +379,7 @@ EMBED_CONTEXT = {
     "stock_map":    _ctx_stock_map,
     "lot":          _ctx_lot,
     "forecast":     _ctx_forecast,
+    "calendar":     _ctx_calendar,
 }
 
 

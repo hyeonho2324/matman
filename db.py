@@ -1383,3 +1383,96 @@ def forecast_summary(rows, base, span):
         "conf": {k: len([r for r in rows if r["confidence"] == k])
                  for k in ("높음", "보통", "낮음", "없음")},
     }
+
+
+# ── 발주 캘린더 화면 ─────────────────────────────────────────
+def calendar_data(conn):
+    """날짜별 발주·입고 집계 + 각 날짜의 상세 목록."""
+    # 날짜별 발주
+    po_day = _rows(conn, """
+        SELECT h.P_Date AS d,
+               COUNT(DISTINCT h.H_ID)   AS cnt,
+               SUM(d.P_Qty * p.P_Price) AS amount,
+               SUM(d.P_Qty)             AS qty
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         GROUP BY h.P_Date
+    """)
+    # 날짜별 입고
+    in_day = _rows(conn, """
+        SELECT l.Lot_Date AS d,
+               COUNT(*)                 AS cnt,
+               SUM(l.P_Qty * p.P_Price) AS amount,
+               SUM(l.P_Qty)             AS qty
+          FROM Lot_tb l JOIN Product_tb p ON l.P_ID = p.P_ID
+         GROUP BY l.Lot_Date
+    """)
+    days = {}
+    for r in po_day:
+        days.setdefault(r["d"], {})["po"] = {"cnt": r["cnt"], "amount": r["amount"], "qty": r["qty"]}
+    for r in in_day:
+        days.setdefault(r["d"], {})["in"] = {"cnt": r["cnt"], "amount": r["amount"], "qty": r["qty"]}
+
+    # 발주 상세 (날짜 클릭용)
+    po_list = {}
+    for r in _rows(conn, """
+        SELECT h.P_Date AS d, h.H_ID, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               COUNT(*) AS line_cnt, SUM(pd.P_Qty * p.P_Price) AS amount,
+               MIN(l.Lot_Date) AS recv_date
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb pd ON h.H_ID = pd.H_ID
+          JOIN Product_tb p          ON pd.P_ID = p.P_ID
+          LEFT JOIN Company_tb c     ON h.BRN = c.BRN
+          LEFT JOIN Lot_tb l         ON l.H_ID = h.H_ID
+         GROUP BY h.P_Date, h.H_ID, c.CP_N, c.Is_Foreign
+         ORDER BY h.P_Date, h.H_ID
+    """):
+        po_list.setdefault(r["d"], []).append(r)
+
+    # 입고 상세
+    in_list = {}
+    for r in _rows(conn, """
+        SELECT l.Lot_Date AS d, l.Lot_ID, l.P_ID, p.P_N, l.P_Qty,
+               lo.Loc_N AS loc_name, c.CP_N AS supplier, l.H_ID,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
+               ROUND(l.P_Qty * p.P_Price) AS amount
+          FROM Lot_tb l
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN Company_tb c   ON p.BRN = c.BRN
+          LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+         ORDER BY l.Lot_Date, l.Lot_ID
+    """):
+        in_list.setdefault(r["d"], []).append(r)
+
+    all_dates = sorted(days)
+    months = sorted({d[:7] for d in all_dates})
+    return {
+        "days": days,
+        "po_list": po_list,
+        "in_list": in_list,
+        "months": months,
+        "date_from": all_dates[0] if all_dates else None,
+        "date_to": all_dates[-1] if all_dates else None,
+        "max_po": max((v.get("po", {}).get("cnt", 0) for v in days.values()), default=1),
+        "max_in": max((v.get("in", {}).get("cnt", 0) for v in days.values()), default=1),
+    }
+
+
+def calendar_summary(cal):
+    po = [v["po"] for v in cal["days"].values() if "po" in v]
+    ins = [v["in"] for v in cal["days"].values() if "in" in v]
+    return {
+        "po_cnt": sum(x["cnt"] for x in po),
+        "po_days": len(po),
+        "po_amount": sum(x["amount"] or 0 for x in po),
+        "in_cnt": sum(x["cnt"] for x in ins),
+        "in_days": len(ins),
+        "in_amount": sum(x["amount"] or 0 for x in ins),
+        "months": len(cal["months"]),
+        "date_from": cal["date_from"],
+        "date_to": cal["date_to"],
+        "po_per_day": round(sum(x["cnt"] for x in po) / len(po), 1) if po else 0,
+        "in_per_day": round(sum(x["cnt"] for x in ins) / len(ins), 1) if ins else 0,
+    }
