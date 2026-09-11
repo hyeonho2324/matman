@@ -345,6 +345,19 @@ def _ctx_lot():
         conn.close()
 
 
+def _ctx_forecast():
+    conn = db.connect()
+    try:
+        rows, base, span = db.forecast_list(conn)
+        return {
+            "rows": rows,
+            "monthly": db.forecast_monthly(conn),
+            "summary": db.forecast_summary(rows, base, span),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -356,6 +369,7 @@ EMBED_CONTEXT = {
     "purchase":     _ctx_purchase,
     "stock_map":    _ctx_stock_map,
     "lot":          _ctx_lot,
+    "forecast":     _ctx_forecast,
 }
 
 

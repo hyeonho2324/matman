@@ -1257,3 +1257,129 @@ def lot_summary(rows, base):
         "fifo_bad_qty": sum(r["remain"] or 0 for r in rows if not r["fifo_ok"]),
         "fifo_bad_value": sum(r["value"] or 0 for r in rows if not r["fifo_ok"]),
     }
+
+
+# ── 수요 예측 화면 ───────────────────────────────────────────
+# [설계 판단]
+#   자재당 불출 관측이 1~6회(중앙값 2회)뿐이라 회귀·계절성 같은 통계 예측은
+#   표본이 부족해 신뢰할 수 없다. 그래서 방어 가능한 단순 계산만 쓴다.
+#       일평균 사용량 d  = 총 불출량 ÷ 관측기간
+#       소진 예상일      = 현재고 ÷ d
+#       발주 마감일      = 소진 예상일 − 리드타임
+#   관측 횟수를 함께 표시해 신뢰도를 사용자가 판단하게 한다.
+def forecast_list(conn):
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    span = operating_days(conn)
+
+    rows = _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL}),
+             used AS (
+                SELECT l.P_ID,
+                       SUM(t.T_Num) AS out_qty,
+                       COUNT(*)     AS out_cnt,
+                       MIN(t.T_Date) AS first_out,
+                       MAX(t.T_Date) AS last_out
+                  FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                 WHERE t.T_Type = '불출'
+                 GROUP BY l.P_ID
+             )
+        SELECT p.P_ID, p.P_N, p.Spec, p.P_Price, p.MinOrderQty, p.PkgUnit,
+               c.CP_N  AS supplier, c.Is_Foreign AS is_foreign,
+               s.Sf_Lv AS grade, s.Sf_Num AS safe_qty, s.Lead_Time AS lead_time,
+               COALESCE(st.stock, 0)  AS stock,
+               COALESCE(u.out_qty, 0) AS out_qty,
+               COALESCE(u.out_cnt, 0) AS out_cnt,
+               u.first_out, u.last_out
+          FROM Product_tb p
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+          LEFT JOIN stock st     ON p.P_ID = st.P_ID
+          LEFT JOIN used u       ON p.P_ID = u.P_ID
+    """)
+
+    # 자재별 월간 불출 (스파크라인용)
+    monthly = {}
+    for r in _rows(conn, """
+        SELECT l.P_ID, substr(t.T_Date,1,7) AS ym, SUM(t.T_Num) AS qty
+          FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+         WHERE t.T_Type = '불출'
+         GROUP BY l.P_ID, ym ORDER BY ym
+    """):
+        monthly.setdefault(r["P_ID"], []).append({"ym": r["ym"], "qty": r["qty"]})
+
+    for r in rows:
+        d = (r["out_qty"] or 0) / span
+        r["daily"] = round(d, 2)
+        r["monthly_avg"] = round(d * 30)
+        r["months"] = monthly.get(r["P_ID"], [])
+        lt = r["lead_time"] or 0
+
+        if d <= 0:
+            r["days_left"] = None      # 사용 이력이 없어 예측 불가
+            r["deadline"] = None
+            r["urgency"] = "예측불가"
+        else:
+            left = (r["stock"] or 0) / d
+            r["days_left"] = round(left)
+            r["deadline"] = round(left - lt)   # 발주까지 남은 일수
+            if r["stock"] <= 0:
+                r["urgency"] = "재고소진"
+            elif r["deadline"] <= 0:
+                r["urgency"] = "발주지연"
+            elif r["deadline"] <= 14:
+                r["urgency"] = "발주임박"
+            elif r["deadline"] <= 45:
+                r["urgency"] = "주의"
+            else:
+                r["urgency"] = "여유"
+
+        # 권장 발주량 — 리드타임 소요분 + 안전재고 − 현재고, MOQ·포장단위로 올림
+        need = max(round(d * lt + (r["safe_qty"] or 0) - (r["stock"] or 0)), 0)
+        moq, pkg = r["MinOrderQty"] or 0, r["PkgUnit"] or 1
+        if need > 0:
+            need = max(need, moq)
+            if pkg > 1:
+                need = -(-need // pkg) * pkg     # 포장단위 올림
+        r["order_qty"] = need
+        r["order_amt"] = round(need * (r["P_Price"] or 0))
+        # 관측 횟수로 신뢰도 표시
+        r["confidence"] = ("높음" if r["out_cnt"] >= 4
+                           else ("보통" if r["out_cnt"] >= 2
+                                 else ("낮음" if r["out_cnt"] == 1 else "없음")))
+    rows.sort(key=lambda r: (r["deadline"] if r["deadline"] is not None else 9999))
+    return rows, base, span
+
+
+def forecast_monthly(conn):
+    return _rows(conn, """
+        SELECT substr(t.T_Date,1,7) AS ym,
+               COUNT(*) AS cnt, SUM(t.T_Num) AS qty,
+               SUM(t.T_Num * p.P_Price) AS amount
+          FROM Transaction_tb t
+          JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+         WHERE t.T_Type = '불출'
+         GROUP BY ym ORDER BY ym
+    """)
+
+
+def forecast_summary(rows, base, span):
+    U = lambda k: [r for r in rows if r["urgency"] == k]
+    need = [r for r in rows if r["order_qty"] > 0]
+    return {
+        "base_date": base,
+        "span": span,
+        "total": len(rows),
+        "predictable": len([r for r in rows if r["days_left"] is not None]),
+        "no_history": len(U("예측불가")),
+        "sold_out": len(U("재고소진")),
+        "delayed": len(U("발주지연")),
+        "imminent": len(U("발주임박")),
+        "caution": len(U("주의")),
+        "safe": len(U("여유")),
+        "order_items": len(need),
+        "order_amt": sum(r["order_amt"] for r in need),
+        "daily_total": round(sum(r["daily"] for r in rows), 1),
+        "conf": {k: len([r for r in rows if r["confidence"] == k])
+                 for k in ("높음", "보통", "낮음", "없음")},
+    }
