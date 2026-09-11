@@ -20,6 +20,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .selbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 .selbar label{font-size:11px;color:var(--txt3)}
 select{padding:5px 9px;border-radius:var(--r);border:0.5px solid var(--border-s);font-size:12px;font-family:inherit;background:var(--s0);color:var(--txt);max-width:330px}
+.srch{display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:4px 8px}
+.srch i{font-size:12px;color:var(--txt3)}
+.srch input{border:none;outline:none;background:transparent;font-size:12px;font-family:inherit;width:150px;color:var(--txt)}
+.hit{font-size:11px;color:var(--txt3);white-space:nowrap}
+.hit.none{color:var(--dn)}
 .chip{padding:2px 8px;border-radius:99px;font-size:10px;font-weight:500}
 .c-재고소진,.c-발주지연{background:var(--bg-dn);color:#9B1C1C}
 .c-발주임박{background:var(--bg-wn);color:#854F0B}
@@ -82,6 +87,8 @@ input[type=range]{width:100%;accent-color:var(--acc);height:18px}
   .main{flex-direction:column}
   .panel{width:100%;border-left:none;border-top:0.5px solid var(--border-s);max-height:52%}
   select{max-width:100%;flex:1}
+  .srch{flex:1}
+  .srch input{width:100%}
 }
 </style>
 </head>
@@ -98,7 +105,13 @@ input[type=range]{width:100%;accent-color:var(--acc);height:18px}
 
   <div class="selbar">
     <label>품목</label>
+    <div class="srch">
+      <i class="ti ti-search"></i>
+      <input id="q" type="search" placeholder="품번 · 품명 · 규격 · 협력사"
+             oninput="fillSel()" autocomplete="off">
+    </div>
     <select id="sel" onchange="pick()"></select>
+    <span class="hit" id="hit"></span>
     <span id="chips"></span>
     <span class="meta" id="meta"></span>
   </div>
@@ -176,12 +189,46 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 
 // 품목 셀렉트
-(function(){
-  document.getElementById('sel').innerHTML = ITEMS.map(function(it,i){
-    return '<option value="'+i+'">' + it.P_ID + ' · ' + it.P_N
-         + ' (' + it.urgency + ', 재고 ' + nf(it.stock) + ')</option>';
+// option 의 value 는 배열 인덱스가 아니라 품번이다.
+// 검색으로 목록을 거르면 인덱스가 밀려 엉뚱한 품목이 잡히기 때문이다.
+function fillSel(){
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  const list = ITEMS.filter(function(it){
+    if(!q) return true;
+    const hay = (it.P_ID + ' ' + it.P_N + ' ' + (it.Spec||'') + ' '
+               + (it.supplier||'') + ' ' + (it.grade||'') + ' ' + it.urgency).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+
+  const sel = document.getElementById('sel');
+  const hit = document.getElementById('hit');
+
+  if(!list.length){
+    // 결과가 없어도 현재 품목은 남겨둔다 — 시뮬레이션이 빈 화면이 되면 안 된다
+    hit.textContent = '검색 결과 없음'; hit.className = 'hit none';
+    sel.innerHTML = '<option value="' + cur.P_ID + '">' + optLabel(cur) + '</option>';
+    sel.value = cur.P_ID;
+    return;
+  }
+
+  hit.textContent = q ? list.length + '종' : ITEMS.length + '종';
+  hit.className = 'hit';
+  sel.innerHTML = list.map(function(it){
+    return '<option value="' + it.P_ID + '">' + optLabel(it) + '</option>';
   }).join('');
-})();
+
+  // 지금 보던 품목이 결과에 있으면 그대로 두고, 없으면 첫 결과로 옮긴다
+  if(list.some(function(it){ return it.P_ID === cur.P_ID; })){
+    sel.value = cur.P_ID;
+  }else{
+    sel.value = list[0].P_ID;
+    pick();
+  }
+}
+function optLabel(it){
+  return it.P_ID + ' · ' + it.P_N + ' (' + it.urgency + ', 재고 ' + nf(it.stock) + ')';
+}
+fillSel();
 
 function reset(){
   const it = cur;
@@ -208,7 +255,8 @@ function reset(){
 }
 
 function pick(){
-  cur = ITEMS[+document.getElementById('sel').value];
+  const pid = document.getElementById('sel').value;
+  cur = ITEMS.filter(function(it){ return it.P_ID === pid; })[0] || cur;
   document.getElementById('chips').innerHTML =
     (cur.grade ? '<span class="gr gr'+cur.grade+'">'+cur.grade+'</span> ' : '')
     + '<span class="chip c-' + cur.urgency + '">' + cur.urgency + '</span>';
