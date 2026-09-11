@@ -273,6 +273,7 @@ def _ctx_tx_history():
             "prods": prods,
             "locs": db.tx_locations(conn),
             "monthly": db.tx_monthly(conn),
+            "tx_meta": db.TX_META,
             "summary": db.tx_summary(rows, lots, prods),
         }
     finally:
@@ -380,7 +381,8 @@ def _ctx_users():
     conn = db.connect()
     try:
         rows = db.user_list(conn)
-        return {"rows": rows, "summary": db.user_summary(rows, conn)}
+        return {"rows": rows, "summary": db.user_summary(rows, conn),
+                "tx_meta": db.TX_META}
     finally:
         conn.close()
 

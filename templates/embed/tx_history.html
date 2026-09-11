@@ -38,6 +38,14 @@ svg{display:block;width:100%;height:96px}
 .pill:hover{background:var(--s2)}
 .pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
 select{padding:3px 8px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt)}
+input[type=date]{padding:3px 7px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt);width:132px}
+input[type=date]:focus{outline:none;border-color:var(--acc)}
+.dsep{width:1px;height:16px;background:var(--border);margin:0 2px}
+.dlbl{font-size:11px;color:var(--txt3);display:inline-flex;align-items:center;gap:4px}
+.dtil{color:var(--txt3);font-size:11px}
+.qbtn{padding:3px 8px;border-radius:99px;border:0.5px solid var(--border);font-size:10px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.qbtn:hover{background:var(--s2)}
+.rangemsg{font-size:10px;color:var(--acc);font-weight:500}
 .search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
 .search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:160px;color:var(--txt)}
 .cnt{font-size:11px;color:var(--txt3)}
@@ -56,6 +64,8 @@ tbody tr.on{background:var(--bg-ac)}
 .tt{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:500}
 .tt-in{background:var(--bg-ac);color:#185FA5}
 .tt-out{background:var(--bg-wn);color:#854F0B}
+.tt-bad{background:var(--bg-dn);color:#9B1C1C}
+.tt-move{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
 .lotid{color:var(--acc);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
 .nm{font-size:12px}
@@ -88,7 +98,7 @@ tbody tr.on{background:var(--bg-ac)}
 .step::before{content:'';position:absolute;left:7px;top:17px;bottom:-2px;width:1.5px;background:var(--border)}
 .step:last-child::before{display:none}
 .dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;margin-top:2px;z-index:1}
-.d-ord{background:var(--txt3)}.d-in{background:var(--acc)}.d-out{background:var(--wn)}.d-prod{background:var(--ok)}.d-rem{background:var(--s2);border:1.5px solid var(--border-s)}
+.d-ord{background:var(--txt3)}.d-bad{background:var(--dn)}.d-move{background:var(--s2);border:1.5px solid var(--border)}.d-in{background:var(--acc)}.d-out{background:var(--wn)}.d-prod{background:var(--ok)}.d-rem{background:var(--s2);border:1.5px solid var(--border-s)}
 .st-b{flex:1;min-width:0}
 .st-t{font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .st-d{font-size:10px;color:var(--txt3);margin-top:1px;line-height:1.5}
@@ -131,7 +141,7 @@ tbody tr.on{background:var(--bg-ac)}
       <div class="ks">{{ "{:,}".format(summary.in_qty) }}개 · {{ (summary.in_amt/100000000)|round(1) }}억</div>
     </div>
     <div class="kpi">
-      <div class="kl"><i class="ti ti-arrow-bar-up"></i>불출</div>
+      <div class="kl"><i class="ti ti-arrow-bar-up"></i>출고</div>
       <div class="kv out">{{ summary.out_cnt }}<span style="font-size:11px">건</span></div>
       <div class="ks">{{ "{:,}".format(summary.out_qty) }}개 · {{ (summary.out_amt/100000000)|round(1) }}억</div>
     </div>
@@ -143,7 +153,7 @@ tbody tr.on{background:var(--bg-ac)}
     <div class="kpi">
       <div class="kl"><i class="ti ti-percentage"></i>소진율</div>
       <div class="kv">{{ ((summary.out_qty / summary.in_qty * 100) if summary.in_qty else 0)|round(1) }}<span style="font-size:11px">%</span></div>
-      <div class="ks">불출량 ÷ 입고량</div>
+      <div class="ks">차감량 ÷ 입고량</div>
     </div>
   </div>
 
@@ -152,18 +162,25 @@ tbody tr.on{background:var(--bg-ac)}
       <span class="t">월별 입출고 추이</span>
       <span class="leg">
         <span><i class="sw" style="background:#2a78d6"></i>입고</span>
-        <span><i class="sw" style="background:#EF9F27"></i>불출</span>
+        <span><i class="sw" style="background:#EF9F27"></i>출고</span>
       </span>
     </div>
     <svg id="chart" viewBox="0 0 1000 96" preserveAspectRatio="none"></svg>
   </div>
 
   <div class="filter-bar">
-    <button class="pill on" data-f="all" onclick="setF('all')">전체</button>
-    <button class="pill"    data-f="입고" onclick="setF('입고')">입고</button>
-    <button class="pill"    data-f="불출" onclick="setF('불출')">불출</button>
+    <select id="ttype" onchange="render()"></select>
     <select id="loc" onchange="render()"><option value="">전체 창고</option></select>
-    <select id="ym" onchange="render()"><option value="">전체 기간</option></select>
+
+    <span class="dsep"></span>
+    <span class="dlbl"><i class="ti ti-calendar"></i>기간</span>
+    <input type="date" id="from" onchange="render()">
+    <span class="dtil">~</span>
+    <input type="date" id="to" onchange="render()">
+    <button class="qbtn" onclick="quick(30)">최근 30일</button>
+    <button class="qbtn" onclick="quick(90)">90일</button>
+    <button class="qbtn" onclick="quick(0)">전체</button>
+
     <span class="cnt" id="cnt"></span>
     <div class="search">
       <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
@@ -202,10 +219,21 @@ tbody tr.on{background:var(--bg-ac)}
 const ROWS  = {{ rows|tojson }};
 const LOTS  = {{ lots|tojson }};
 const MON   = {{ monthly|tojson }};
+const TXM   = {{ tx_meta|tojson }};   // 거래 유형 7종 정의
 const PRODS = {{ prods|tojson }};   // P_ID → {P_N, Spec, P_Price, cat_name, supplier, grade}
 const LOCS  = {{ locs|tojson }};    // Loc_ID → 창고명
 
 const LOTMAP = {}; LOTS.forEach(function(l){ LOTMAP[l.Lot_ID]=l; });
+
+// 유형별 표시 규칙 — 서버 정의(kind)를 그대로 따른다
+const TXKIND = {}; TXM.forEach(function(m){ TXKIND[m.type]=m.kind; });
+const TXICON = {in:'arrow-bar-to-down', out:'arrow-bar-up',
+                bad:'alert-triangle', move:'arrows-exchange'};
+function txKind(t){ return TXKIND[t] || 'move'; }
+// 최초 입고 유형인가 — 창고로 들어오면서(kind:in) 잔량에 이미 반영된(sign:0) 유형
+const TXSIGN = {}; TXM.forEach(function(m){ TXSIGN[m.type]=m.sign; });
+function isReceipt(t){ return TXKIND[t]==='in' && TXSIGN[t]===0; }
+function txIcon(t){ return TXICON[txKind(t)] || 'arrows-exchange'; }
 
 // 거래행에 자재·창고 정보를 붙여준다 (응답 용량을 줄이려고 분리해 받았다)
 const EMPTY = {};
@@ -213,24 +241,57 @@ function P(r){ return PRODS[r.P_ID] || EMPTY; }
 function locName(r){ return LOCS[r.Loc_ID] || '-'; }
 function amountOf(r){ return (r.T_Num||0) * (P(r).P_Price||0); }
 
-let filter='all', sortKey='T_Date', sortAsc=false, sel=null;
+let sortKey='T_Date', sortAsc=false, sel=null;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 
 // ── 필터 옵션 채우기 ──
+// 거래 유형은 서버의 TX_TYPES 정의에서 그대로 가져온다.
+// 새 유형(이동·불량·반납·교환·폐기) 데이터가 들어오면 목록에 자동으로 잡힌다.
+let DMIN='', DMAX='';
 (function(){
-  const locs=[], yms=[];
+  // 유형 드롭다운 — 건수와 함께 표시, 데이터 없는 유형도 0건으로 보여준다
+  const cnt={};
+  ROWS.forEach(function(r){ cnt[r.T_Type]=(cnt[r.T_Type]||0)+1; });
+  const ts=document.getElementById('ttype');
+  ts.innerHTML = '<option value="">전체 유형 (' + ROWS.length + ')</option>'
+    + TXM.map(function(m){
+        const n = cnt[m.type]||0;
+        return '<option value="'+m.type+'"'+(n?'':' disabled')+'>'
+             + m.type + ' (' + n + ')</option>';
+      }).join('');
+
+  // 창고
+  const locs=[];
   ROWS.forEach(function(r){
     const ln=locName(r); if(ln!=='-' && locs.indexOf(ln)<0) locs.push(ln);
   });
-  MON.forEach(function(m){ yms.push(m.ym); });
   locs.sort();
   const ls=document.getElementById('loc');
   locs.forEach(function(v){ ls.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
-  const ys=document.getElementById('ym');
-  yms.forEach(function(v){ ys.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
+
+  // 날짜 범위 — 데이터가 있는 구간으로 초기화
+  const ds=ROWS.map(function(r){return r.T_Date;}).filter(Boolean).sort();
+  DMIN = ds[0]; DMAX = ds[ds.length-1];
+  const f=document.getElementById('from'), t=document.getElementById('to');
+  f.min=DMIN; f.max=DMAX; f.value=DMIN;
+  t.min=DMIN; t.max=DMAX; t.value=DMAX;
 })();
+
+// 최근 N일 (0이면 전체 기간)
+function quick(days){
+  const f=document.getElementById('from'), t=document.getElementById('to');
+  if(!days){ f.value=DMIN; t.value=DMAX; }
+  else {
+    const end=new Date(DMAX);
+    const st=new Date(DMAX); st.setDate(st.getDate()-days+1);
+    const iso=function(d){ return d.toISOString().slice(0,10); };
+    f.value = iso(st) < DMIN ? DMIN : iso(st);
+    t.value = iso(end);
+  }
+  render();
+}
 
 // ── 월별 차트 ──
 function drawChart(){
@@ -257,11 +318,14 @@ function drawChart(){
 function view(){
   const q=(document.getElementById('q').value||'').trim().toLowerCase();
   const loc=document.getElementById('loc').value;
-  const ym=document.getElementById('ym').value;
+  const tt=document.getElementById('ttype').value;
+  const df=document.getElementById('from').value;
+  const dt=document.getElementById('to').value;
   let r=ROWS.filter(function(x){
-    if(filter!=='all' && x.T_Type!==filter) return false;
+    if(tt && x.T_Type!==tt)                 return false;
     if(loc && locName(x)!==loc)             return false;
-    if(ym && (x.T_Date||'').slice(0,7)!==ym) return false;
+    if(df && (x.T_Date||'') < df)           return false;
+    if(dt && (x.T_Date||'') > dt)           return false;
     if(q){
       const p=P(x);
       const hay=(x.T_ID+' '+x.Lot_ID+' '+x.P_ID+' '+(p.P_N||'')+' '+(p.Spec||'')+' '+(x.worker||'')).toLowerCase();
@@ -287,19 +351,21 @@ function view(){
 
 function render(){
   const r=view();
-  document.getElementById('cnt').textContent=r.length+'건';
+  const df=document.getElementById('from').value, dt=document.getElementById('to').value;
+  const isAll = (df===DMIN && dt===DMAX);
+  document.getElementById('cnt').innerHTML = r.length + '건'
+    + (isAll ? '' : ' <span class="rangemsg">' + df + ' ~ ' + dt + '</span>');
   const tb=document.getElementById('tb');
   if(!r.length){
     tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 거래가 없습니다.</div></td></tr>';
     return;
   }
   tb.innerHTML=r.slice(0,400).map(function(x){
-    const isIn = x.T_Type==='입고';
     const p = P(x);
     return '<tr onclick="pick(\'' + x.T_ID + '\')" class="' + (sel===x.T_ID?'on':'') + '">'
       + '<td class="mono">' + x.T_Date + '</td>'
-      + '<td><span class="tt ' + (isIn?'tt-in':'tt-out') + '">'
-      +   '<i class="ti ti-' + (isIn?'arrow-bar-to-down':'arrow-bar-up') + '"></i>' + x.T_Type + '</span></td>'
+      + '<td><span class="tt tt-' + txKind(x.T_Type) + '">'
+      +   '<i class="ti ti-' + txIcon(x.T_Type) + '"></i>' + x.T_Type + '</span></td>'
       + '<td class="hide-sm"><span class="lotid">' + x.Lot_ID + '</span></td>'
       + '<td><div class="nm">' + esc(p.P_N)
       +   (p.grade ? ' <span class="gr gr'+p.grade+'">'+p.grade+'</span>' : '')
@@ -321,7 +387,10 @@ function pick(tid){
   const lot=LOTMAP[x.Lot_ID];
   if(!lot) return;
 
-  const outs=ROWS.filter(function(v){return v.Lot_ID===x.Lot_ID && v.T_Type==='불출';})
+  // 최초 입고는 위에서 Lot_tb 기준으로 따로 그리므로 여기선 뺀다(중복 방지).
+  // 그 외 모든 거래(불출·반납·불량·폐기·이동·교환)를 시간순으로 보여준다.
+  // 유형명을 못박지 않으므로 새 유형 데이터가 들어오면 자동으로 나타난다.
+  const outs=ROWS.filter(function(v){return v.Lot_ID===x.Lot_ID && !isReceipt(v.T_Type);})
                  .sort(function(a,b){return (a.T_Date>b.T_Date)?1:-1;});
   const pct = lot.P_Qty ? (lot.remain/lot.P_Qty*100) : 0;
 
@@ -344,10 +413,12 @@ function pick(tid){
       + '<div class="st-d">' + lot.Lot_Date + ' · ' + esc(lot.loc_name||'-')
       + (lot.lead_days!=null ? ' · 리드타임 <b>' + lot.lead_days + '일</b>' : '')
       + '<br>담당 ' + esc(lot.receiver||'-') + '</div></div></div>';
-  // 3) 불출들
+  // 3) 입고 이후의 거래들
   outs.forEach(function(o){
-    tl += '<div class="step"><div class="dot d-out"><i class="ti ti-arrow-bar-up"></i></div>'
-        + '<div class="st-b"><div class="st-t">불출 ' + nf(o.T_Num) + '개'
+    const k=txKind(o.T_Type);
+    tl += '<div class="step"><div class="dot d-' + (k==='bad'?'bad':(k==='move'?'move':(k==='in'?'in':'out')))
+        + '"><i class="ti ti-' + txIcon(o.T_Type) + '"></i></div>'
+        + '<div class="st-b"><div class="st-t">' + o.T_Type + ' ' + nf(o.T_Num) + '개'
         + (o.T_ID===x.T_ID ? ' <span class="bg bac">선택한 거래</span>' : '') + '</div>'
         + '<div class="st-d">' + o.T_Date + ' · 담당 ' + esc(o.worker||'-') + '</div></div></div>';
   });
@@ -400,12 +471,6 @@ function pick(tid){
   + '</div>';
 }
 
-function setF(f){
-  filter=f;
-  const ps=document.querySelectorAll('.pill');
-  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
-  render();
-}
 function sortBy(k){
   if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=(k!=='T_Date'); }
   render();

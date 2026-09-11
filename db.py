@@ -26,14 +26,73 @@ def _rows(conn, sql, params=()):
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
+# ── 거래 유형(T_Type) 정의 ───────────────────────────────────
+# 현재 데이터에는 입고/불출 2종뿐이지만 설계상 7종이다.
+# 나머지 유형의 실데이터가 들어와도 바로 동작하도록 부호를 여기서만 관리한다.
+#
+#   stock  : LOT 잔량에 미치는 영향.
+#            입고는 Lot_tb.P_Qty 에 이미 반영돼 있어 0 으로 둔다
+#            (거래 행을 또 더하면 이중 계산이 된다).
+#   demand : 현장 실소비로 볼 것인가.
+#            수요예측·파레토·일평균 사용량의 분자로 쓰인다.
+TX_TYPES = [
+    # 유형,   재고부호, 수요, 설명,                              분류
+    ("입고",    0, False, "협력사 → 자재창고 (P_Qty 에 반영됨)",  "in"),
+    ("불출",   -1, True,  "자재창고 → 현장",                     "out"),
+    ("반납",   +1, False, "현장 → 자재창고 복귀",                "in"),
+    ("불량",   -1, False, "불량 판정으로 재고에서 제거",          "bad"),
+    ("폐기",   -1, False, "폐기 처분",                           "bad"),
+    ("이동",    0, False, "창고 간 이동 (총량 불변, 위치만 변경)", "move"),
+    ("교환",    0, False, "동수량 교체 (총량 불변)",              "move"),
+]
+TX_SIGN   = {t: sg for t, sg, _, _, _ in TX_TYPES}
+TX_LABELS = [t for t, _, _, _, _ in TX_TYPES]
+TX_DEMAND = [t for t, _, d, _, _ in TX_TYPES if d]
+TX_MINUS  = [t for t, sg, _, _, _ in TX_TYPES if sg < 0]
+TX_PLUS   = [t for t, sg, _, _, _ in TX_TYPES if sg > 0]
+
+
+def _inlist(vals):
+    """SQL IN 절에 넣을 문자열. 비어 있으면 매칭되지 않는 값을 넣는다."""
+    return ", ".join("'%s'" % v for v in vals) if vals else "''"
+
+
+# LOT 잔량에서 빼야 할 순차감량.
+#   재고를 깎는 유형(불출·불량·폐기)은 +, 되돌리는 유형(반납)은 −.
+#   입고·이동·교환은 잔량에 영향이 없어 0.
+LOT_DELTA = ("SUM(CASE WHEN T_Type IN ({m}) THEN T_Num "
+             "WHEN T_Type IN ({p}) THEN -T_Num ELSE 0 END)").format(
+                 m=_inlist(TX_MINUS), p=_inlist(TX_PLUS))
+
+# 현장 실소비 조건 (수요 지표 전용)
+DEMAND_IN = "T_Type IN (%s)" % _inlist(TX_DEMAND)
+DEMAND_T  = "t." + DEMAND_IN
+
+# 입출고 양방향 집계용 조각.
+#   입고 측 = 창고로 들어오는 것 (입고 · 반납)
+#   출고 측 = 창고에서 나가는 것 (불출 · 불량 · 폐기)
+#   이동·교환은 창고 총량이 변하지 않으므로 양쪽 모두에서 뺀다.
+TX_KIND   = {t: k for t, _, _, _, k in TX_TYPES}
+TX_IN     = [t for t, k in TX_KIND.items() if k == "in"]
+TX_OUT    = [t for t, k in TX_KIND.items() if k in ("out", "bad")]
+TX_IN_SQL  = "T_Type IN (%s)" % _inlist(TX_IN)
+TX_OUT_SQL = "T_Type IN (%s)" % _inlist(TX_OUT)
+# JOIN 쿼리에서 별칭 t 를 붙인 형태
+TX_IN_T   = "t." + TX_IN_SQL
+TX_OUT_T  = "t." + TX_OUT_SQL
+
+# 화면에 넘길 유형 메타 — 필터 목록을 자동 생성하는 데 쓴다
+TX_META = [{"type": t, "sign": sg, "demand": d, "desc": desc, "kind": kind}
+           for t, sg, d, desc, kind in TX_TYPES]
+
+
 # ── 공통 조각 ────────────────────────────────────────────────
 # 현재고 = LOT 입고량 - 그 LOT의 불출 합계
-STOCK_SQL = """
+STOCK_SQL = f"""
     SELECT l.P_ID,
            SUM(l.P_Qty) - COALESCE(SUM(x.out_qty), 0) AS stock
       FROM Lot_tb l
-      LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty
-                   FROM Transaction_tb WHERE T_Type = '불출' GROUP BY Lot_ID) x
+      LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x
              ON x.Lot_ID = l.Lot_ID
      GROUP BY l.P_ID
 """
@@ -41,9 +100,9 @@ STOCK_SQL = """
 
 def operating_days(conn):
     """불출 이력이 존재하는 기간(일). 일평균사용량 d 의 분모."""
-    r = conn.execute("""
+    r = conn.execute(f"""
         SELECT CAST(julianday(MAX(T_Date)) - julianday(MIN(T_Date)) AS INT) d
-          FROM Transaction_tb WHERE T_Type = '불출'
+          FROM Transaction_tb WHERE {DEMAND_IN}
     """).fetchone()
     return max(int(r["d"] or 1), 1)
 
@@ -57,7 +116,7 @@ def safety_stock_list(conn):
              used AS (
                 SELECT l.P_ID, SUM(t.T_Num) AS out_qty, COUNT(*) AS out_cnt
                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                 WHERE t.T_Type = '불출'
+                 WHERE {DEMAND_T}
                  GROUP BY l.P_ID
              ),
              lead AS (
@@ -132,9 +191,9 @@ def product_list(conn):
              ),
              tx AS (
                 SELECT l.P_ID,
-                       SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num ELSE 0 END) AS in_qty,
-                       SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num ELSE 0 END) AS out_qty,
-                       MAX(CASE WHEN t.T_Type='불출' THEN t.T_Date END)       AS last_out
+                       SUM(CASE WHEN {TX_IN_T} THEN t.T_Num ELSE 0 END) AS in_qty,
+                       SUM(CASE WHEN {TX_OUT_T} THEN t.T_Num ELSE 0 END) AS out_qty,
+                       MAX(CASE WHEN {TX_OUT_T} THEN t.T_Date END)       AS last_out
                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
                  GROUP BY l.P_ID
              ),
@@ -184,7 +243,7 @@ def lot_list(conn):
     """
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
 
-    rows = _rows(conn, """
+    rows = _rows(conn, f"""
         SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
                l.P_Qty, l.H_ID,
                h.P_Date AS order_date,
@@ -198,8 +257,7 @@ def lot_list(conn):
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty, MIN(T_Date) AS out_date
-                       FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, MIN(CASE WHEN T_Type IN ('불출') THEN T_Date END) AS out_date FROM Transaction_tb GROUP BY Lot_ID) x
                  ON x.Lot_ID = l.Lot_ID
          ORDER BY l.P_ID, l.Lot_Date
     """, (base,))
@@ -389,7 +447,7 @@ PARETO_CUT = {"A": 75, "B": 90}
 
 def abc_analysis(conn):
     """불출 이력 × 단가로 파레토 분석해 Usage 등급을 산정한다."""
-    rows = _rows(conn, """
+    rows = _rows(conn, f"""
         SELECT p.P_ID, p.P_N, p.Spec, p.P_Price,
                p.MainCat, p.SubCat, p.DetailCat,
                cat.Cat_Name          AS cat_name,
@@ -407,7 +465,7 @@ def abc_analysis(conn):
                             SUM(t.T_Num) AS out_qty,
                             COUNT(*)     AS out_cnt
                        FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                      WHERE t.T_Type = '불출'
+                      WHERE {DEMAND_T}
                       GROUP BY l.P_ID) u ON p.P_ID = u.P_ID
           LEFT JOIN Company_tb c ON p.BRN = c.BRN
           LEFT JOIN Cat_tb cat   ON p.MainCat=cat.MainCat AND p.SubCat=cat.SubCat
@@ -520,7 +578,7 @@ def tx_locations(conn):
 
 def lot_trace(conn):
     """LOT별 전체 이력 — 발주→입고→불출들→잔량. 추적(traceability)용."""
-    lots = _rows(conn, """
+    lots = _rows(conn, f"""
         SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date, l.P_Qty,
                l.Loc_ID, lo.Loc_N AS loc_name, l.H_ID,
                h.P_Date           AS order_date,
@@ -536,8 +594,7 @@ def lot_trace(conn):
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN Company_tb c ON h.BRN = c.BRN
           LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty, COUNT(*) out_cnt
-                       FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, SUM(CASE WHEN T_Type IN ('불출') THEN 1 ELSE 0 END) out_cnt FROM Transaction_tb GROUP BY Lot_ID) x
                  ON x.Lot_ID = l.Lot_ID
     """)
     # 생산 투입 이력 (그 LOT이 어느 완제품에 쓰였나)
@@ -562,14 +619,14 @@ def lot_trace(conn):
 
 def tx_monthly(conn):
     """월별 입출고 추이 (차트용)."""
-    return _rows(conn, """
+    return _rows(conn, f"""
         SELECT substr(t.T_Date,1,7) AS ym,
-               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num ELSE 0 END) AS in_qty,
-               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num ELSE 0 END) AS out_qty,
-               SUM(CASE WHEN t.T_Type='입고' THEN 1 ELSE 0 END)       AS in_cnt,
-               SUM(CASE WHEN t.T_Type='불출' THEN 1 ELSE 0 END)       AS out_cnt,
-               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
-               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt
+               SUM(CASE WHEN {TX_IN_T} THEN t.T_Num ELSE 0 END) AS in_qty,
+               SUM(CASE WHEN {TX_OUT_T} THEN t.T_Num ELSE 0 END) AS out_qty,
+               SUM(CASE WHEN {TX_IN_T} THEN 1 ELSE 0 END)       AS in_cnt,
+               SUM(CASE WHEN {TX_OUT_T} THEN 1 ELSE 0 END)       AS out_cnt,
+               SUM(CASE WHEN {TX_IN_T} THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
+               SUM(CASE WHEN {TX_OUT_T} THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt
           FROM Transaction_tb t
           JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
           JOIN Product_tb p ON l.P_ID = p.P_ID
@@ -1000,8 +1057,7 @@ def stock_zones(conn):
             SELECT l.Lot_ID, l.Loc_ID, l.P_ID, l.Lot_Date,
                    l.P_Qty - COALESCE(x.out_qty, 0) AS remain, l.P_Qty
               FROM Lot_tb l
-              LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
-                          WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+              LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
         )
         SELECT lo.Loc_ID, lo.Loc_N,
                COUNT(*)                                        AS lot_total,
@@ -1124,6 +1180,8 @@ def dashboard(conn):
         p = txp.get(r["P_ID"], {})
         recent_tx.append({
             "T_ID": r["T_ID"], "T_Type": r["T_Type"], "T_Date": r["T_Date"],
+            # 유형별 표시 분류 — 새 유형이 들어와도 색이 자동으로 맞는다
+            "kind": dict((t, k) for t, _, _, _, k in TX_TYPES).get(r["T_Type"], "move"),
             "T_Num": r["T_Num"], "P_ID": r["P_ID"],
             "P_N": p.get("P_N"), "grade": p.get("grade"),
             "worker": r["worker"],
@@ -1204,7 +1262,7 @@ def lot_detail(conn):
     base = conn.execute(
         "SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0] or "2026-02-07"
 
-    rows = _rows(conn, """
+    rows = _rows(conn, f"""
         SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.P_Qty, l.Loc_ID, l.H_ID,
                lo.Loc_N            AS loc_name,
                p.P_N, p.Spec, p.P_Price,
@@ -1224,8 +1282,7 @@ def lot_detail(conn):
           LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty, MIN(T_Date) AS out_date
-                       FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, MIN(CASE WHEN T_Type IN ('불출') THEN T_Date END) AS out_date FROM Transaction_tb GROUP BY Lot_ID) x
                  ON x.Lot_ID = l.Lot_ID
          ORDER BY l.P_ID, l.Lot_Date
     """, (base,))
@@ -1322,7 +1379,7 @@ def forecast_list(conn):
                        MIN(t.T_Date) AS first_out,
                        MAX(t.T_Date) AS last_out
                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                 WHERE t.T_Type = '불출'
+                 WHERE {DEMAND_T}
                  GROUP BY l.P_ID
              )
         SELECT p.P_ID, p.P_N, p.Spec, p.P_Price, p.MinOrderQty, p.PkgUnit,
@@ -1341,10 +1398,10 @@ def forecast_list(conn):
 
     # 자재별 월간 불출 (스파크라인용)
     monthly = {}
-    for r in _rows(conn, """
+    for r in _rows(conn, f"""
         SELECT l.P_ID, substr(t.T_Date,1,7) AS ym, SUM(t.T_Num) AS qty
           FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-         WHERE t.T_Type = '불출'
+         WHERE {DEMAND_T}
          GROUP BY l.P_ID, ym ORDER BY ym
     """):
         monthly.setdefault(r["P_ID"], []).append({"ym": r["ym"], "qty": r["qty"]})
@@ -1393,14 +1450,14 @@ def forecast_list(conn):
 
 
 def forecast_monthly(conn):
-    return _rows(conn, """
+    return _rows(conn, f"""
         SELECT substr(t.T_Date,1,7) AS ym,
                COUNT(*) AS cnt, SUM(t.T_Num) AS qty,
                SUM(t.T_Num * p.P_Price) AS amount
           FROM Transaction_tb t
           JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
           JOIN Product_tb p ON l.P_ID = p.P_ID
-         WHERE t.T_Type = '불출'
+         WHERE {DEMAND_T}
          GROUP BY ym ORDER BY ym
     """)
 
@@ -1619,7 +1676,7 @@ POSITION_ORDER = ["부장", "차장", "과장", "대리", "주임", "사원"]
 
 
 def user_list(conn):
-    rows = _rows(conn, """
+    rows = _rows(conn, f"""
         SELECT u.EP_ID, u.Name, u.Birth, u.Phone, u.Position,
                COALESCE(l.n, 0)  AS lot_cnt,
                COALESCE(l.qty, 0) AS lot_qty,
@@ -1633,8 +1690,8 @@ def user_list(conn):
           LEFT JOIN (SELECT EP_ID, COUNT(*) n, SUM(P_Qty) qty FROM Lot_tb GROUP BY EP_ID) l
                  ON u.EP_ID = l.EP_ID
           LEFT JOIN (SELECT EP_ID, COUNT(*) n,
-                            SUM(CASE WHEN T_Type='입고' THEN 1 ELSE 0 END) in_n,
-                            SUM(CASE WHEN T_Type='불출' THEN 1 ELSE 0 END) out_n,
+                            SUM(CASE WHEN {TX_IN_SQL} THEN 1 ELSE 0 END) in_n,
+                            SUM(CASE WHEN {TX_OUT_SQL} THEN 1 ELSE 0 END) out_n,
                             MIN(T_Date) first_tx, MAX(T_Date) last_tx
                        FROM Transaction_tb GROUP BY EP_ID) t
                  ON u.EP_ID = t.EP_ID
@@ -1707,14 +1764,14 @@ def monthly_report(conn):
     def by_month(sql):
         return {r["ym"]: r for r in _rows(conn, sql)}
 
-    tx = by_month("""
+    tx = by_month(f"""
         SELECT substr(t.T_Date,1,7) AS ym,
-               SUM(CASE WHEN t.T_Type='입고' THEN 1 ELSE 0 END) AS in_cnt,
-               SUM(CASE WHEN t.T_Type='불출' THEN 1 ELSE 0 END) AS out_cnt,
-               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num ELSE 0 END) AS in_qty,
-               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num ELSE 0 END) AS out_qty,
-               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
-               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt,
+               SUM(CASE WHEN {TX_IN_T} THEN 1 ELSE 0 END) AS in_cnt,
+               SUM(CASE WHEN {TX_OUT_T} THEN 1 ELSE 0 END) AS out_cnt,
+               SUM(CASE WHEN {TX_IN_T} THEN t.T_Num ELSE 0 END) AS in_qty,
+               SUM(CASE WHEN {TX_OUT_T} THEN t.T_Num ELSE 0 END) AS out_qty,
+               SUM(CASE WHEN {TX_IN_T} THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
+               SUM(CASE WHEN {TX_OUT_T} THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt,
                COUNT(DISTINCT l.P_ID) AS items,
                COUNT(DISTINCT t.EP_ID) AS workers
           FROM Transaction_tb t
@@ -1763,14 +1820,14 @@ def monthly_report(conn):
 
     # 월별 상위 품목 (불출 금액 기준)
     top = {}
-    for r in _rows(conn, """
+    for r in _rows(conn, f"""
         SELECT substr(t.T_Date,1,7) AS ym, l.P_ID, p.P_N, s.Sf_Lv AS grade,
                SUM(t.T_Num) AS qty, SUM(t.T_Num * p.P_Price) AS amt
           FROM Transaction_tb t
           JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
           JOIN Product_tb p ON l.P_ID = p.P_ID
           LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
-         WHERE t.T_Type = '불출'
+         WHERE {DEMAND_T}
          GROUP BY ym, l.P_ID, p.P_N, s.Sf_Lv
          ORDER BY ym, amt DESC
     """):
@@ -1948,8 +2005,7 @@ def picking_source(conn):
                CAST(julianday(?) - julianday(l.Lot_Date) AS INT) AS age_days
           FROM Lot_tb l
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
-                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
          WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
          ORDER BY l.P_ID, l.Lot_Date
     """, (base,)):
@@ -2031,8 +2087,7 @@ def picking_list(conn, need=None):
                     - julianday(l.Lot_Date) AS INT) AS age_days
           FROM Lot_tb l
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
-                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
          WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
          ORDER BY l.P_ID, l.Lot_Date
     """):
@@ -2139,8 +2194,7 @@ def workbench(conn):
                    l.P_Qty - COALESCE(x.out_qty,0) AS remain
               FROM Lot_tb l
               LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-              LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty FROM Transaction_tb
-                          WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+              LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
              WHERE l.P_Qty - COALESCE(x.out_qty,0) > 0
         )
         SELECT v.P_ID, p.P_N, p.Spec, s.Sf_Lv AS grade, s.Sf_Num AS safe_qty,
@@ -2154,7 +2208,7 @@ def workbench(conn):
     """)
 
     # 승인: 실제 불출 이력을 결재 이력처럼 본다 (금액 큰 순)
-    approvals = _rows(conn, """
+    approvals = _rows(conn, f"""
         SELECT t.T_ID, t.T_Date, t.T_Num, l.P_ID, p.P_N, p.Spec,
                s.Sf_Lv AS grade, u.Name AS worker, u.Position AS pos,
                lo.Loc_N AS loc_name, l.Lot_ID,
@@ -2165,7 +2219,7 @@ def workbench(conn):
           LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
           LEFT JOIN User_tb u ON t.EP_ID = u.EP_ID
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-         WHERE t.T_Type = '불출'
+         WHERE {DEMAND_T}
          ORDER BY (t.T_Num * p.P_Price) DESC LIMIT 40
     """)
 
@@ -2181,8 +2235,7 @@ def workbench(conn):
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
           LEFT JOIN Company_tb c   ON p.BRN = c.BRN
           LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty FROM Transaction_tb
-                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
          ORDER BY l.Lot_Date DESC
     """)
 

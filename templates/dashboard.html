@@ -154,7 +154,7 @@
           {% for t in d.recent_tx %}
           <tr>
             <td style="font-family:ui-monospace,monospace;font-size:10px">{{ t.T_Date }}</td>
-            <td><span class="badge {% if t.T_Type == '입고' %}badge-primary{% else %}badge-warning{% endif %}">{{ t.T_Type }}</span></td>
+            <td><span class="badge {% if t.kind == 'in' %}badge-primary{% elif t.kind == 'bad' %}badge-danger{% elif t.kind == 'move' %}badge-muted{% else %}badge-warning{% endif %}">{{ t.T_Type }}</span></td>
             <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
               {{ t.P_N }}{% if t.grade %} <span class="badge badge-muted" style="font-size:9px">{{ t.grade }}</span>{% endif %}
             </td>

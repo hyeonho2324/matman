@@ -136,7 +136,7 @@ function trend(){
       const x=cx+(d[2]<0?-bw-1:1);
       g+='<rect x="'+x.toFixed(1)+'" y="'+(pad.t+ph-bh).toFixed(1)+'" width="'+bw.toFixed(1)
        + '" height="'+Math.max(bh,0.5).toFixed(1)+'" fill="'+d[1]+'" opacity="'+(cur?'.95':'.4')+'" rx="1">'
-       + '<title>'+m.ym+' '+(d[2]<0?'입고':'불출')+' '+nf(d[0])+'개</title></rect>';
+       + '<title>'+m.ym+' '+(d[2]<0?'입고':'출고')+' '+nf(d[0])+'개</title></rect>';
     });
     const py=(pad.t+ph-(m.po_amt/mxA*ph)).toFixed(1);
     line+=(i?' L':'M')+cx.toFixed(1)+' '+py;
@@ -148,7 +148,7 @@ function trend(){
        + '<path d="'+line+'" fill="none" stroke="#1D9E75" stroke-width="1.4" opacity=".7"/>' + dots
        + '<line x1="0" y1="'+(pad.t+ph)+'" x2="'+W+'" y2="'+(pad.t+ph)+'" stroke="#D4D3CE" stroke-width="1"/></svg>'
        + '<div class="leg"><span><i class="sw" style="background:#2a78d6"></i>입고 수량</span>'
-       + '<span><i class="sw" style="background:#EF9F27"></i>불출 수량</span>'
+       + '<span><i class="sw" style="background:#EF9F27"></i>출고 수량</span>'
        + '<span><i class="sw" style="background:#1D9E75"></i>발주 금액</span></div>';
 }
 
@@ -186,7 +186,7 @@ function render(){
   +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-to-down"></i>입고</div>'
   +     '<div class="c-v">' + won(m.in_amt) + '<small>원</small></div>'
   +     '<div class="c-s">' + m.in_cnt + '건 · ' + nf(m.in_qty) + '개 ' + delta(m.in_amt, p&&p.in_amt) + '</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-up"></i>불출</div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-up"></i>출고</div>'
   +     '<div class="c-v">' + won(m.out_amt) + '<small>원</small></div>'
   +     '<div class="c-s">' + m.out_cnt + '건 · ' + nf(m.out_qty) + '개 ' + delta(m.out_amt, p&&p.out_amt) + '</div></div>'
   +   '<div class="card"><div class="c-l"><i class="ti ti-truck-delivery"></i>발주</div>'
@@ -221,12 +221,12 @@ function render(){
   +       '<td>처리 담당자</td><td class="num">' + m.workers + '명</td></tr>'
   +     '<tr><td>생성 LOT</td><td class="num">' + m.lot_cnt + '개</td>'
   +       '<td>발주 품목 라인</td><td class="num">' + m.po_lines + '건</td></tr>'
-  +     '<tr><td>입고 − 불출 (금액)</td><td class="num" style="color:' + (m.in_amt-m.out_amt>=0?'var(--ok)':'var(--dn)') + '">'
+  +     '<tr><td>입고 − 출고 (금액)</td><td class="num" style="color:' + (m.in_amt-m.out_amt>=0?'var(--ok)':'var(--dn)') + '">'
   +       (m.in_amt-m.out_amt>=0?'+':'') + won(m.in_amt-m.out_amt) + '원</td>'
   +       '<td>재고 순증감 (수량)</td><td class="num" style="color:' + (m.in_qty-m.out_qty>=0?'var(--ok)':'var(--dn)') + '">'
   +       (m.in_qty-m.out_qty>=0?'+':'') + nf(m.in_qty-m.out_qty) + '개</td></tr>'
   +   '</tbody></table>'
-  +   '<div class="note">입고보다 불출이 많으면 재고가 줄어든 달이다. '
+  +   '<div class="note">입고보다 출고가 많으면 재고가 줄어든 달이다. 입고측은 입고·반납, 출고측은 불출·불량·폐기를 합산한 값이다(이동·교환은 총량이 변하지 않아 제외). '
   +     '발주 금액은 <b>발주한 달</b> 기준이라, 리드타임 때문에 실제 입고는 다음 달 이후로 잡힐 수 있다.</div>'
   + '</div>';
 }
@@ -234,7 +234,7 @@ function render(){
 function sel(i){ mi=i; render(); document.getElementById('body').scrollTop=0; }
 
 function dl(){
-  const head=['월','입고건수','입고수량','입고금액','불출건수','불출수량','불출금액',
+  const head=['월','입고건수','입고수량','입고금액','출고건수','출고수량','출고금액',
               '발주건수','발주라인','발주금액','발주협력사','작업지시','완제품종','생산자재비',
               '생성LOT','취급품목','담당자'];
   const lines=[head.join(',')];
