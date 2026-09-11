@@ -22,7 +22,7 @@
 </div>
 
 <!-- ── KPI ──────────────────────────────────────────── -->
-<div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+<div class="kpi-grid kpi-grid-5">
   <div class="kpi-card">
     <div class="kpi-label">재고자산</div>
     <div class="kpi-value kpi-ac">{{ "%.2f"|format(d.kpi.stock_value/100000000) }}억</div>
@@ -138,7 +138,7 @@
 </div>
 
 <!-- ── 2단 패널 ─────────────────────────────────────── -->
-<div class="dash-grid" style="margin-top:14px;grid-template-columns:1.1fr 1fr 1fr">
+<div class="dash-grid" style="margin-top:14px">
 
   <!-- 최근 입출고 -->
   <div class="card">

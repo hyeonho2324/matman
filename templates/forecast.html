@@ -3,7 +3,7 @@
 <div class="page-header">
   <div>
     <div class="page-title"><i class="ti ti-chart-line" style="margin-right:6px;color:var(--fill-accent)"></i>수요 예측 대시보드</div>
-    <div class="page-subtitle">과거 6개월 기반 예측</div>
+    <div class="page-subtitle">불출 이력 208일 기반 · 소진 예상일과 발주 시점</div>
   </div>
   <div class="page-actions">
       <a href="/simulator" class="btn"><i class="ti ti-adjustments"></i>발주 시뮬</a>
@@ -14,10 +14,6 @@
 
 <!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
 <div style="flex:1;display:flex;flex-direction:column;gap:14px">
-  <div class="alert alert-info">
-    <i class="ti ti-info-circle"></i>
-    <span>이 화면은 <strong>수요 예측 대시보드</strong> 기능을 제공합니다. 아래 패널에서 모든 기능을 이용하세요.</span>
-  </div>
   <div style="flex:1;border-radius:12px;overflow:hidden;border:0.5px solid var(--border);min-height:580px">
     <iframe
       src="/embed/forecast"
