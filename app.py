@@ -412,6 +412,15 @@ def _ctx_simulator():
         conn.close()
 
 
+def _ctx_picking():
+    conn = db.connect()
+    try:
+        items, base = db.picking_source(conn)
+        return {"items": items, "base": base}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -430,6 +439,7 @@ EMBED_CONTEXT = {
     "report":       _ctx_report,
     "wizard":       _ctx_wizard,
     "simulator":    _ctx_simulator,
+    "picking":      _ctx_picking,
 }
 
 

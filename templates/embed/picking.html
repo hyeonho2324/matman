@@ -2,250 +2,303 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>피킹리스트</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 .wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
 .topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
-.pt{font-size:14px;font-weight:500}
-.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit}
-.btn:hover{background:var(--s1)}
-.btnp{background:var(--acc);color:#fff;border-color:transparent}
-.btns{background:var(--bg-ok);color:#1D6E52;border-color:transparent}
-.body{flex:1;display:flex;overflow:hidden}
-.left{width:230px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
-.lh{padding:10px 12px;border-bottom:0.5px solid var(--border);flex-shrink:0}
-.lh-t{font-size:12px;font-weight:500;margin-bottom:2px}
-.lh-s{font-size:10px;color:var(--txt3)}
-.wo-list{flex:1;overflow-y:auto}
-.wo-item{padding:9px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
-.wo-item:hover{background:var(--s2)}
-.wo-item.on{background:var(--bg-ac)}
-.right{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.rh{background:var(--s1);border-bottom:0.5px solid var(--border);padding:10px 14px;flex-shrink:0}
-.tabs{display:flex;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0;padding:0 12px}
-.tab{padding:7px 11px;font-size:11px;cursor:pointer;color:var(--txt3);border-bottom:2px solid transparent;margin-bottom:-0.5px;white-space:nowrap}
-.tab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500}
-.tc{display:none;flex:1;overflow-y:auto}
-.tc.on{display:flex;flex-direction:column}
-.pl-table-wrap{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
-.zone-group{background:var(--s2);border:0.5px solid var(--border);border-radius:9px;overflow:hidden}
-.zg-head{padding:8px 12px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px}
-.zg-name{font-size:12px;font-weight:500}
-table{width:100%;border-collapse:collapse}
-th{font-size:10px;color:var(--txt3);font-weight:500;text-align:left;padding:6px 9px;background:var(--s1);border-bottom:0.5px solid var(--border)}
-td{font-size:11px;padding:6px 9px;border-bottom:0.5px solid var(--border);color:var(--txt)}
-tr:last-child td{border-bottom:none}
-tr.done td{opacity:.5;text-decoration:line-through}
-tr.done td .chk{opacity:1;text-decoration:none}
-.chk{width:20px;height:20px;border-radius:4px;border:1.5px solid var(--border-s);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;margin:auto}
-.chk.on{background:var(--acc);border-color:var(--acc)}
-.chk.on::after{content:'✓';color:#fff;font-size:11px;font-weight:600}
-.lchip{display:inline-flex;padding:1px 5px;border-radius:99px;font-size:9px;border:0.5px solid var(--border);color:var(--txt3);background:var(--s1)}
-.lchip-f{background:var(--bg-ac);color:#185FA5;border-color:rgba(42,120,214,.3)}
-.loc-tag{display:inline-flex;padding:2px 5px;border-radius:var(--r);font-size:10px;font-weight:500}
-.pl-footer{padding:9px 12px;background:var(--s1);border-top:0.5px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
-.prog-all{flex:1;height:9px;border-radius:5px;background:var(--s2);border:0.5px solid var(--border);overflow:hidden}
-.prog-all-fill{height:100%;border-radius:5px;background:var(--acc);transition:width .3s}
-.bg{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:500}
-.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}.bdn{background:var(--bg-dn);color:#9B1C1C}.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.setbar{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.setl{font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px}
+.setv{font-size:16px;font-weight:700;color:var(--acc);min-width:42px;text-align:right}
+input[type=range]{accent-color:var(--acc);width:200px;height:18px}
+.setn{font-size:10px;color:var(--txt3);line-height:1.5}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.dn{color:var(--dn)}.kv.wn{color:var(--wn)}.kv.ok{color:var(--ok)}
+
+/* 동선 */
+.route{display:flex;align-items:center;gap:0;padding:9px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;overflow-x:auto}
+.rz{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);background:var(--s1);border:0.5px solid var(--border);white-space:nowrap;cursor:pointer}
+.rz:hover{background:var(--s2)}
+.rz.on{background:var(--bg-ac);border-color:rgba(42,120,214,.35)}
+.rz-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:600;color:var(--acc)}
+.rz-n{font-size:11px}
+.rz-c{font-size:10px;color:var(--txt3)}
+.rarw{color:var(--txt3);margin:0 7px;font-size:12px}
+
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
+.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:150px;color:var(--txt)}
+.cnt{font-size:11px;color:var(--txt3)}
+
+.listwrap{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
+thead th.num{text-align:right}
+tbody td{padding:7px 10px;border-bottom:0.5px solid var(--border);vertical-align:top}
+tbody td.num{text-align:right}
+tbody tr.zhead td{background:var(--s2);font-weight:600;font-size:11px;padding:5px 10px;position:sticky;top:29px;z-index:1}
+.seq{width:22px;height:22px;border-radius:50%;background:var(--s2);color:var(--txt3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+.chk{width:15px;height:15px;accent-color:var(--ok);cursor:pointer}
+.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
+/* LOT 배분 */
+.lot{display:flex;align-items:center;gap:6px;font-size:10px;padding:2px 0}
+.lot-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt2);min-width:112px}
+.lot-d{color:var(--txt3);min-width:64px}
+.lot-q{font-weight:600;color:var(--acc);min-width:52px;text-align:right}
+.lot-r{color:var(--txt3);font-size:9px}
+.fifo1{width:15px;height:15px;border-radius:3px;background:var(--ok);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;flex-shrink:0}
+.fifo2{background:var(--wn)}
+.fifo3{background:var(--txt3)}
+.done{opacity:.45;text-decoration:line-through}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .hide-sm{display:none}
+  input[type=range]{width:140px}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
+
   <div class="topbar">
-    <span class="pt">피킹리스트</span>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="btn"><i class="ti ti-printer"></i>출력</button>
-      <button class="btn btnp" id="new-btn"><i class="ti ti-plus"></i>피킹리스트 생성</button>
+    <div class="pt">
+      <i class="ti ti-list-check" style="color:var(--acc)"></i>피킹리스트 · FIFO 불출 지시
+      <span class="tag">실제 DB · 잔여 LOT 기준 · {{ base }}</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="setbar">
+    <span class="setl"><i class="ti ti-package"></i>생산 세트 수</span>
+    <input type="range" id="sets" min="1" max="400" value="100" oninput="render()">
+    <span class="setv" id="v-sets">100</span><span style="font-size:11px;color:var(--txt3)">세트</span>
+    <span class="setn">완제품 15종을 각 1대씩 만드는 것을 1세트로 본다. BOM 표준 소요량 × 세트 수 = 필요량</span>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+  <div class="route" id="route"></div>
+
+  <div class="filter-bar">
+    <button class="pill on" data-f="all"   onclick="setF('all')">전체</button>
+    <button class="pill"    data-f="split" onclick="setF('split')">LOT 분할</button>
+    <button class="pill"    data-f="short" onclick="setF('short')">재고 부족</button>
+    <button class="pill"    data-f="todo"  onclick="setF('todo')">미완료</button>
+    <span class="cnt" id="cnt"></span>
+    <div class="search">
+      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+      <input id="q" placeholder="품번 · 품명 · LOT" oninput="render()">
     </div>
   </div>
-  <div class="body">
-    <aside class="left">
-      <div class="lh"><div class="lh-t">작업지시 목록</div><div class="lh-s">WO 선택 → 피킹리스트 생성</div></div>
-      <div class="wo-list" id="wo-list"></div>
-    </aside>
-    <div class="right">
-      <div class="rh" id="rh"></div>
-      <div class="tabs">
-        <div class="tab on" data-tab="t1">피킹리스트</div>
-        <div class="tab" data-tab="t2">창고별 동선</div>
-        <div class="tab" data-tab="t3">진행 현황</div>
-      </div>
-      <div class="tc on" id="t1"></div>
-      <div class="tc" id="t2"></div>
-      <div class="tc" id="t3"></div>
-      <div class="pl-footer">
-        <span style="font-size:11px;color:var(--txt3)" id="footer-txt">항목을 체크하며 피킹하세요</span>
-        <div class="prog-all"><div class="prog-all-fill" id="prog-fill" style="width:0%"></div></div>
-        <span style="font-size:12px;font-weight:500;color:var(--acc)" id="prog-pct">0%</span>
-        <button class="btns btn" id="complete-btn" style="opacity:.4;cursor:not-allowed"><i class="ti ti-check"></i>피킹 완료</button>
-      </div>
-    </div>
+
+  <div class="listwrap">
+    <table>
+      <thead><tr>
+        <th style="width:34px"></th>
+        <th style="width:36px">순번</th>
+        <th>자재</th>
+        <th class="num">필요</th>
+        <th>불출 LOT (FIFO 순)</th>
+        <th class="num hide-sm">부족</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
   </div>
 </div>
+
 <script>
-const WOS=[
-  {id:'WO202512080002',fg:'FG007',fgnm:'후방카메라 완제품',target:15,worker:'김작업',date:'2025-12-08',dest:'F01 1라인',status:'대기',
-   items:[
-    {pid:'E01010001',nm:'후방카메라 LCD',bom:1,qty:8,lot:'LOT202507030001',loc:'L03',fifo:1,stock:8,seq:1},
-    {pid:'E01010001',nm:'후방카메라 LCD',bom:1,qty:7,lot:'LOT202509150003',loc:'L03',fifo:2,stock:100,seq:1,split:true},
-    {pid:'E01020001',nm:'상단 커버',bom:1,qty:15,lot:'LOT202509150003',loc:'L03',fifo:1,stock:180,seq:2},
-    {pid:'E01020002',nm:'하단 커버',bom:1,qty:15,lot:'LOT202509150003',loc:'L03',fifo:1,stock:180,seq:3},
-    {pid:'E01030001',nm:'볼트 PCB체결',bom:4,qty:60,lot:'LOT202507030001',loc:'L03',fifo:1,stock:320,seq:4},
-    {pid:'E01040001',nm:'가스켓 상단',bom:1,qty:15,lot:'LOT202510100003',loc:'L03',fifo:1,stock:500,seq:5},
-   ]},
-  {id:'WO202512080003',fg:'FG001',fgnm:'공기조정기 완제품',target:20,worker:'박생산',date:'2025-12-08',dest:'F01 1라인',status:'대기',
-   items:[
-    {pid:'V01010001',nm:'Al 다이캐스팅 본체',bom:1,qty:20,lot:'LOT202511050001',loc:'L01',fifo:1,stock:45,seq:1},
-    {pid:'V01020001',nm:'상단 커버',bom:1,qty:20,lot:'LOT202511050001',loc:'L01',fifo:1,stock:80,seq:2},
-    {pid:'V01030001',nm:'볼트 M6×12',bom:4,qty:80,lot:'LOT202512070002',loc:'L01',fifo:1,stock:800,seq:3},
-    {pid:'V01040001',nm:'오링',bom:1,qty:20,lot:'LOT202510150002',loc:'L01',fifo:1,stock:200,seq:4},
-   ]},
-];
-const LC={'L01':'rgba(42,120,214,.7)','L02':'rgba(83,74,183,.7)','L03':'rgba(139,75,11,.7)','L04':'rgba(29,158,117,.7)','L05':'rgba(191,54,12,.7)'};
-const LN={'L01':'밸브구역','L02':'센서구역','L03':'전장구역','L04':'탱크구역','L05':'튜브구역'};
-const SC={'대기':'bwn','예정':'bmu','진행중':'bac','완료':'bok'};
-let selWO=WOS[0],checked=new Set();
-const woEl=document.getElementById('wo-list');
-WOS.forEach(wo=>{
-  const el=document.createElement('div');
-  el.className='wo-item'+(wo.id===selWO.id?' on':'');
-  const pct=Math.round(wo.done/wo.target*100||0);
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:11px;font-weight:500;color:var(--acc)">${wo.id.slice(-6)}</span><span class="bg ${SC[wo.status]||'bmu'}" style="font-size:9px">${wo.status}</span></div>
-  <div style="font-size:10px;color:var(--txt3);margin-bottom:4px">${wo.fg} · ${wo.fgnm}</div>
-  <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:500">${wo.target}대</span>
-  <div style="flex:1;height:4px;border-radius:2px;background:var(--s0);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--acc)"></div></div>
-  <span style="font-size:10px;color:var(--txt3)">${wo.date.slice(5)}</span></div>`;
-  el.addEventListener('click',()=>{document.querySelectorAll('.wo-item').forEach(x=>x.classList.remove('on'));el.classList.add('on');selWO=wo;checked=new Set();renderAll();});
-  woEl.appendChild(el);
-});
-function renderAll(){renderHeader();renderT1();renderT2();renderT3();updateFooter();}
-function renderHeader(){
-  document.getElementById('rh').innerHTML=`
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-    <div style="font-size:10px;color:var(--txt3)">${selWO.id}</div>
-    <div style="font-size:14px;font-weight:500">${selWO.fg} · ${selWO.fgnm}</div>
-    <span class="bg ${SC[selWO.status]||'bmu'}">${selWO.status}</span>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
-    <div style="background:var(--s2);border-radius:var(--r);padding:5px 9px"><div style="font-size:9px;color:var(--txt3)">목표</div><div style="font-size:12px;font-weight:500">${selWO.target}대</div></div>
-    <div style="background:var(--s2);border-radius:var(--r);padding:5px 9px"><div style="font-size:9px;color:var(--txt3)">작업자</div><div style="font-size:12px;font-weight:500">${selWO.worker}</div></div>
-    <div style="background:var(--s2);border-radius:var(--r);padding:5px 9px"><div style="font-size:9px;color:var(--txt3)">작업일</div><div style="font-size:12px;font-weight:500">${selWO.date}</div></div>
-    <div style="background:var(--s2);border-radius:var(--r);padding:5px 9px"><div style="font-size:9px;color:var(--txt3)">도착창고</div><div style="font-size:11px;font-weight:500">${selWO.dest}</div></div>
-  </div>`;
+const ITEMS = {{ items|tojson }};
+let filter='all', zone=null;
+const picked = {};          // 체크한 항목
+
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// 세트 수에 맞춰 FIFO 로 LOT 을 배분한다
+function build(){
+  const sets = +document.getElementById('sets').value;
+  document.getElementById('v-sets').textContent = sets;
+  return ITEMS.map(function(it){
+    const want = it.per_set * sets;
+    let left = want;
+    const alloc = [];
+    for(let i=0;i<it.lots.length && left>0;i++){
+      const l = it.lots[i];                 // 이미 입고일 오름차순 = FIFO
+      const take = Math.min(left, l.remain);
+      alloc.push({lot:l, take:take, idx:alloc.length+1});
+      left -= take;
+    }
+    return {it:it, want:want, alloc:alloc, picked:want-left, short:left,
+            Loc_ID: it.lots[0].Loc_ID, loc: it.lots[0].loc_name};
+  }).filter(function(p){ return p.want > 0; });
 }
-function renderT1(){
-  const zones=[...new Set(selWO.items.map(i=>i.loc))].sort();
-  let html='<div class="pl-table-wrap">';
-  zones.forEach(zone=>{
-    const zItems=selWO.items.filter(i=>i.loc===zone);
-    const doneCnt=zItems.filter((_,idx)=>checked.has(zone+'_'+idx)).length;
-    const pct=Math.round(doneCnt/zItems.length*100);
-    html+=`<div class="zone-group">
-      <div class="zg-head">
-        <div style="width:9px;height:9px;border-radius:50%;background:${LC[zone]||'#888'}"></div>
-        <span class="zg-name">${zone} · ${LN[zone]||''}</span>
-        <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
-          <div style="width:60px;height:5px;border-radius:3px;background:var(--s0);overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct===100?'var(--ok)':LC[zone]||'var(--acc)'}"></div></div>
-          <span style="font-size:10px;color:var(--txt3)">${doneCnt}/${zItems.length}</span>
-        </div>
-      </div>
-      <table><thead><tr><th style="width:32px;text-align:center">✓</th><th>순번</th><th>품번</th><th>품명</th><th>LOT</th><th>FIFO</th><th>수량</th><th>재고</th><th>위치</th></tr></thead><tbody>`;
-    zItems.forEach((item,idx)=>{
-      const key=zone+'_'+idx;
-      const isDone=checked.has(key);
-      const ok=item.stock>=item.qty;
-      html+=`<tr class="${isDone?'done':''}${item.split?' style="background:rgba(239,159,39,.05)"':''}">
-        <td style="text-align:center"><div class="chk ${isDone?'on':''}" onclick="toggleCheck('${key}')"></div></td>
-        <td style="text-align:center;color:var(--txt3);font-size:11px">${item.seq}${item.split?'b':''}</td>
-        <td style="color:var(--acc);font-weight:500;font-size:11px">${item.pid}</td>
-        <td>${item.nm}</td>
-        <td><span class="lchip ${item.fifo===1?'lchip-f':''}">${item.lot.slice(-8)}</span></td>
-        <td style="text-align:center"><span class="bg ${item.fifo===1?'bac':'bmu'}" style="font-size:9px">${item.fifo}순위</span></td>
-        <td style="text-align:center;font-weight:500;color:${ok?'var(--ok)':'var(--dn)'}">${item.qty}</td>
-        <td style="text-align:center;color:${ok?'var(--txt3)':'var(--dn)'}">${item.stock}</td>
-        <td><span class="loc-tag" style="background:${LC[zone]||'#888'}22;color:${LC[zone]||'#888'}">${zone}</span>${item.split?'<span style="font-size:9px;color:var(--wn);margin-left:3px">분할</span>':''}</td>
-      </tr>`;
+
+function view(all){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  return all.filter(function(p){
+    if(zone && p.Loc_ID!==zone)                       return false;
+    if(filter==='split' && p.alloc.length<2)          return false;
+    if(filter==='short' && p.short<=0)                return false;
+    if(filter==='todo'  && picked[p.it.P_ID])         return false;
+    if(q){
+      const hay=(p.it.P_ID+' '+(p.it.P_N||'')+' '+(p.it.Spec||'')+' '
+                + p.alloc.map(function(a){return a.lot.Lot_ID;}).join(' ')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+}
+
+function render(){
+  const all = build();
+  const r = view(all);
+
+  // KPI
+  const split = all.filter(function(p){return p.alloc.length>1;}).length;
+  const short = all.filter(function(p){return p.short>0;});
+  const totQ  = all.reduce(function(a,p){return a+p.picked;},0);
+  const totL  = all.reduce(function(a,p){return a+p.alloc.length;},0);
+  const doneN = all.filter(function(p){return picked[p.it.P_ID];}).length;
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="kl"><i class="ti ti-list"></i>피킹 품목</div>'
+  +   '<div class="kv">' + all.length + '<span style="font-size:11px;color:var(--txt3)">종</span></div>'
+  +   '<div class="ks">완료 ' + doneN + ' / ' + all.length + '</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>불출 수량</div>'
+  +   '<div class="kv">' + nf(totQ) + '<span style="font-size:11px;color:var(--txt3)">개</span></div>'
+  +   '<div class="ks">LOT ' + totL + '건에서 출고</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-arrows-split"></i>LOT 분할</div>'
+  +   '<div class="kv ' + (split?'wn':'') + '">' + split + '<span style="font-size:11px">종</span></div>'
+  +   '<div class="ks">한 LOT으로 부족해 나눠 꺼냄</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
+  +   '<div class="kv ' + (short.length?'dn':'ok') + '">' + short.length + '<span style="font-size:11px">종</span></div>'
+  +   '<div class="ks">' + nf(short.reduce(function(a,p){return a+p.short;},0)) + '개 모자람</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-building-warehouse"></i>이동 구역</div>'
+  +   '<div class="kv">' + new Set(all.map(function(p){return p.Loc_ID;})).size
+  +     '<span style="font-size:11px;color:var(--txt3)">곳</span></div>'
+  +   '<div class="ks">구역 순으로 정렬됨</div></div>';
+
+  // 동선
+  const zs = {};
+  all.forEach(function(p){
+    const z = zs[p.Loc_ID] = zs[p.Loc_ID] || {loc:p.loc, n:0, q:0};
+    z.n++; z.q += p.picked;
+  });
+  document.getElementById('route').innerHTML = Object.keys(zs).sort().map(function(k,i){
+    const z=zs[k];
+    return (i? '<span class="rarw">→</span>' : '')
+      + '<div class="rz ' + (zone===k?'on':'') + '" onclick="setZone(\'' + k + '\')">'
+      + '<span class="rz-id">' + k + '</span><span class="rz-n">' + esc(z.loc) + '</span>'
+      + '<span class="rz-c">' + z.n + '종 · ' + nf(z.q) + '개</span></div>';
+  }).join('');
+
+  // 목록 (구역 헤더 포함)
+  document.getElementById('cnt').textContent = r.length + '종';
+  const tb = document.getElementById('tb');
+  if(!r.length){
+    tb.innerHTML = '<tr><td colspan="6"><div class="empty">조건에 맞는 항목이 없습니다.</div></td></tr>';
+    return;
+  }
+  let html='', lastZ=null, seq=0;
+  r.forEach(function(p){
+    if(p.Loc_ID !== lastZ){
+      lastZ = p.Loc_ID;
+      html += '<tr class="zhead"><td colspan="6"><i class="ti ti-building-warehouse"></i> '
+            + p.Loc_ID + ' ' + esc(p.loc) + '</td></tr>';
+    }
+    seq++;
+    const done = !!picked[p.it.P_ID];
+    const lots = p.alloc.map(function(a){
+      return '<div class="lot">'
+        + '<span class="fifo' + Math.min(a.idx,3) + ' fifo1' + (a.idx>1?' fifo'+Math.min(a.idx,3):'') + '">' + a.idx + '</span>'
+        + '<span class="lot-id">' + a.lot.Lot_ID + '</span>'
+        + '<span class="lot-d">' + a.lot.Lot_Date + '</span>'
+        + '<span class="lot-q">' + nf(a.take) + '개</span>'
+        + '<span class="lot-r">잔여 ' + nf(a.lot.remain) + ' · 체류 ' + a.lot.age_days + '일</span>'
+        + '</div>';
+    }).join('');
+    html += '<tr class="' + (done?'done':'') + '">'
+      + '<td><input type="checkbox" class="chk" ' + (done?'checked':'')
+      +   ' onchange="toggle(\'' + p.it.P_ID + '\')"></td>'
+      + '<td><span class="seq">' + seq + '</span></td>'
+      + '<td><span class="pid">' + p.it.P_ID + '</span>'
+      +   (p.it.grade ? ' <span class="gr gr'+p.it.grade+'">'+p.it.grade+'</span>' : '')
+      +   '<div class="nm">' + esc(p.it.P_N) + '</div>'
+      +   '<div class="sp">' + esc(p.it.Spec) + '</div></td>'
+      + '<td class="num"><b>' + nf(p.want) + '</b>'
+      +   '<div class="sp">세트당 ' + p.it.per_set + '</div></td>'
+      + '<td>' + lots
+      +   (p.alloc.length>1 ? '<span class="bg bwn">FIFO ' + p.alloc.length + '개 분할</span>' : '') + '</td>'
+      + '<td class="num hide-sm">' + (p.short>0
+        ? '<span class="bg bdn">' + nf(p.short) + '</span>' : '-') + '</td>'
+      + '</tr>';
+  });
+  tb.innerHTML = html;
+}
+
+function toggle(pid){ picked[pid] = !picked[pid]; render(); }
+function setF(f){
+  filter=f;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+function setZone(z){ zone = (zone===z ? null : z); render(); }
+
+function dl(){
+  const all=build(), r=view(all);
+  const head=['순번','구역','창고','품번','품명','규격','등급','세트당소요','필요수량',
+              'LOT순서','LOT번호','입고일','불출수량','LOT잔여','체류일수','부족'];
+  const lines=[head.join(',')];
+  let seq=0;
+  r.forEach(function(p){
+    seq++;
+    if(!p.alloc.length){
+      lines.push([seq,p.Loc_ID,p.loc,p.it.P_ID,p.it.P_N,p.it.Spec,p.it.grade,p.it.per_set,p.want,
+                  '','','','','','',p.short].map(function(v){return '"'+(v==null?'':v)+'"';}).join(','));
+    }
+    p.alloc.forEach(function(a){
+      lines.push([seq,p.Loc_ID,p.loc,p.it.P_ID,p.it.P_N,p.it.Spec,p.it.grade,p.it.per_set,p.want,
+                  a.idx,a.lot.Lot_ID,a.lot.Lot_Date,a.take,a.lot.remain,a.lot.age_days,p.short]
+        .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
     });
-    html+=`</tbody></table></div>`;
   });
-  html+='</div>';
-  document.getElementById('t1').innerHTML=html;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='피킹리스트.csv';
+  a.click();
 }
-function renderT2(){
-  const zones=[...new Set(selWO.items.map(i=>i.loc))].sort();
-  let html=`<div style="padding:12px;display:flex;flex-direction:column;gap:10px">
-  <div style="padding:8px 12px;background:var(--bg-ac);border-radius:var(--r);font-size:11px;color:var(--acc)">
-    <i class="ti ti-route"></i> 최적 동선: <b>${zones.join(' → ')} → ${selWO.dest}</b>
-  </div>`;
-  zones.forEach((zone,zi)=>{
-    const zItems=selWO.items.filter(i=>i.loc===zone);
-    html+=`<div style="background:var(--s2);border:0.5px solid var(--border);border-radius:9px;overflow:hidden">
-      <div style="padding:8px 12px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px">
-        <div style="width:22px;height:22px;border-radius:50%;background:${LC[zone]};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500">${zi+1}</div>
-        <span style="font-size:12px;font-weight:500">${zone} · ${LN[zone]}</span>
-        <span style="font-size:10px;color:var(--txt3);margin-left:auto">${zItems.length}품목</span>
-      </div>
-      ${zItems.map(item=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:0.5px solid var(--border)">
-        <span style="font-size:10px;font-weight:500;color:var(--acc);width:80px">${item.pid}</span>
-        <span style="font-size:11px;flex:1">${item.nm}</span>
-        <span class="lchip lchip-f">${item.lot.slice(-8)}</span>
-        <span style="font-size:12px;font-weight:500;color:${item.stock>=item.qty?'var(--ok)':'var(--dn)'}">${item.qty}개</span>
-      </div>`).join('')}
-    </div>`;
-    if(zi<zones.length-1)html+=`<div style="text-align:center;font-size:10px;color:var(--txt3)">↓ 다음 구역으로 이동</div>`;
-  });
-  html+=`</div>`;
-  document.getElementById('t2').innerHTML=html;
-}
-function renderT3(){
-  const total=selWO.items.length,done=checked.size,pct=Math.round(done/total*100);
-  const short=selWO.items.filter(i=>i.stock<i.qty);
-  let html=`<div style="padding:12px;display:flex;flex-direction:column;gap:10px">
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-    <div style="background:var(--s1);border-radius:var(--r);padding:8px 10px;border:0.5px solid var(--border)"><div style="font-size:10px;color:var(--txt3)">전체</div><div style="font-size:16px;font-weight:500">${total}행</div></div>
-    <div style="background:var(--s1);border-radius:var(--r);padding:8px 10px;border:0.5px solid var(--border)"><div style="font-size:10px;color:var(--txt3)">완료</div><div style="font-size:16px;font-weight:500;color:var(--ok)">${done}행</div></div>
-    <div style="background:var(--s1);border-radius:var(--r);padding:8px 10px;border:0.5px solid var(--border)"><div style="font-size:10px;color:var(--txt3)">재고부족</div><div style="font-size:16px;font-weight:500;color:${short.length>0?'var(--dn)':'var(--ok)'}">${short.length}종</div></div>
-  </div>
-  <div style="background:var(--s2);border:0.5px solid var(--border);border-radius:9px;padding:12px">
-    <div style="font-size:11px;color:var(--txt3);margin-bottom:6px">전체 진행률</div>
-    <div style="height:12px;border-radius:6px;background:var(--s1);overflow:hidden;margin-bottom:4px"><div style="height:100%;width:${pct}%;background:${pct===100?'var(--ok)':'var(--acc)'};border-radius:6px;transition:width .3s"></div></div>
-    <div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--txt3)">${done}/${total} 완료</span><span style="font-weight:500;color:${pct===100?'var(--ok)':'var(--acc)'}">${pct}%</span></div>
-  </div>
-  ${short.length>0?`<div style="background:var(--s2);border:0.5px solid rgba(224,75,74,.4);border-radius:9px;overflow:hidden">
-    <div style="padding:8px 12px;background:rgba(224,75,74,.08);border-bottom:0.5px solid var(--border);font-size:11px;font-weight:500;color:var(--dn)"><i class="ti ti-alert-triangle"></i> 재고 부족 (${short.length}종) · 발주 필요</div>
-    ${short.map(item=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:0.5px solid var(--border)"><span style="color:var(--acc);font-size:10px;font-weight:500">${item.pid}</span><span style="flex:1;font-size:11px">${item.nm}</span><span style="font-size:10px;color:var(--dn)">필요 ${item.qty}개 / 재고 ${item.stock}개</span><button class="btn" style="font-size:10px;padding:2px 7px">발주</button></div>`).join('')}
-  </div>`:`<div style="padding:10px;background:var(--bg-ok);border-radius:9px;font-size:11px;color:var(--ok)"><i class="ti ti-check"></i> 모든 품목 재고 충분</div>`}
-  </div>`;
-  document.getElementById('t3').innerHTML=html;
-}
-function updateFooter(){
-  const total=selWO.items.length,done=checked.size,pct=Math.round(done/total*100);
-  document.getElementById('prog-fill').style.width=pct+'%';
-  document.getElementById('prog-pct').textContent=pct+'%';
-  document.getElementById('footer-txt').textContent=`${done}/${total} 피킹 완료`;
-  const cb=document.getElementById('complete-btn');
-  cb.style.opacity=done===total?'1':'.4';
-  cb.style.cursor=done===total?'pointer':'not-allowed';
-}
-window.toggleCheck=function(key){
-  if(checked.has(key))checked.delete(key);else checked.add(key);
-  renderAll();
-};
-document.querySelectorAll('.tab').forEach(tab=>{
-  tab.addEventListener('click',()=>{
-    const t=tab.dataset.tab;
-    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-    document.querySelectorAll('.tc').forEach(x=>x.classList.remove('on'));
-    tab.classList.add('on');
-    document.getElementById(t).classList.add('on');
-  });
-});
-renderAll();
+
+render();
 </script>
 </body>
 </html>

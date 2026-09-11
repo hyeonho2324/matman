@@ -1882,3 +1882,176 @@ def simulator_items(conn):
     order = {"재고소진": 0, "발주지연": 1, "발주임박": 2, "주의": 3, "여유": 4, "예측불가": 5}
     out.sort(key=lambda x: (order.get(x["urgency"], 9), -(x["daily"] or 0)))
     return out, base, span
+
+
+# ── 피킹리스트 ───────────────────────────────────────────────
+# 생산에 필요한 자재를 FIFO(선입선출)로 LOT 을 지정하고 창고 구역 순으로
+# 정렬해 이동 동선을 줄인 피킹 지시서를 만든다.
+# 필요 수량은 화면에서 '생산 세트 수'로 조절하므로, 원재료(BOM 소요량 + 잔여 LOT)만
+# 넘기고 실제 배분은 화면에서 계산한다.
+def picking_source(conn):
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+
+    # 완제품 1세트(15종 전부 1대씩) 생산에 필요한 자재별 소요량
+    per_set = {r["P_ID"]: r["per_set"] for r in _rows(conn, """
+        SELECT P_ID, SUM(BOM_Qty) AS per_set
+          FROM BOM_tb WHERE BOM_Type = '표준' GROUP BY P_ID
+    """)}
+
+    # 잔여 LOT — 자재별 FIFO(입고일) 순
+    lots = {}
+    for r in _rows(conn, f"""
+        SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
+               CAST(julianday(?) - julianday(l.Lot_Date) AS INT) AS age_days
+          FROM Lot_tb l
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
+                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+         WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
+         ORDER BY l.P_ID, l.Lot_Date
+    """, (base,)):
+        lots.setdefault(r["P_ID"], []).append(r)
+
+    items = []
+    for r in _rows(conn, """
+        SELECT p.P_ID, p.P_N, p.Spec, c.CP_N AS supplier, s.Sf_Lv AS grade
+          FROM Product_tb p
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+    """):
+        pid = r["P_ID"]
+        if pid not in per_set or pid not in lots:
+            continue
+        items.append({
+            "P_ID": pid, "P_N": r["P_N"], "Spec": r["Spec"],
+            "supplier": r["supplier"], "grade": r["grade"],
+            "per_set": per_set[pid],
+            "lots": lots[pid],
+            "stock": sum(l["remain"] for l in lots[pid]),
+        })
+    # 창고 구역 → 품번 순 (피킹 동선)
+    items.sort(key=lambda x: (x["lots"][0]["Loc_ID"], x["P_ID"]))
+    return items, base
+
+
+# ── 발주 시뮬레이터 ──────────────────────────────────────────
+# 실제 품목 데이터를 주고, 발주량·발주시점·리드타임을 바꿔가며
+# 향후 재고 추이가 어떻게 달라지는지 화면에서 계산한다.
+def simulator_items(conn):
+    rows, base, span = forecast_list(conn)
+    out = []
+    for r in rows:
+        if not r["lead_time"]:
+            continue
+        out.append({
+            "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
+            "P_Price": r["P_Price"], "MinOrderQty": r["MinOrderQty"], "PkgUnit": r["PkgUnit"],
+            "supplier": r["supplier"], "is_foreign": r["is_foreign"],
+            "grade": r["grade"], "safe_qty": r["safe_qty"] or 0,
+            "lead_time": r["lead_time"] or 0,
+            "stock": r["stock"] or 0,
+            "daily": r["daily"] or 0,
+            "out_cnt": r["out_cnt"],
+            "confidence": r["confidence"],
+            "days_left": r["days_left"],
+            "order_qty": r["order_qty"],
+            "urgency": r["urgency"],
+        })
+    # 기본 선택은 리스크가 큰 품목부터
+    order = {"재고소진": 0, "발주지연": 1, "발주임박": 2, "주의": 3, "여유": 4, "예측불가": 5}
+    out.sort(key=lambda x: (order.get(x["urgency"], 9), -(x["daily"] or 0)))
+    return out, base, span
+
+
+# ── 피킹리스트 ───────────────────────────────────────────────
+# 불출해야 할 자재를 FIFO(선입선출) 순으로 LOT 을 지정하고,
+# 창고 구역 순서대로 정렬해 이동 동선을 최소화한 피킹 지시서를 만든다.
+def picking_list(conn, need=None):
+    """need: {P_ID: 필요수량}. 없으면 안전재고 미달분을 채우는 양으로 자동 산출."""
+    rows, base, span = forecast_list(conn)
+
+    # 기본 대상 — 재고가 있으면서 안전재고에 못 미치는 품목은 불출 대상이 아니므로
+    # '생산에 필요해서 현장으로 내보낼 자재'를 BOM 소요 기준으로 잡는다.
+    fg_need = _rows(conn, """
+        SELECT b.P_ID, SUM(b.BOM_Qty) AS per_set
+          FROM BOM_tb b WHERE b.BOM_Type = '표준'
+         GROUP BY b.P_ID
+    """)
+    per_set = {r["P_ID"]: r["per_set"] for r in fg_need}
+
+    # 잔여 LOT (FIFO 순)
+    lots = {}
+    for r in _rows(conn, f"""
+        SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
+               CAST(julianday((SELECT MAX(T_Date) FROM Transaction_tb))
+                    - julianday(l.Lot_Date) AS INT) AS age_days
+          FROM Lot_tb l
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty FROM Transaction_tb
+                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+         WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
+         ORDER BY l.P_ID, l.Lot_Date
+    """):
+        lots.setdefault(r["P_ID"], []).append(r)
+
+    info = {r["P_ID"]: r for r in rows}
+    picks = []
+    for pid, ls in lots.items():
+        r = info.get(pid)
+        if not r:
+            continue
+        # 필요 수량 — 지정값이 없으면 완제품 10세트분 소요량
+        want = (need or {}).get(pid)
+        if want is None:
+            want = (per_set.get(pid) or 0) * 10
+        if want <= 0:
+            continue
+
+        left, alloc = want, []
+        for l in ls:                      # 이미 입고일 순(FIFO)으로 정렬돼 있다
+            if left <= 0:
+                break
+            take = min(left, l["remain"])
+            alloc.append({
+                "Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
+                "loc": l["loc_name"], "Loc_ID": l["Loc_ID"],
+                "remain": l["remain"], "take": take,
+                "age_days": l["age_days"],
+            })
+            left -= take
+
+        picks.append({
+            "P_ID": pid, "P_N": r["P_N"], "Spec": r["Spec"],
+            "grade": r["grade"], "supplier": r["supplier"],
+            "want": want, "picked": want - left, "short": left,
+            "stock": r["stock"], "lots": alloc,
+            "Loc_ID": alloc[0]["Loc_ID"] if alloc else "ZZ",
+            "loc": alloc[0]["loc"] if alloc else "-",
+            "lot_n": len(alloc),
+        })
+
+    # 창고 구역 → 품번 순으로 정렬 (동선 최소화)
+    picks.sort(key=lambda p: (p["Loc_ID"], p["P_ID"]))
+    for i, p in enumerate(picks, 1):
+        p["seq"] = i
+    return picks, base
+
+
+def picking_summary(picks):
+    zones = {}
+    for p in picks:
+        z = zones.setdefault(p["Loc_ID"], {"loc": p["loc"], "items": 0, "qty": 0, "lots": 0})
+        z["items"] += 1
+        z["qty"] += p["picked"]
+        z["lots"] += p["lot_n"]
+    return {
+        "items": len(picks),
+        "qty": sum(p["picked"] for p in picks),
+        "lots": sum(p["lot_n"] for p in picks),
+        "zones": sorted(zones.items()),
+        "short_items": len([p for p in picks if p["short"] > 0]),
+        "short_qty": sum(p["short"] for p in picks),
+        "multi_lot": len([p for p in picks if p["lot_n"] > 1]),
+    }
