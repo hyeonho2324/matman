@@ -354,8 +354,8 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">일평균 사용</span><span class="iv">' + (x.daily||0) + '개/일</span></div>'
   +   '<div class="note">' + (
         x.has_alt
-        ? '대체품이 있어 결품 시 일부 흡수가 가능하다.'
-        : '⚠️ 대체품이 없어 결품되면 해당 완제품 생산이 멈춘다.') + '</div>'
+        ? '대체품이 있어 결품 시 일부 흡수가 가능합니다.'
+        : '⚠️ 대체품이 없어 결품되면 해당 완제품 생산이 멈춥니다.') + '</div>'
   + '</div>'
 
   + (x.order_qty > 0 ?
@@ -365,8 +365,8 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">권장 발주량</span><span class="iv">' + nf(x.order_qty) + '개</span></div>'
   +   '<div class="ir"><span class="ik">발주 금액</span><span class="iv">' + nf(x.order_amt) + '원</span></div>'
   +   '<div class="ir"><span class="ik">입고 예상</span><span class="iv">발주 후 ' + (x.lead_time||0) + '일</span></div>'
-  +   '<div class="note">발주해도 리드타임 ' + (x.lead_time||0) + '일 뒤에 입고된다. '
-  +     (x.stock<=0 ? '그동안은 결품 상태가 이어진다.' : '') + '</div>'
+  +   '<div class="note">발주해도 리드타임 ' + (x.lead_time||0) + '일 뒤에 입고됩니다. '
+  +     (x.stock<=0 ? '그동안은 결품 상태가 이어집니다.' : '') + '</div>'
   + '</div>' : '')
   ;
 }

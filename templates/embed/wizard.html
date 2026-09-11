@@ -160,8 +160,8 @@ function render(){
     });
     b.innerHTML =
       '<div class="stitle">1단계 · 재검토 대상 선정</div>'
-    + '<div class="ssub">등급별 재검토 주기가 지난 품목을 골라낸다. '
-    + '<code>Update_Log_tb.Next_Date</code> 가 기준일(' + SUM.base_date + ') 이전이면 대상이다.</div>'
+    + '<div class="ssub">등급별 재검토 주기가 지난 품목을 골라냅니다. '
+    + '<code>Update_Log_tb.Next_Date</code> 가 기준일(' + SUM.base_date + ') 이전이면 대상입니다.</div>'
     + '<div class="cards">'
     +   '<div class="card"><div class="c-l"><i class="ti ti-package"></i>전체 등록</div>'
     +     '<div class="c-v">' + SUM.total + '<small>종</small></div><div class="c-s">안전재고 관리 품목</div></div>'
@@ -177,7 +177,7 @@ function render(){
     + '</div>'
     + '<div class="sec"><div class="sech"><i class="ti ti-calendar-repeat"></i>'
     +   '<span class="sech-t">등급별 재검토 주기</span>'
-    +   '<span class="sech-m">고가·핵심 자재일수록 자주 검토한다</span></div>'
+    +   '<span class="sech-m">고가·핵심 자재일수록 자주 검토합니다</span></div>'
     +   tbl([['등급'],['주기',1],['등록',1],['대상',1],['비율',1]],
           ['A','B','C'].filter(function(g){return byCycle[g];}).map(function(g){
             const c=byCycle[g];
@@ -188,8 +188,8 @@ function render(){
                  + '<td class="num">'+(c.due/c.n*100).toFixed(0)+'%</td></tr>';
           }))
     +   '<div class="note">A등급 30일 · B등급 90일 · C등급 180일. 표준 ABC 재고관리 원칙에 따라 '
-    +     '중요 자재를 더 자주 본다.</div></div>';
-    msg.innerHTML = '대상 <b>' + SUM.due + '종</b>을 선정했다. 다음 단계에서 사용 실적을 분석한다.';
+    +     '중요 자재를 더 자주 봅니다.</div></div>';
+    msg.innerHTML = '대상 <b>' + SUM.due + '종</b>을 선정했습니다. 다음 단계에서 사용 실적을 분석합니다.';
   }
 
   // ── 2단계 : 파레토 산정 ──
@@ -198,8 +198,8 @@ function render(){
                        .sort(function(a,b){return b.amount-a.amount;}).slice(0,8);
     b.innerHTML =
       '<div class="stitle">2단계 · 파레토 분석으로 Usage_Score 산정</div>'
-    + '<div class="ssub">불출 이력 ' + SPAN + '일치를 사용금액 기준으로 내림차순 정렬해 누적비율을 구한다. '
-    + '사람이 매기는 점수가 아니라 <b>실적에서 자동 산출</b>되는 항목이다.</div>'
+    + '<div class="ssub">불출 이력 ' + SPAN + '일치를 사용금액 기준으로 내림차순 정렬해 누적비율을 구합니다. '
+    + '사람이 매기는 점수가 아니라 <b>실적에서 자동 산출</b>되는 항목입니다.</div>'
     + '<div class="sec"><div class="sech"><i class="ti ti-math-function"></i>'
     +   '<span class="sech-t">산정 규칙</span></div>'
     +   '<div class="fx">사용금액 = 불출수량 × 단가\n'
@@ -207,8 +207,8 @@ function render(){
     +   '  누적 75% 이내  → A (3점)\n'
     +   '  누적 90% 이내  → B (2점)\n'
     +   '  그 외          → C (1점)</div>'
-    +   '<div class="note">신규 등록 품목은 사용 이력이 없어 이 점수가 비어 있다(NULL). '
-    +     '갱신 시점에 비로소 채워진다.</div></div>'
+    +   '<div class="note">신규 등록 품목은 사용 이력이 없어 이 점수가 비어 있습니다(NULL). '
+    +     '갱신 시점에 비로소 채워집니다.</div></div>'
     + '<div class="cards">'
     +   '<div class="card"><div class="c-l"><i class="ti ti-plus"></i>결측 채움</div>'
     +     '<div class="c-v ac">' + SUM.usage_filled + '<small>종</small></div>'
@@ -236,7 +236,7 @@ function render(){
                  + '<td class="num"><span class="bg bac">'+r.new_usage+'점</span></td></tr>';
           }))
     + '</div>';
-    msg.innerHTML = '결측 <b>' + SUM.usage_filled + '종</b>을 채우고 <b>' + SUM.usage_changed + '종</b>의 점수가 바뀌었다.';
+    msg.innerHTML = '결측 <b>' + SUM.usage_filled + '종</b>을 채우고 <b>' + SUM.usage_changed + '종</b>의 점수가 바뀌었습니다.';
   }
 
   // ── 3단계 : 등급 재판정 ──
@@ -253,7 +253,7 @@ function render(){
     b.innerHTML =
       '<div class="stitle">3단계 · 등급 재판정</div>'
     + '<div class="ssub">기존 4개 항목(단가·대체가능성·품절영향·공급안정성)에 새로 산정한 '
-    + 'Usage_Score 를 더해 5개 항목 합계로 등급을 다시 매긴다.</div>'
+    + 'Usage_Score 를 더해 5개 항목 합계로 등급을 다시 매깁니다.</div>'
     + '<div class="sec"><div class="sech"><i class="ti ti-adjustments"></i>'
     +   '<span class="sech-t">컷오프</span></div>'
     +   '<div class="fx">5개 항목 합계 (만점 15점)\n\n'
@@ -261,7 +261,7 @@ function render(){
     +   '   8 ~ 12점  → B등급\n'
     +   '   7점 이하  → C등급</div>'
     +   '<div class="note">신규 등록 시엔 Usage_Score 가 없어 4개 항목(만점 12점) 컷오프 '
-    +     '10/6/5 를 쓴다. 갱신 후에는 이 5항목 기준으로 넘어간다.</div></div>'
+    +     '10/6/5 를 씁니다. 갱신 후에는 이 5항목 기준으로 넘어갑니다.</div></div>'
     + '<div class="cards">'
     +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-exchange"></i>등급 변동</div>'
     +     '<div class="c-v ac">' + SUM.grade_changed + '<small>종</small></div>'
@@ -299,7 +299,7 @@ function render(){
                  + '<td>'+r.cycle+'일<span class="arw">→</span><b>'+r.new_cycle+'일</b></td></tr>';
           }))
     + '</div>';
-    msg.innerHTML = '<b>' + SUM.grade_changed + '종</b>의 등급이 바뀐다 (상향 ' + SUM.grade_up + ' · 하향 ' + SUM.grade_down + ').';
+    msg.innerHTML = '<b>' + SUM.grade_changed + '종</b>의 등급이 바뀝니다 (상향 ' + SUM.grade_up + ' · 하향 ' + SUM.grade_down + ').';
   }
 
   // ── 4단계 : 안전재고 재계산 ──
@@ -308,7 +308,7 @@ function render(){
                     .sort(function(a,b){return Math.abs(b.ss_diff)-Math.abs(a.ss_diff);}).slice(0,10);
     b.innerHTML =
       '<div class="stitle">4단계 · 안전재고 수량 재계산</div>'
-    + '<div class="ssub">재판정된 등급의 서비스 수준(Z)과 변동 계수를 적용해 <code>Sf_Num</code> 을 다시 계산한다.</div>'
+    + '<div class="ssub">재판정된 등급의 서비스 수준(Z)과 변동 계수를 적용해 <code>Sf_Num</code> 을 다시 계산합니다.</div>'
     + '<div class="sec"><div class="sech"><i class="ti ti-math-function"></i>'
     +   '<span class="sech-t">계산식</span></div>'
     +   '<div class="fx">SS = Z × √(L×σd² + d²×σL²)\n\n'
@@ -317,7 +317,7 @@ function render(){
     +   '  d   불출 합계 ÷ ' + SPAN + '일\n'
     +   '  σd  d × 계수 (A 0.20 / B 0.25 / C 0.30)\n'
     +   '  σL  L × 계수 (동일)</div>'
-    +   '<div class="note">등급이 바뀌면 Z 와 σ 계수가 함께 바뀌므로 안전재고 수량도 달라진다.</div></div>'
+    +   '<div class="note">등급이 바뀌면 Z 와 σ 계수가 함께 바뀌므로 안전재고 수량도 달라집니다.</div></div>'
     + '<div class="cards">'
     +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>수량 변동</div>'
     +     '<div class="c-v ac">' + SUM.ss_changed + '<small>종</small></div>'
@@ -347,10 +347,10 @@ function render(){
                  + '<td class="num"><b>'+nf(r.new_ss)+'</b></td>'
                  + '<td class="num '+(r.ss_diff>0?'up':'down')+'">'+(r.ss_diff>0?'+':'')+nf(r.ss_diff)+'</td></tr>';
           }))
-    +   '<div class="note">⚠️ 이 화면은 <b>조회 전용</b>이다. 실제로 DB 를 수정하지 않고 '
-    +     '"적용하면 이렇게 된다"를 보여준다. 반영하려면 <code>Safe_tb</code> 와 '
-    +     '<code>Update_Log_tb</code> 쓰기 기능이 필요하다.</div></div>';
-    msg.innerHTML = '재계산 완료. <b>' + SUM.ss_changed + '종</b>의 안전재고가 조정된다 (순증 ' + nf(SUM.ss_total_diff) + '개).';
+    +   '<div class="note">⚠️ 이 화면은 <b>조회 전용</b>입니다. 실제로 DB 를 수정하지 않고 '
+    +     '"적용하면 이렇게 됩니다"를 보여줍니다. 반영하려면 <code>Safe_tb</code> 와 '
+    +     '<code>Update_Log_tb</code> 쓰기 기능이 필요합니다.</div></div>';
+    msg.innerHTML = '재계산 완료. <b>' + SUM.ss_changed + '종</b>의 안전재고가 조정됩니다 (순증 ' + nf(SUM.ss_total_diff) + '개).';
   }
 }
 

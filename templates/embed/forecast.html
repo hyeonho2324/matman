@@ -154,9 +154,9 @@ tbody tr.on{background:var(--bg-ac)}
 
   <div class="warn">
     <i class="ti ti-alert-triangle"></i>
-    <b>예측 방식의 한계</b> — 자재당 불출 관측이 1~6회(중앙값 2회)뿐이라 회귀·계절성 분석은 표본이 부족하다.
+    <b>예측 방식의 한계</b> — 자재당 불출 관측이 1~6회(중앙값 2회)뿐이라 회귀·계절성 분석은 표본이 부족합니다.
     따라서 <b>일평균 사용량(총 불출량 ÷ {{ summary.span }}일)</b> 기반 단순 계산만 사용하며,
-    각 품목의 관측 횟수를 <b>신뢰도</b>로 함께 표시한다. (높음 {{ summary.conf['높음'] }} · 보통 {{ summary.conf['보통'] }} · 낮음 {{ summary.conf['낮음'] }}종)
+    각 품목의 관측 횟수를 <b>신뢰도</b>로 함께 표시합니다. (높음 {{ summary.conf['높음'] }} · 보통 {{ summary.conf['보통'] }} · 낮음 {{ summary.conf['낮음'] }}종)
   </div>
 
   <div class="filter-bar">
@@ -285,7 +285,7 @@ function render(){
 
 function sparkline(x){
   const h=x.months||[];
-  if(!h.length) return '<div class="note">불출 이력이 없다.</div>';
+  if(!h.length) return '<div class="note">불출 이력이 없습니다.</div>';
   const W=300,H=46,pad=6;
   const mx=Math.max.apply(null,h.map(function(d){return d.qty;}))||1;
   const bw=Math.min((W-pad*2)/h.length*0.6, 30);
@@ -345,7 +345,7 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">일평균 · 월평균</span><span class="iv">' + x.daily + ' · ' + nf(x.monthly_avg) + '개</span></div>'
   +   '<div class="ir"><span class="ik">최초 · 최근 불출</span><span class="iv">' + (x.first_out||'-') + ' ~ ' + (x.last_out||'-') + '</span></div>'
   +   (x.out_cnt <= 1
-      ? '<div class="note">⚠️ 관측이 ' + x.out_cnt + '회뿐이라 일평균값의 신뢰도가 낮다. 참고용으로만 쓸 것.</div>'
+      ? '<div class="note">⚠️ 관측이 ' + x.out_cnt + '회뿐이라 일평균값의 신뢰도가 낮습니다. 참고용으로만 사용하시기 바랍니다.</div>'
       : '')
   + '</div>'
 
@@ -362,11 +362,11 @@ function pick(pid){
       : '')
   +   '<div class="fx">' + esc(formula) + '</div>'
   +   '<div class="note">' + (
-        x.urgency==='재고소진' ? '⚠️ 이미 재고가 0이다. 리드타임 ' + lt + '일을 감안하면 지금 발주해도 ' + lt + '일 뒤에야 들어온다.'
-      : x.urgency==='발주지연' ? '⚠️ 발주 시점이 ' + Math.abs(x.deadline) + '일 지났다. 소진 전에 입고되지 못한다.'
-      : x.urgency==='발주임박' ? '⏰ ' + x.deadline + '일 내에 발주해야 소진 전 입고된다.'
-      : x.urgency==='주의' ? x.deadline + '일 내 발주 검토가 필요하다.'
-      : '당분간 여유가 있다.') + '</div>'
+        x.urgency==='재고소진' ? '⚠️ 이미 재고가 0입니다. 리드타임 ' + lt + '일을 감안하면 지금 발주해도 ' + lt + '일 뒤에야 들어옵니다.'
+      : x.urgency==='발주지연' ? '⚠️ 발주 시점이 ' + Math.abs(x.deadline) + '일 지났습니다. 소진 전에 입고되지 못합니다.'
+      : x.urgency==='발주임박' ? '⏰ ' + x.deadline + '일 내에 발주해야 소진 전 입고됩니다.'
+      : x.urgency==='주의' ? x.deadline + '일 내 발주 검토가 필요합니다.'
+      : '당분간 여유가 있습니다.') + '</div>'
   + '</div>'
 
   + (x.order_qty > 0 ?
@@ -376,7 +376,7 @@ function pick(pid){
   +   '<div class="fx">' + esc(orderCalc) + '</div>'
   +   '<div class="ir"><span class="ik">발주 금액</span><span class="iv">' + nf(x.order_amt) + '원</span></div>'
   +   '<div class="ir"><span class="ik">공급사 · 리드타임</span><span class="iv">' + esc(x.supplier||'-') + ' · ' + lt + '일</span></div>'
-  +   '<div class="note">리드타임 동안 쓸 양 + 안전재고를 채우는 수량이다. 최소발주수량과 포장단위로 올림 처리했다.</div>'
+  +   '<div class="note">리드타임 동안 쓸 양 + 안전재고를 채우는 수량입니다. 최소발주수량과 포장단위로 올림 처리했습니다.</div>'
   + '</div>' : '')
 
   + '<div class="pn">'

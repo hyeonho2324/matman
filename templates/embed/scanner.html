@@ -76,8 +76,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>실제 바코드 스캐너는 하드웨어 연동이 필요하다.</b> 여기서는 스캐너가 읽어들일
-    <b>LOT 번호나 품번을 입력하면 그 자리에서 재고·이력을 조회</b>하는 부분만 구현했다.
+    <b>실제 바코드 스캐너는 하드웨어 연동이 필요합니다.</b> 여기서는 스캐너가 읽어들일
+    <b>LOT 번호나 품번을 입력하면 그 자리에서 재고·이력을 조회</b>하는 부분만 구현했습니다.
   </div>
 
   <div class="scanbox">
@@ -89,7 +89,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
     </div>
     <div class="hint">예시 — <code onclick="fill(this)" id="ex1"></code>
       <code onclick="fill(this)" id="ex2"></code> <code onclick="fill(this)" id="ex3"></code>
-      <br>클릭하면 입력창에 채워진다</div>
+      <br>클릭하면 입력창에 채워집니다</div>
   </div>
 
   <div class="main">
@@ -126,8 +126,8 @@ function demo(){
 function blank(){
   document.getElementById('out').innerHTML =
     '<div class="blank"><i class="ti ti-barcode"></i>'
-  + 'LOT 번호나 품번을 입력하면 재고와 이력을 조회한다.<br>'
-  + '상단 예시를 클릭하거나 <b>임의 스캔</b> 버튼을 눌러보라.</div>';
+  + 'LOT 번호나 품번을 입력하면 재고와 이력을 조회합니다.<br>'
+  + '상단 예시를 클릭하거나 <b>임의 스캔</b> 버튼을 눌러보세요.</div>';
 }
 
 function scan(){
@@ -142,8 +142,8 @@ function scan(){
   else {
     document.getElementById('out').innerHTML =
       '<div class="sec"><div class="err"><i class="ti ti-alert-circle"></i> '
-    + '<b>' + esc(q) + '</b> 에 해당하는 LOT 이나 품번이 없다.</div>'
-    + '<div class="note">LOT 은 <code>LOT+날짜+순번</code>, 품번은 <code>9자리</code> 형식이다.</div></div>';
+    + '<b>' + esc(q) + '</b> 에 해당하는 LOT 이나 품번이 없습니다.</div>'
+    + '<div class="note">LOT 은 <code>LOT+날짜+순번</code>, 품번은 <code>9자리</code> 형식입니다.</div></div>';
   }
   document.getElementById('code').select();
 }
@@ -185,8 +185,8 @@ function showLot(l){
   +   '<div class="ir"><span class="ik">공급사</span><span class="iv">' + esc(l.supplier||'-') + '</span></div>'
   +   '<div class="ir"><span class="ik">발주번호</span><span class="iv">' + (l.H_ID||'-') + '</span></div>'
   + '</div>'
-  + '<div class="note">현장에서 LOT 라벨을 스캔하면 이 정보가 바로 뜬다. '
-  +   '보관 위치와 잔여 수량을 즉시 확인해 피킹·재고실사에 쓴다.</div>';
+  + '<div class="note">현장에서 LOT 라벨을 스캔하면 이 정보가 바로 뜹니다. '
+  +   '보관 위치와 잔여 수량을 즉시 확인해 피킹·재고실사에 씁니다.</div>';
 }
 
 function showPid(ls){
@@ -211,10 +211,10 @@ function showPid(ls){
                + l.Lot_Date + ' · ' + esc(l.loc_name||'-') + '</span>'
                + '<span class="iv">' + nf(l.remain) + '개</span></div>';
         }).join('')
-      : '<div class="note">잔여 LOT 이 없다. 전량 소진됐다.</div>')
+      : '<div class="note">잔여 LOT 이 없습니다. 전량 소진됐습니다.</div>')
   + '</div>'
-  + '<div class="note">품번으로 조회하면 그 자재의 보유 LOT 이 입고순으로 나온다. '
-  +   '불출 시 맨 위 LOT 부터 꺼내는 것이 선입선출(FIFO)이다.</div>';
+  + '<div class="note">품번으로 조회하면 그 자재의 보유 LOT 이 입고순으로 나옵니다. '
+  +   '불출 시 맨 위 LOT 부터 꺼내는 것이 선입선출(FIFO)입니다.</div>';
 }
 </script>
 </body>

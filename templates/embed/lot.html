@@ -350,16 +350,16 @@ function pick(id){
   +   '<div class="ir"><span class="ik">창고</span><span class="iv">' + esc(x.loc_name||'-') + ' (' + x.Loc_ID + ')</span></div>'
   +   '<div class="note">' + (live
       ? (x.age_days>=180
-         ? '⚠️ 입고 후 ' + x.age_days + '일째 출고되지 않았다. 장기 체화 재고로 자금이 묶여 있다.'
-         : '기준일(' + SUM.base_date + ') 대비 체류일수. 전체 잔여 LOT 평균은 ' + SUM.age_avg + '일이다.')
-      : '소진 완료된 LOT은 평균 ' + SUM.hold_avg + '일 만에 출고되었다.') + '</div>'
+         ? '⚠️ 입고 후 ' + x.age_days + '일째 출고되지 않았습니다. 장기 체화 재고로 자금이 묶여 있습니다.'
+         : '기준일(' + SUM.base_date + ') 대비 체류일수. 전체 잔여 LOT 평균은 ' + SUM.age_avg + '일입니다.')
+      : '소진 완료된 LOT은 평균 ' + SUM.hold_avg + '일 만에 출고되었습니다.') + '</div>'
   + '</div>'
 
   + '<div class="pn">'
   +   '<div class="pnh"><i class="ti ti-arrows-sort"></i><span class="pnh-t">FIFO 위치</span>'
   +     '<span class="bg bmu">' + x.fifo_seq + '/' + x.fifo_total + '</span></div>'
   +   '<div class="fifo">' + chips + '</div>'
-  +   '<div class="note">같은 자재(' + x.P_ID + ')의 LOT을 입고순으로 나열한 것이다.<br>'
+  +   '<div class="note">같은 자재(' + x.P_ID + ')의 LOT을 입고순으로 나열한 것입니다.<br>'
   +     '<b style="color:var(--acc)">파랑</b> = 선택한 LOT · '
   +     '<b style="color:#1D6E52">초록</b> = 아직 보유 · '
   +     '<span style="text-decoration:line-through;color:var(--txt3)">회색</span> = 소진됨<br>'

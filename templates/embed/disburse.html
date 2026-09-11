@@ -78,8 +78,8 @@ tr.use{background:var(--bg-ac)}
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>이 앱은 조회 전용이다.</b> 실제 불출 등록 대신, 자재와 수량을 고르면
-    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산해 보여준다.
+    <b>이 앱은 조회 전용입니다.</b> 실제 불출 등록 대신, 자재와 수량을 고르면
+    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산해 보여줍니다.
   </div>
   <div class="main">
     <div class="left">
@@ -155,10 +155,10 @@ function draw(resetQty){
   const belowSafe = it.safe_qty && after < it.safe_qty;
 
   let msg, cls;
-  if(qty<=0){ cls='a-wn'; msg='불출 수량을 지정하라.'; }
-  else if(left>0){ cls='a-dn'; msg='재고가 <b>' + nf(left) + '개 부족</b>하다. 보유 ' + nf(it.stock) + '개 전량을 꺼내도 모자란다.'; }
-  else if(belowSafe){ cls='a-wn'; msg='불출 후 재고 <b>' + nf(after) + '개</b>로 안전재고 ' + nf(it.safe_qty) + '개 <b>아래</b>가 된다. 발주를 검토하라.'; }
-  else { cls='a-ok'; msg='LOT ' + alloc.length + '개에서 불출 가능하다. 불출 후 재고 ' + nf(after) + '개로 안전재고를 유지한다.'; }
+  if(qty<=0){ cls='a-wn'; msg='불출 수량을 지정하세요.'; }
+  else if(left>0){ cls='a-dn'; msg='재고가 <b>' + nf(left) + '개 부족</b>합니다. 보유 ' + nf(it.stock) + '개 전량을 꺼내도 모자랍니다.'; }
+  else if(belowSafe){ cls='a-wn'; msg='불출 후 재고 <b>' + nf(after) + '개</b>로 안전재고 ' + nf(it.safe_qty) + '개 <b>아래</b>가 됩니다. 발주를 검토하세요.'; }
+  else { cls='a-ok'; msg='LOT ' + alloc.length + '개에서 불출 가능합니다. 불출 후 재고 ' + nf(after) + '개로 안전재고를 유지합니다.'; }
 
   document.getElementById('out').innerHTML =
     '<div class="alert ' + cls + '"><i class="ti ti-info-circle"></i> ' + msg + '</div>'
@@ -179,7 +179,7 @@ function draw(resetQty){
 
   + '<div class="sec"><div class="sech"><i class="ti ti-arrows-sort"></i>'
   +   '<span class="sech-t">FIFO 불출 지시</span>'
-  +   '<span class="sech-m">입고가 오래된 LOT부터 꺼낸다</span></div>'
+  +   '<span class="sech-m">입고가 오래된 LOT부터 꺼냅니다</span></div>'
   +   '<table><thead><tr><th style="width:30px">순</th><th>LOT</th><th>입고일</th><th>창고</th>'
   +     '<th class="num">잔여</th><th class="num">불출</th><th class="num">남음</th></tr></thead><tbody>'
   +   lots.map(function(l){
@@ -194,8 +194,8 @@ function draw(resetQty){
           + '<td class="num">' + nf(l.remain - (a?a.take:0)) + '</td></tr>';
       }).join('')
   +   '</tbody></table>'
-  +   '<div class="note">선입선출(FIFO) — 오래된 LOT을 먼저 소진해 재고 노후화를 막는다. '
-  +     '한 LOT으로 부족하면 다음 LOT에서 이어 꺼낸다.</div>'
+  +   '<div class="note">선입선출(FIFO) — 오래된 LOT을 먼저 소진해 재고 노후화를 막습니다. '
+  +     '한 LOT으로 부족하면 다음 LOT에서 이어 꺼냅니다.</div>'
   + '</div>';
 }
 

@@ -332,7 +332,7 @@ function pick(wo){
   +   '</tr></thead><tbody>' + rows + '</tbody></table>'
   +   '<div class="note">'
   +     '<b>/대</b> = 실제 투입량 ÷ 추정 생산대수. 이 값이 BOM 소요량과 같으면 <b>일치</b>.<br>'
-  +     '<b>대체</b>는 BOM에 대체품으로 등록된 자재가 투입된 경우이고, <b>차이</b>는 표준과 다르게 투입된 경우다.'
+  +     '<b>대체</b>는 BOM에 대체품으로 등록된 자재가 투입된 경우이고, <b>차이</b>는 표준과 다르게 투입된 경우입니다.'
   +   '</div>'
   + '</div>'
 
@@ -341,7 +341,7 @@ function pick(wo){
   +   '<div class="ir"><span class="ik">추정 생산량</span><span class="iv">' + nf(o.units) + '대</span></div>'
   +   '<div class="ir"><span class="ik">투입 자재</span><span class="iv">' + o.line_cnt + '종 (원본 ' + o.raw_cnt + '행)</span></div>'
   +   '<div class="ir"><span class="ik">대당 자재비</span><span class="iv">' + nf(o.amount/(o.units||1)) + '원</span></div>'
-  +   '<div class="note">완제품 생산 수량이 원본 데이터에 없어, 표준 BOM 자재들의 (실투입 ÷ 소요량) <b>중앙값</b>으로 추정한다. 일부 자재가 대체품으로 빠져도 중앙값이라 흔들리지 않는다.</div>'
+  +   '<div class="note">완제품 생산 수량이 원본 데이터에 없어, 표준 BOM 자재들의 (실투입 ÷ 소요량) <b>중앙값</b>으로 추정합니다. 일부 자재가 대체품으로 빠져도 중앙값이라 흔들리지 않습니다.</div>'
   + '</div>'
 
   + '<div class="pn">'

@@ -444,27 +444,27 @@ function openLots(pid){
   document.getElementById('m-t').innerHTML =
     esc(p.P_N) + ' <span class="pid">' + p.P_ID + '</span>'
     + (p.grade ? ' <span class="gr gr'+p.grade+'">'+p.grade+'</span>' : '')
-    + '<div class="mh-s">' + esc(p.Spec||'') + ' \u00b7 ' + esc(p.supplier||'-')
-    + ' \u00b7 \ub9ac\ub4dc\ud0c0\uc784 ' + (p.lead_time||'-') + '\uc77c</div>';
+    + '<div class="mh-s">' + esc(p.Spec||'') + ' · ' + esc(p.supplier||'-')
+    + ' · 리드타임 ' + (p.lead_time||'-') + '일</div>';
 
   document.getElementById('m-kpi').innerHTML =
-    '<div class="mk"><div class="mk-l">LOT \uc774\ub825</div><div class="mk-v">' + ls.length
-  +   '<span style="font-size:10px;color:var(--txt3)">\uac74</span></div>'
-  +   '<div class="mk-s">\uc794\uc5ec ' + live.length + ' \u00b7 \uc18c\uc9c4 ' + (ls.length-live.length) + '</div></div>'
-  + '<div class="mk"><div class="mk-l">\ub204\uc801 \uc785\uace0 / \ubd88\ucd9c</div>'
+    '<div class="mk"><div class="mk-l">LOT 이력</div><div class="mk-v">' + ls.length
+  +   '<span style="font-size:10px;color:var(--txt3)">건</span></div>'
+  +   '<div class="mk-s">잔여 ' + live.length + ' · 소진 ' + (ls.length-live.length) + '</div></div>'
+  + '<div class="mk"><div class="mk-l">누적 입고 / 불출</div>'
   +   '<div class="mk-v" style="font-size:13px">' + nf(inQty) + ' / ' + nf(outQty) + '</div>'
-  +   '<div class="mk-s">\uc18c\uc9c4\uc728 ' + (inQty ? Math.round(outQty/inQty*100) : 0) + '%</div></div>'
-  + '<div class="mk"><div class="mk-l">\ud604\uc7ac\uace0</div>'
+  +   '<div class="mk-s">소진율 ' + (inQty ? Math.round(outQty/inQty*100) : 0) + '%</div></div>'
+  + '<div class="mk"><div class="mk-l">현재고</div>'
   +   '<div class="mk-v ' + (p.stock>0?'ok':'dn') + '">' + nf(p.stock) + '</div>'
-  +   '<div class="mk-s">' + won(p.stock_value||0) + '\uc6d0</div></div>'
-  + '<div class="mk"><div class="mk-l">\ud3c9\uade0 \ubcf4\uc720\uae30\uac04</div>'
+  +   '<div class="mk-s">' + won(p.stock_value||0) + '원</div></div>'
+  + '<div class="mk"><div class="mk-l">평균 보유기간</div>'
   +   '<div class="mk-v">' + (avgHold==null ? '-' : avgHold)
-  +   '<span style="font-size:10px;color:var(--txt3)">\uc77c</span></div>'
-  +   '<div class="mk-s">' + (maxAge ? '\ucd5c\uc7a5 \uccb4\ub958 ' + maxAge + '\uc77c' : '\uc18c\uc9c4 LOT \uae30\uc900') + '</div></div>'
-  + '<div class="mk"><div class="mk-l">FIFO \uc704\ubc18</div>'
+  +   '<span style="font-size:10px;color:var(--txt3)">일</span></div>'
+  +   '<div class="mk-s">' + (maxAge ? '최장 체류 ' + maxAge + '일' : '소진 LOT 기준') + '</div></div>'
+  + '<div class="mk"><div class="mk-l">FIFO 위반</div>'
   +   '<div class="mk-v ' + (viol.length?'dn':'ok') + '">' + viol.length
-  +   '<span style="font-size:10px;color:var(--txt3)">\uac74</span></div>'
-  +   '<div class="mk-s">' + (viol.length ? '\uc624\ub798\ub41c LOT\uc774 \ub0a8\uc74c' : '\uc120\uc785\uc120\ucd9c \uc900\uc218') + '</div></div>';
+  +   '<span style="font-size:10px;color:var(--txt3)">건</span></div>'
+  +   '<div class="mk-s">' + (viol.length ? '오래된 LOT이 남음' : '선입선출 준수') + '</div></div>';
 
   const rows = ls.map(function(l){
     const isLive = l.remain > 0;
@@ -472,41 +472,41 @@ function openLots(pid){
     return '<tr class="' + cls + '">'
       + '<td><span class="sq ' + cls + '">' + l.fifo_seq + '</span></td>'
       + '<td><span class="lid">' + l.Lot_ID + '</span>'
-      +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '\ud68c \uac74\ub108\ub700</div>') + '</td>'
+      +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '회 건너뜀</div>') + '</td>'
       + '<td>' + l.Lot_Date
-      +   '<div style="font-size:9px;color:var(--txt3)">\ubc1c\uc8fc ' + (l.order_date||'-')
-      +   (l.lead_days!=null ? ' \u00b7 LT ' + l.lead_days + '\uc77c' : '') + '</div></td>'
+      +   '<div style="font-size:9px;color:var(--txt3)">발주 ' + (l.order_date||'-')
+      +   (l.lead_days!=null ? ' · LT ' + l.lead_days + '일' : '') + '</div></td>'
       + '<td class="num">' + nf(l.P_Qty) + '</td>'
       + '<td class="num">' + nf(l.out_qty)
       +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
       + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
       + '<td>' + (isLive
-          ? '<span class="bg bok">\ubcf4\uc720\uc911</span><div style="font-size:9px;color:'
-            + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">\uccb4\ub958 ' + l.age_days + '\uc77c</div>'
-          : '<span class="bg bmu">\uc18c\uc9c4</span><div style="font-size:9px;color:var(--txt3)">'
-            + (l.out_date||'-') + (l.hold_days!=null ? ' \u00b7 ' + l.hold_days + '\uc77c\ub9cc\uc5d0' : '') + '</div>') + '</td>'
+          ? '<span class="bg bok">보유중</span><div style="font-size:9px;color:'
+            + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">체류 ' + l.age_days + '일</div>'
+          : '<span class="bg bmu">소진</span><div style="font-size:9px;color:var(--txt3)">'
+            + (l.out_date||'-') + (l.hold_days!=null ? ' · ' + l.hold_days + '일만에' : '') + '</div>') + '</td>'
       + '<td class="hide-m">' + esc(l.loc_name||'-') + '</td>'
       + '<td class="hide-m">' + esc(l.receiver||'-') + '</td>'
       + '<td class="hide-m">' + (l.prod_wo
-          ? l.prod_wo + '\uac74<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
+          ? l.prod_wo + '건<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
           : '<span style="color:var(--txt3)">-</span>') + '</td>'
       + '</tr>';
   }).join('');
 
   document.getElementById('m-body').innerHTML =
     '<table class="lt2"><thead><tr>'
-  +   '<th>\uc21c</th><th>LOT \ubc88\ud638</th><th>\uc785\uace0\uc77c / \ubc1c\uc8fc</th><th class="num">\uc785\uace0</th>'
-  +   '<th class="num">\ubd88\ucd9c</th><th class="num">\uc794\uc5ec</th><th>\uc0c1\ud0dc</th>'
-  +   '<th class="hide-m">\ucc3d\uace0</th><th class="hide-m">\uc785\uace0\ub2f4\ub2f9</th><th class="hide-m">\uc0dd\uc0b0\ud22c\uc785</th>'
+  +   '<th>순</th><th>LOT 번호</th><th>입고일 / 발주</th><th class="num">입고</th>'
+  +   '<th class="num">불출</th><th class="num">잔여</th><th>상태</th>'
+  +   '<th class="hide-m">창고</th><th class="hide-m">입고담당</th><th class="hide-m">생산투입</th>'
   + '</tr></thead><tbody>' + rows + '</tbody></table>'
   + '<div class="mnote">'
-  +   '<b>\uc21c</b> = \uc785\uace0 \uc21c\uc11c(FIFO). '
-  +   '<b style="color:var(--ok)">\ucd08\ub85d</b> \ubcf4\uc720\uc911 \u00b7 '
-  +   '<b style="color:var(--dn)">\ube68\uac15</b> \uc120\uc785\uc120\ucd9c \uc704\ubc18 \u2014 '
-  +   '\uc774 LOT\uc774 \ub0a8\uc544 \uc788\ub294\ub370 \ub354 \ub2a6\uac8c \ub4e4\uc5b4\uc628 LOT\uc774 \uba3c\uc800 \ucd9c\uace0\ub41c \uacbd\uc6b0\ub2e4.'
+  +   '<b>순</b> = 입고 순서(FIFO). '
+  +   '<b style="color:var(--ok)">초록</b> 보유중 · '
+  +   '<b style="color:var(--dn)">빨강</b> 선입선출 위반 — '
+  +   '이 LOT이 남아 있는데 더 늦게 들어온 LOT이 먼저 출고된 경우입니다.'
   +   (viol.length
-     ? '<br>\u26a0\ufe0f \uc774 \uc790\uc7ac\ub294 \uc704\ubc18 ' + viol.length + '\uac74. \uc624\ub798\ub41c \uc7ac\uace0\uac00 \ubb36\uc5ec \uc788\ub2e4.'
-     : '<br>\uc774 \uc790\uc7ac\ub294 \uc785\uace0 \uc21c\uc11c\ub300\ub85c \ucd9c\uace0\ub418\uace0 \uc788\ub2e4.')
+     ? '<br>\u26a0\ufe0f 이 자재는 위반 ' + viol.length + '건. 오래된 재고가 묶여 있습니다.'
+     : '<br>이 자재는 입고 순서대로 출고되고 있습니다.')
   + '</div>';
 
   document.getElementById('ovl').classList.add('on');

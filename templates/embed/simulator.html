@@ -139,7 +139,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:18px}
             <span class="ctl-v" id="v-day">0</span><span class="ctl-u">일 후</span></div>
           <input type="range" id="r-day" min="0" max="90" value="0" oninput="sim()">
           <div class="ctl-r"><span>즉시</span><span>90일 후</span></div>
-          <div class="ctl-n">늦게 발주할수록 입고도 밀린다.</div>
+          <div class="ctl-n">늦게 발주할수록 입고도 밀립니다.</div>
         </div>
 
         <div class="ctl">
@@ -317,21 +317,21 @@ function drawCards(it, qty, cost, zeroNo, zeroWi, belowSafe, arrive, use, lt){
   let cls, msg;
   if(qty<=0){
     cls='v-dn';
-    msg='<b>발주하지 않은 상태다.</b> 현재 재고 ' + nf(it.stock) + '개로 '
-      + (zeroNo<0 ? '180일 내에는 버틴다.' : '<b>' + zeroNo + '일 후 결품</b>된다.');
+    msg='<b>발주하지 않은 상태입니다.</b> 현재 재고 ' + nf(it.stock) + '개로 '
+      + (zeroNo<0 ? '180일 내에는 버팁니다.' : '<b>' + zeroNo + '일 후 결품</b>됩니다.');
   } else if(zeroWi >= 0){
     cls='v-dn';
-    msg='발주해도 <b>' + zeroWi + '일 후 결품</b>된다. '
+    msg='발주해도 <b>' + zeroWi + '일 후 결품</b>됩니다. '
       + (arrive > (zeroNo<0?DAYS:zeroNo)
-         ? '입고(' + arrive + '일)가 결품 시점(' + zeroNo + '일)보다 늦기 때문이다. 더 일찍 발주하거나 수량을 늘려야 한다.'
-         : '발주 수량이 부족하다. 수량을 늘려보라.');
+         ? '입고(' + arrive + '일)가 결품 시점(' + zeroNo + '일)보다 늦기 때문입니다. 더 일찍 발주하거나 수량을 늘려야 합니다.'
+         : '발주 수량이 부족합니다. 수량을 늘려보세요.');
   } else if(belowSafe > 0){
     cls='v-wn';
-    msg='결품은 면하지만 <b>' + belowSafe + '일간 안전재고 아래</b>로 내려간다. '
-      + '수량을 늘리거나 더 일찍 발주하면 개선된다.';
+    msg='결품은 면하지만 <b>' + belowSafe + '일간 안전재고 아래</b>로 내려갑니다. '
+      + '수량을 늘리거나 더 일찍 발주하면 개선됩니다.';
   } else {
     cls='v-ok';
-    msg='<b>180일간 안전재고를 유지한다.</b> 결품 위험 없음. 발주 비용 ' + nf(cost) + '원.';
+    msg='<b>180일간 안전재고를 유지합니다.</b> 결품 위험 없음. 발주 비용 ' + nf(cost) + '원.';
   }
   document.getElementById('verdict').innerHTML =
     '<div class="verdict ' + cls + '"><i class="ti ti-info-circle"></i> ' + msg + '</div>';
