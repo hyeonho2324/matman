@@ -90,7 +90,45 @@ tbody tr.on{background:var(--bg-ac)}
 .lt .num{text-align:right}
 .fifo{width:4px;height:4px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:4px}
 
+/* LOT 전체 이력 모달 */
+.ovl{position:fixed;inset:0;background:rgba(26,25,23,.42);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.ovl.on{display:flex}
+.modal{background:var(--s0);border-radius:10px;width:100%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.22)}
+.mh{padding:12px 16px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:9px;background:var(--s1);flex-shrink:0}
+.mh-t{font-size:14px;font-weight:600;flex:1;min-width:0}
+.mh-s{font-size:10px;color:var(--txt3);font-weight:400;margin-top:2px}
+.mx{width:28px;height:28px;border-radius:var(--r);border:0.5px solid var(--border-s);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--txt2);font-size:15px}
+.mx:hover{background:var(--s2)}
+.mkpi{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.mk{padding:8px 12px;border-right:0.5px solid var(--border)}
+.mk:last-child{border-right:none}
+.mk-l{font-size:9px;color:var(--txt3);margin-bottom:2px}
+.mk-v{font-size:16px;font-weight:600;line-height:1.1}
+.mk-s{font-size:9px;color:var(--txt3);margin-top:2px}
+.mk-v.dn{color:var(--dn)}.mk-v.ok{color:var(--ok)}.mk-v.wn{color:var(--wn)}
+.mb{flex:1;overflow-y:auto;padding:12px 16px}
+.lt2{width:100%;border-collapse:collapse;font-size:11px}
+.lt2 th{position:sticky;top:0;background:var(--s1);padding:6px 8px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border-s);white-space:nowrap;z-index:1}
+.lt2 td{padding:7px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;vertical-align:middle}
+.lt2 tr:last-child td{border-bottom:none}
+.lt2 tr.viol{background:rgba(224,75,74,.06)}
+.lt2 tr.live{background:rgba(29,158,117,.05)}
+.lt2 .num{text-align:right}
+.sq{width:20px;height:20px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--s2);color:var(--txt3)}
+.sq.live{background:var(--ok);color:#fff}
+.sq.viol{background:var(--dn);color:#fff}
+.lid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc)}
+.ug{height:5px;border-radius:3px;background:var(--s2);overflow:hidden;width:62px}
+.ug i{display:block;height:100%;border-radius:3px;background:var(--acc)}
+.mnote{font-size:10px;color:var(--txt3);line-height:1.6;padding:10px 0 2px}
+.btnfull{width:100%;border-radius:0;border-left:none;border-right:none;border-bottom:none;justify-content:center;padding:8px}
+
 @media(max-width:820px){
+  .mkpi{grid-template-columns:repeat(3,1fr)}
+  .mk:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .ovl{padding:8px}
+  .modal{max-height:94vh}
+  .hide-m{display:none}
   .kpi-row{grid-template-columns:repeat(3,1fr)}
   .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
   .main{flex-direction:column}
@@ -182,6 +220,19 @@ tbody tr.on{background:var(--bg-ac)}
   </div>
 </div>
 
+<!-- LOT 전체 이력 모달 -->
+<div class="ovl" id="ovl" onclick="if(event.target===this) closeLots()">
+  <div class="modal">
+    <div class="mh">
+      <i class="ti ti-history" style="color:var(--acc);font-size:17px"></i>
+      <div class="mh-t" id="m-t">LOT 이력</div>
+      <button class="mx" onclick="closeLots()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="mkpi" id="m-kpi"></div>
+    <div class="mb" id="m-body"></div>
+  </div>
+</div>
+
 <script>
 const ROWS = {{ rows|tojson }};
 const LOTS = {{ lots|tojson }};
@@ -268,6 +319,7 @@ function pick(pid){
   const myLots=LOTS.filter(function(l){return l.P_ID===pid;});
   const live=myLots.filter(function(l){return l.remain>0;});
   const myFg=BOMU.filter(function(b){return b.P_ID===pid;});
+  const viol=myLots.filter(function(l){return !l.fifo_ok;});
   const turn = x.in_qty>0 ? (x.out_qty/x.in_qty*100) : 0;
 
   document.getElementById('dt').textContent = x.P_ID + ' · ' + (x.P_N||'');
@@ -334,10 +386,14 @@ function pick(pid){
 
   + '<div class="pn">'
   +   '<div class="pnh"><i class="ti ti-stack-2"></i><span class="pnh-t">보유 LOT (FIFO 순)</span>'
-  +     '<span class="bg bmu">' + live.length + '/' + myLots.length + '</span></div>'
+  +     '<span class="bg ' + (viol.length?'bdn':'bmu') + '">' + live.length + '/' + myLots.length + '</span></div>'
   +   '<table class="lt"><thead><tr><th>입고일</th><th>창고</th><th class="num">잔량</th></tr></thead>'
   +   '<tbody>' + lotRows + '</tbody></table>'
   +   (live.length>6 ? '<div class="note">외 ' + (live.length-6) + '건</div>' : '')
+  +   (viol.length ? '<div class="note" style="color:var(--dn)">⚠️ 선입선출 위반 '
+        + viol.length + '건 — 전체 이력에서 확인</div>' : '')
+  +   '<button class="btn btnfull" onclick="openLots(&quot;' + x.P_ID + '&quot;)">'
+  +     '<i class="ti ti-history"></i>전체 LOT 이력 조회 (' + myLots.length + '건)</button>'
   + '</div>'
 
   + '<div class="pn">'
@@ -356,6 +412,92 @@ function pick(pid){
   +     nf((x.stock||0)-(x.safe_qty||0)) + '</span></div>'
   + '</div>' : '');
 }
+
+// ── LOT 전체 이력 모달 ──
+function openLots(pid){
+  const p = ROWS.filter(function(r){return r.P_ID===pid;})[0];
+  const ls = LOTS.filter(function(l){return l.P_ID===pid;})
+                 .sort(function(a,b){ return a.fifo_seq - b.fifo_seq; });
+  const live = ls.filter(function(l){return l.remain>0;});
+  const viol = ls.filter(function(l){return !l.fifo_ok;});
+  const inQty  = ls.reduce(function(a,l){return a+(l.P_Qty||0);},0);
+  const outQty = ls.reduce(function(a,l){return a+(l.out_qty||0);},0);
+  const holds  = ls.filter(function(l){return l.hold_days!=null;}).map(function(l){return l.hold_days;});
+  const avgHold = holds.length ? Math.round(holds.reduce(function(a,b){return a+b;},0)/holds.length) : null;
+  const maxAge  = live.length ? Math.max.apply(null, live.map(function(l){return l.age_days;})) : 0;
+
+  document.getElementById('m-t').innerHTML =
+    esc(p.P_N) + ' <span class="pid">' + p.P_ID + '</span>'
+    + (p.grade ? ' <span class="gr gr'+p.grade+'">'+p.grade+'</span>' : '')
+    + '<div class="mh-s">' + esc(p.Spec||'') + ' \u00b7 ' + esc(p.supplier||'-')
+    + ' \u00b7 \ub9ac\ub4dc\ud0c0\uc784 ' + (p.lead_time||'-') + '\uc77c</div>';
+
+  document.getElementById('m-kpi').innerHTML =
+    '<div class="mk"><div class="mk-l">LOT \uc774\ub825</div><div class="mk-v">' + ls.length
+  +   '<span style="font-size:10px;color:var(--txt3)">\uac74</span></div>'
+  +   '<div class="mk-s">\uc794\uc5ec ' + live.length + ' \u00b7 \uc18c\uc9c4 ' + (ls.length-live.length) + '</div></div>'
+  + '<div class="mk"><div class="mk-l">\ub204\uc801 \uc785\uace0 / \ubd88\ucd9c</div>'
+  +   '<div class="mk-v" style="font-size:13px">' + nf(inQty) + ' / ' + nf(outQty) + '</div>'
+  +   '<div class="mk-s">\uc18c\uc9c4\uc728 ' + (inQty ? Math.round(outQty/inQty*100) : 0) + '%</div></div>'
+  + '<div class="mk"><div class="mk-l">\ud604\uc7ac\uace0</div>'
+  +   '<div class="mk-v ' + (p.stock>0?'ok':'dn') + '">' + nf(p.stock) + '</div>'
+  +   '<div class="mk-s">' + won(p.stock_value||0) + '\uc6d0</div></div>'
+  + '<div class="mk"><div class="mk-l">\ud3c9\uade0 \ubcf4\uc720\uae30\uac04</div>'
+  +   '<div class="mk-v">' + (avgHold==null ? '-' : avgHold)
+  +   '<span style="font-size:10px;color:var(--txt3)">\uc77c</span></div>'
+  +   '<div class="mk-s">' + (maxAge ? '\ucd5c\uc7a5 \uccb4\ub958 ' + maxAge + '\uc77c' : '\uc18c\uc9c4 LOT \uae30\uc900') + '</div></div>'
+  + '<div class="mk"><div class="mk-l">FIFO \uc704\ubc18</div>'
+  +   '<div class="mk-v ' + (viol.length?'dn':'ok') + '">' + viol.length
+  +   '<span style="font-size:10px;color:var(--txt3)">\uac74</span></div>'
+  +   '<div class="mk-s">' + (viol.length ? '\uc624\ub798\ub41c LOT\uc774 \ub0a8\uc74c' : '\uc120\uc785\uc120\ucd9c \uc900\uc218') + '</div></div>';
+
+  const rows = ls.map(function(l){
+    const isLive = l.remain > 0;
+    const cls = !l.fifo_ok ? 'viol' : (isLive ? 'live' : '');
+    return '<tr class="' + cls + '">'
+      + '<td><span class="sq ' + cls + '">' + l.fifo_seq + '</span></td>'
+      + '<td><span class="lid">' + l.Lot_ID + '</span>'
+      +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '\ud68c \uac74\ub108\ub700</div>') + '</td>'
+      + '<td>' + l.Lot_Date
+      +   '<div style="font-size:9px;color:var(--txt3)">\ubc1c\uc8fc ' + (l.order_date||'-')
+      +   (l.lead_days!=null ? ' \u00b7 LT ' + l.lead_days + '\uc77c' : '') + '</div></td>'
+      + '<td class="num">' + nf(l.P_Qty) + '</td>'
+      + '<td class="num">' + nf(l.out_qty)
+      +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
+      + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
+      + '<td>' + (isLive
+          ? '<span class="bg bok">\ubcf4\uc720\uc911</span><div style="font-size:9px;color:'
+            + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">\uccb4\ub958 ' + l.age_days + '\uc77c</div>'
+          : '<span class="bg bmu">\uc18c\uc9c4</span><div style="font-size:9px;color:var(--txt3)">'
+            + (l.out_date||'-') + (l.hold_days!=null ? ' \u00b7 ' + l.hold_days + '\uc77c\ub9cc\uc5d0' : '') + '</div>') + '</td>'
+      + '<td class="hide-m">' + esc(l.loc_name||'-') + '</td>'
+      + '<td class="hide-m">' + esc(l.receiver||'-') + '</td>'
+      + '<td class="hide-m">' + (l.prod_wo
+          ? l.prod_wo + '\uac74<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
+          : '<span style="color:var(--txt3)">-</span>') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  document.getElementById('m-body').innerHTML =
+    '<table class="lt2"><thead><tr>'
+  +   '<th>\uc21c</th><th>LOT \ubc88\ud638</th><th>\uc785\uace0\uc77c / \ubc1c\uc8fc</th><th class="num">\uc785\uace0</th>'
+  +   '<th class="num">\ubd88\ucd9c</th><th class="num">\uc794\uc5ec</th><th>\uc0c1\ud0dc</th>'
+  +   '<th class="hide-m">\ucc3d\uace0</th><th class="hide-m">\uc785\uace0\ub2f4\ub2f9</th><th class="hide-m">\uc0dd\uc0b0\ud22c\uc785</th>'
+  + '</tr></thead><tbody>' + rows + '</tbody></table>'
+  + '<div class="mnote">'
+  +   '<b>\uc21c</b> = \uc785\uace0 \uc21c\uc11c(FIFO). '
+  +   '<b style="color:var(--ok)">\ucd08\ub85d</b> \ubcf4\uc720\uc911 \u00b7 '
+  +   '<b style="color:var(--dn)">\ube68\uac15</b> \uc120\uc785\uc120\ucd9c \uc704\ubc18 \u2014 '
+  +   '\uc774 LOT\uc774 \ub0a8\uc544 \uc788\ub294\ub370 \ub354 \ub2a6\uac8c \ub4e4\uc5b4\uc628 LOT\uc774 \uba3c\uc800 \ucd9c\uace0\ub41c \uacbd\uc6b0\ub2e4.'
+  +   (viol.length
+     ? '<br>\u26a0\ufe0f \uc774 \uc790\uc7ac\ub294 \uc704\ubc18 ' + viol.length + '\uac74. \uc624\ub798\ub41c \uc7ac\uace0\uac00 \ubb36\uc5ec \uc788\ub2e4.'
+     : '<br>\uc774 \uc790\uc7ac\ub294 \uc785\uace0 \uc21c\uc11c\ub300\ub85c \ucd9c\uace0\ub418\uace0 \uc788\ub2e4.')
+  + '</div>';
+
+  document.getElementById('ovl').classList.add('on');
+}
+function closeLots(){ document.getElementById('ovl').classList.remove('on'); }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeLots(); });
 
 function setCat(k){
   cat=k;

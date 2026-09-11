@@ -176,18 +176,60 @@ def product_list(conn):
 
 
 def lot_list(conn):
-    """LOT 636건 + LOT별 잔량 (자재 상세에서 FIFO 확인용)."""
-    return _rows(conn, """
+    """자재별 LOT 전체 이력 (자재 목록 화면의 LOT 이력 패널용).
+
+    입고 → 불출 → 생산투입까지 한 LOT 의 일생을 담는다.
+    FIFO 순번과 위반 여부도 함께 계산해, 자재 하나만 봐도
+    선입선출이 지켜졌는지 판단할 수 있게 한다.
+    """
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+
+    rows = _rows(conn, """
         SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
                l.P_Qty, l.H_ID,
-               l.P_Qty - COALESCE(x.out_qty, 0) AS remain
+               h.P_Date AS order_date,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
+               u.Name AS receiver,
+               x.out_date, COALESCE(x.out_qty, 0) AS out_qty,
+               l.P_Qty - COALESCE(x.out_qty, 0)  AS remain,
+               CAST(julianday(?) - julianday(l.Lot_Date) AS INT)          AS age_days,
+               CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
           FROM Lot_tb l
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty
+          LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
+          LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty, MIN(T_Date) AS out_date
                        FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
                  ON x.Lot_ID = l.Lot_ID
          ORDER BY l.P_ID, l.Lot_Date
-    """)
+    """, (base,))
+
+    # 생산 투입 요약
+    used = {r["Lot_ID"]: r for r in _rows(conn, """
+        SELECT Lot_ID, COUNT(DISTINCT Work_Order) AS wo_n,
+               SUM(Prod_Qty) AS qty, MIN(FG_ID) AS fg
+          FROM Production_tb GROUP BY Lot_ID
+    """)}
+
+    by_pid = {}
+    for r in rows:
+        by_pid.setdefault(r["P_ID"], []).append(r)
+
+    for pid, ls in by_pid.items():
+        for i, r in enumerate(ls):            # 이미 입고일 순
+            r["fifo_seq"] = i + 1
+            r["fifo_total"] = len(ls)
+            # 이 LOT 이 남아 있는데 더 늦게 들어온 LOT 이 먼저 나갔으면 위반
+            skipped = (len([n for n in ls[i + 1:] if n["out_date"]])
+                       if (r["remain"] or 0) > 0 else 0)
+            r["fifo_skipped"] = skipped
+            r["fifo_ok"] = 0 if skipped else 1
+            r["used_pct"] = round((r["out_qty"] or 0) / r["P_Qty"] * 100) if r["P_Qty"] else 0
+            u = used.get(r["Lot_ID"])
+            r["prod_wo"] = u["wo_n"] if u else 0
+            r["prod_qty"] = u["qty"] if u else 0
+            r["prod_fg"] = u["fg"] if u else None
+    return rows
 
 
 def bom_usage(conn):
