@@ -367,6 +367,15 @@ def _ctx_calendar():
         conn.close()
 
 
+def _ctx_risk_radar():
+    conn = db.connect()
+    try:
+        rows, base, span = db.risk_radar(conn)
+        return {"rows": rows, "summary": db.risk_summary(rows), "base": base}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -380,6 +389,7 @@ EMBED_CONTEXT = {
     "lot":          _ctx_lot,
     "forecast":     _ctx_forecast,
     "calendar":     _ctx_calendar,
+    "risk_radar":   _ctx_risk_radar,
 }
 
 

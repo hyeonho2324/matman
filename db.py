@@ -1476,3 +1476,96 @@ def calendar_summary(cal):
         "po_per_day": round(sum(x["cnt"] for x in po) / len(po), 1) if po else 0,
         "in_per_day": round(sum(x["cnt"] for x in ins) / len(ins), 1) if ins else 0,
     }
+
+
+# ── 납기 리스크 레이더 ───────────────────────────────────────
+# [수요 예측과의 차이]
+#   수요 예측 = "언제 발주해야 하는가" (시점 중심)
+#   리스크 레이더 = "결품되면 얼마나 아픈가" (영향도 중심)
+#   → 긴급도 × 영향도 2차원으로 평가해 우선순위를 매긴다.
+def risk_radar(conn):
+    rows, base, span = forecast_list(conn)
+
+    # 영향도 재료: 이 자재가 몇 개 완제품에 쓰이나 + 대체품이 있나
+    impact = {}
+    for r in _rows(conn, """
+        SELECT b.P_ID,
+               COUNT(DISTINCT b.FG_ID) AS fg_cnt,
+               SUM(CASE WHEN b.BOM_Type = '표준' THEN 1 ELSE 0 END) AS std_cnt
+          FROM BOM_tb b GROUP BY b.P_ID
+    """):
+        impact[r["P_ID"]] = r
+    # 대체 가능 여부 — 이 자재를 대체할 수 있는 자재가 BOM 에 등록돼 있나
+    has_alt = set()
+    for r in _rows(conn, "SELECT BOM_Type FROM BOM_tb WHERE BOM_Type LIKE '대체%'"):
+        t = _alt_target(r["BOM_Type"])
+        if t:
+            has_alt.add(t)
+
+    out = []
+    for r in rows:
+        d = r["daily"] or 0
+        # ── 긴급도 0~5 : 발주 마감까지 남은 일수
+        if d <= 0:
+            urg = 0
+        elif r["stock"] <= 0:
+            urg = 5
+        elif r["deadline"] is None:
+            urg = 0
+        elif r["deadline"] <= 0:
+            urg = 4.5
+        elif r["deadline"] <= 14:
+            urg = 3.5
+        elif r["deadline"] <= 45:
+            urg = 2
+        elif r["deadline"] <= 90:
+            urg = 1
+        else:
+            urg = 0.5
+
+        # ── 영향도 0~5 : 결품 시 파급
+        im = impact.get(r["P_ID"], {})
+        imp = 0.0
+        imp += {"A": 2.0, "B": 1.0, "C": 0.5}.get(r["grade"], 0)   # 자재 등급
+        imp += min((im.get("fg_cnt") or 0) * 0.8, 1.5)             # 투입 완제품 수
+        if r["P_ID"] not in has_alt:
+            imp += 1.0                                             # 대체품 없음
+        if r["is_foreign"] == "Y":
+            imp += 0.5                                             # 해외 조달
+        if (r["lead_time"] or 0) >= 30:
+            imp += 0.5                                             # 장納期
+        imp = min(round(imp, 1), 5)
+
+        score = round(urg * 0.6 + imp * 0.4, 2)
+        lv = ("위험" if score >= 3.6 else
+              "경고" if score >= 2.6 else
+              "주의" if score >= 1.6 else "안전")
+
+        r2 = dict(r)
+        r2.pop("months", None)          # 레이더에선 쓰지 않아 응답에서 제외
+        r2.update({
+            "urg": urg, "imp": imp, "score": score, "lv": lv,
+            "fg_cnt": im.get("fg_cnt") or 0,
+            "has_alt": 1 if r["P_ID"] in has_alt else 0,
+            # 결품 시 영향 금액 = 이 자재가 들어가는 완제품의 자재비 기준 근사
+            "risk_amt": round((r["safe_qty"] or 0) * (r["P_Price"] or 0)),
+        })
+        out.append(r2)
+    out.sort(key=lambda x: -x["score"])
+    return out, base, span
+
+
+def risk_summary(rows):
+    C = lambda k: len([r for r in rows if r["lv"] == k])
+    danger = [r for r in rows if r["lv"] in ("위험", "경고")]
+    return {
+        "total": len(rows),
+        "danger": C("위험"), "warn": C("경고"),
+        "caution": C("주의"), "safe": C("안전"),
+        "danger_amt": sum(r["order_amt"] for r in danger),
+        "danger_items": len([r for r in danger if r["order_qty"] > 0]),
+        "no_alt": len([r for r in danger if not r["has_alt"]]),
+        "foreign": len([r for r in danger if r["is_foreign"] == "Y"]),
+        "grade_a": len([r for r in danger if r["grade"] == "A"]),
+        "max_lt": max((r["lead_time"] or 0) for r in danger) if danger else 0,
+    }
