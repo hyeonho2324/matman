@@ -2246,3 +2246,173 @@ def workbench(conn):
         "approvals": approvals,
         "scan_lots": scan_lots,
     }
+
+# ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
+#
+# 다른 화면은 전부 조회 전용이다. 발주만 쓰기를 허용한 이유는
+# "부족 → 발주 → 입고" 가 자재관리의 핵심 흐름이라 조회만으로는
+# 업무를 보여줄 수 없기 때문이다.
+
+def order_candidates(conn):
+    """발주 화면용 후보 목록.
+
+    권장 발주량은 수요예측(forecast_list)의 계산을 그대로 쓴다.
+    화면마다 다른 값이 나오면 안 되므로 로직을 복제하지 않는다.
+    여기에 발주서 생성에 필요한 BRN 과 '이미 나가 있는 발주'를 덧붙인다.
+    """
+    rows, base, span = forecast_list(conn)
+
+    brn = {r["P_ID"]: r["BRN"]
+           for r in _rows(conn, "SELECT P_ID, BRN FROM Product_tb")}
+
+    # 아직 입고되지 않은 발주 — 중복 발주를 막기 위한 경고용.
+    # 현장에서 가장 흔한 사고가 '이미 발주한 걸 모르고 또 발주'다.
+    open_po = {}
+    for r in _rows(conn, """
+        SELECT d.P_ID, h.H_ID, h.P_Date, d.P_Qty
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          LEFT JOIN Lot_tb l        ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
+         WHERE l.Lot_ID IS NULL
+         ORDER BY h.P_Date DESC
+    """):
+        open_po.setdefault(r["P_ID"], []).append(r)
+
+    # 화면에 필요한 필드만 남긴다.
+    # forecast_list 는 스파크라인용 월별 배열까지 들고 있어 그대로 보내면 무겁다.
+    KEEP = ("P_ID", "P_N", "Spec", "grade", "P_Price", "MinOrderQty", "PkgUnit",
+            "supplier", "is_foreign", "lead_time", "stock", "safe_qty",
+            "daily", "days_left", "deadline", "urgency", "order_qty", "order_amt",
+            "confidence")
+    out = []
+    for r in rows:
+        c = {k: r.get(k) for k in KEEP}
+        c["BRN"] = brn.get(r["P_ID"])
+        op = open_po.get(r["P_ID"], [])
+        c["open_qty"] = sum(x["P_Qty"] or 0 for x in op)
+        c["open_po"] = [{"H_ID": x["H_ID"], "date": x["P_Date"], "qty": x["P_Qty"]}
+                        for x in op[:3]]
+        out.append(c)
+    return out, base
+
+
+def round_order_qty(need, moq, pkg):
+    """발주 수량을 실제 발주 가능한 단위로 올린다.
+
+    부족분 그대로는 발주할 수 없다. 최소발주수량(MOQ)을 밑돌 수 없고,
+    상자 단위로 출하되므로 포장단위(PkgUnit)의 배수여야 한다.
+    """
+    need = max(int(need or 0), 0)
+    if need <= 0:
+        return 0
+    need = max(need, int(moq or 0))
+    pkg = int(pkg or 1)
+    if pkg > 1:
+        need = -(-need // pkg) * pkg
+    return need
+
+
+def next_po_id(conn, date):
+    """H_ID 채번 — PO + YYYYMMDD + 4자리 순번 (그날 기준)."""
+    pre = "PO" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(H_ID) FROM Purchase_Header_tb WHERE H_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def preview_purchase(conn, date, items):
+    """발주 등록 전 미리보기 — 협력사별로 어떻게 나뉘는지 보여준다.
+
+    발주서 1장은 협력사 1곳 앞으로 나간다. 자재마다 공급처가 정해져 있으므로
+    여러 자재를 한 번에 담으면 공급처 기준으로 발주서가 자동 분리된다.
+    """
+    info = {r["P_ID"]: r for r in _rows(conn, """
+        SELECT p.P_ID, p.P_N, p.Spec, p.BRN, p.P_Price, p.MinOrderQty, p.PkgUnit,
+               c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               s.Lead_Time AS lead_time, s.Sf_Lv AS grade
+          FROM Product_tb p
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+    """)}
+
+    merged, errors = {}, []
+    for it in items:
+        pid = str(it.get("P_ID", "")).strip()
+        if pid not in info:
+            errors.append("등록되지 않은 품번입니다: %s" % (pid or "(빈값)"))
+            continue
+        try:
+            qty = int(it.get("qty") or 0)
+        except (TypeError, ValueError):
+            errors.append("%s 수량이 숫자가 아닙니다." % pid)
+            continue
+        if qty <= 0:
+            errors.append("%s 수량은 1 이상이어야 합니다." % pid)
+            continue
+        if not info[pid]["BRN"]:
+            errors.append("%s 는 공급 협력사가 지정되어 있지 않습니다." % pid)
+            continue
+        merged[pid] = merged.get(pid, 0) + qty      # 같은 품번은 합산
+
+    groups = {}
+    for pid, qty in merged.items():
+        p = info[pid]
+        g = groups.setdefault(p["BRN"], {
+            "BRN": p["BRN"], "supplier": p["supplier"],
+            "is_foreign": p["is_foreign"], "items": [], "amount": 0, "lead_max": 0,
+        })
+        amt = round(qty * (p["P_Price"] or 0))
+        lt = int(p["lead_time"] or 0)
+        g["items"].append({
+            "P_ID": pid, "P_N": p["P_N"], "Spec": p["Spec"], "grade": p["grade"],
+            "qty": qty, "price": p["P_Price"], "amount": amt,
+            "moq": p["MinOrderQty"], "pkg": p["PkgUnit"], "lead_time": lt,
+        })
+        g["amount"] += amt
+        g["lead_max"] = max(g["lead_max"], lt)
+
+    out = []
+    for g in groups.values():
+        g["items"].sort(key=lambda x: x["P_ID"])
+        g["line_cnt"] = len(g["items"])
+        g["eta"] = _add_days(date, g["lead_max"])   # 예상 입고일
+        out.append(g)
+    out.sort(key=lambda g: g["supplier"] or "")
+    return out, errors
+
+
+def _add_days(date, days):
+    import datetime
+    y, m, d = (int(x) for x in date.split("-"))
+    return (datetime.date(y, m, d) + datetime.timedelta(days=int(days or 0))).isoformat()
+
+
+def create_purchase(conn, date, items):
+    """발주 등록. 협력사별로 발주서를 나눠 INSERT 한다.
+
+    전부 성공하거나 전부 실패한다(트랜잭션). 발주서를 반쯤 만들어두면
+    현장에서 어느 게 유효한지 알 수 없게 된다.
+    """
+    groups, errors = preview_purchase(conn, date, items)
+    if errors:
+        return None, errors
+    if not groups:
+        return None, ["발주할 자재가 없습니다."]
+
+    created = []
+    with conn:                                   # 커밋/롤백 자동
+        for g in groups:
+            hid = next_po_id(conn, date)
+            conn.execute(
+                "INSERT INTO Purchase_Header_tb (H_ID, BRN, P_Date) VALUES (?, ?, ?)",
+                (hid, g["BRN"], date))
+            for n, it in enumerate(g["items"], 1):
+                conn.execute(
+                    "INSERT INTO Purchase_Detail_tb (H_ID, Purchase_num, P_ID, P_Qty)"
+                    " VALUES (?, ?, ?, ?)",
+                    (hid, n, it["P_ID"], it["qty"]))
+            g["H_ID"] = hid
+            created.append(g)
+    return created, []

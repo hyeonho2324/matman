@@ -16,6 +16,78 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .tag{font-size:10px;color:var(--txt3);font-weight:400}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
 .btn:hover{background:var(--s2)}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.btnp:hover{background:#2168bd}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{background:transparent}
+.btnp:disabled:hover{background:var(--acc)}
+
+/* ── 발주 워크플로우 ── */
+.po-ovl{position:fixed;inset:0;background:rgba(26,25,23,.42);z-index:60;display:none;align-items:center;justify-content:center;padding:18px}
+.po-ovl.on{display:flex}
+.po-modal{background:var(--s0);border-radius:10px;width:min(980px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.26)}
+.po-head{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.po-title{font-size:14px;font-weight:500;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.po-steps{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+.po-st{font-size:10px;padding:3px 9px;border-radius:99px;background:var(--s2);color:var(--txt3);white-space:nowrap}
+.po-st.on{background:var(--acc);color:#fff;font-weight:500}
+.po-st.done{background:var(--bg-ok);color:var(--ok)}
+.po-x{background:none;border:none;cursor:pointer;color:var(--txt3);font-size:17px;line-height:1;padding:2px}
+.po-x:hover{color:var(--txt)}
+.po-body{flex:1;overflow:auto;padding:12px 14px;min-height:220px}
+.po-foot{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.po-sum{flex:1;font-size:11px;color:var(--txt2);line-height:1.5}
+.po-sum b{color:var(--txt);font-weight:600}
+
+.po-bar{display:flex;align-items:center;gap:6px;margin-bottom:9px;flex-wrap:wrap}
+.po-bar input[type=search]{padding:4px 9px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt);width:190px}
+.po-bar input[type=date]{padding:4px 8px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt)}
+.po-lbl{font-size:11px;color:var(--txt3)}
+
+.po-tb{width:100%;border-collapse:collapse;font-size:11px}
+.po-tb th{text-align:left;padding:5px 7px;background:var(--s1);border-bottom:0.5px solid var(--border);font-weight:500;color:var(--txt2);position:sticky;top:0;white-space:nowrap}
+.po-tb td{padding:5px 7px;border-bottom:0.5px solid var(--border)}
+.po-tb tr.pick{background:var(--bg-ac)}
+.po-tb .num{text-align:right;font-variant-numeric:tabular-nums}
+.po-tb tbody tr:hover{background:var(--s1)}
+.po-tb tbody tr.pick:hover{background:var(--bg-ac)}
+.po-nm{font-size:11px}
+.po-sp{font-size:10px;color:var(--txt3)}
+.po-q{width:86px;padding:3px 6px;border-radius:var(--r);border:0.5px solid var(--border-s);font-size:11px;font-family:inherit;text-align:right;background:var(--s0);color:var(--txt)}
+.po-q:focus{outline:none;border-color:var(--acc)}
+.po-q.warn{border-color:var(--wn);background:var(--bg-wn)}
+
+.u{font-size:10px;padding:1px 6px;border-radius:99px;white-space:nowrap}
+.u-0{background:var(--bg-dn);color:#9B1C1C;font-weight:500}
+.u-1{background:var(--bg-wn);color:#854F0B}
+.u-2{background:var(--bg-ac);color:#185FA5}
+.u-3{background:var(--s2);color:var(--txt3)}
+
+.po-card{border:0.5px solid var(--border);border-radius:8px;margin-bottom:9px;overflow:hidden;background:var(--s0)}
+.po-ch{display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.po-cn{font-size:12px;font-weight:500}
+.po-cm{font-size:10px;color:var(--txt3)}
+.po-camt{margin-left:auto;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.po-note{font-size:10px;color:var(--txt3);padding:6px 11px;background:var(--s1);border-top:0.5px solid var(--border);line-height:1.55}
+.po-warn{font-size:10px;color:#854F0B;background:var(--bg-wn);border-radius:var(--r);padding:6px 9px;margin-bottom:8px;line-height:1.55}
+.po-err{font-size:11px;color:#9B1C1C;background:var(--bg-dn);border-radius:var(--r);padding:7px 10px;margin-bottom:8px;line-height:1.55}
+.po-info{font-size:10px;color:var(--txt3);line-height:1.6;margin-bottom:9px;padding:7px 10px;background:var(--s1);border-radius:var(--r)}
+.po-empty{text-align:center;padding:34px 12px;color:var(--txt3);font-size:11px;line-height:1.7}
+.po-ok{text-align:center;padding:20px 12px}
+.po-ok i{font-size:36px;color:var(--ok)}
+.po-ok .t{font-size:15px;font-weight:500;margin:8px 0 3px}
+.po-ok .s{font-size:11px;color:var(--txt3);margin-bottom:12px}
+.po-hid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc)}
+.po-dup{font-size:10px;color:#854F0B}
+@media(max-width:700px){
+  .po-steps{width:100%;margin-left:0;order:3}
+  .po-tb .hide-s{display:none}
+  /* 품명 열을 줄여 '권장 발주'까지 화면에 들어오게 한다 (품명은 줄바꿈) */
+  .po-tb th,.po-tb td{padding:5px 4px}
+  .po-tb td:nth-child(2){max-width:132px}
+  .po-nm{word-break:break-all}
+  .po-bar input[type=search]{width:100%}
+}
 
 .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
 .kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
@@ -119,6 +191,7 @@ tbody tr.on{background:var(--bg-ac)}
       <i class="ti ti-truck-delivery" style="color:var(--acc)"></i>구매 발주 · 입고 대조
       <span class="tag">실제 DB · {{ summary.order_cnt }}건 · {{ summary.date_from }} ~ {{ summary.date_to }}</span>
     </div>
+    <button class="btn btnp" onclick="poOpen()"><i class="ti ti-file-plus"></i>발주하기</button>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
 
@@ -201,11 +274,30 @@ tbody tr.on{background:var(--bg-ac)}
   </div>
 </div>
 
+<!-- ── 발주 워크플로우 ── -->
+<div class="po-ovl" id="poOvl">
+  <div class="po-modal">
+    <div class="po-head">
+      <div class="po-title"><i class="ti ti-file-plus" style="color:var(--acc)"></i>발주하기</div>
+      <div class="po-steps" id="poSteps"></div>
+      <button class="po-x" onclick="poClose()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="po-body" id="poBody"></div>
+    <div class="po-foot">
+      <div class="po-sum" id="poSum"></div>
+      <button class="btn" id="poPrev" onclick="poGo(-1)">이전</button>
+      <button class="btn btnp" id="poNext" onclick="poGo(1)">다음</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const ORD   = {{ orders|tojson }};
 const MON   = {{ monthly|tojson }};
 const PRODS = {{ prods|tojson }};
 const EMPTY = {};
+const CANDS = {{ cands|tojson }};      // 발주 후보 200종 (권장 발주량 포함)
+const BASE  = {{ base_date|tojson }};  // 데이터 기준일
 function P(pid){ return PRODS[pid] || EMPTY; }
 
 let filter='all', sortKey='date', sortAsc=false, sel=null;
@@ -403,6 +495,339 @@ function dl(){
 
 drawChart();
 render();
+
+
+// ══════════════════════════════════════════════════════════
+//  발주 워크플로우
+//  ① 대상 선정  → ② 수량 확정 → ③ 발주서 확인 → 등록
+//
+//  발주서 1장은 협력사 1곳 앞으로 나간다. 자재마다 공급처가 정해져
+//  있으므로, 여러 자재를 한 번에 담으면 3단계에서 공급처 기준으로
+//  발주서가 자동 분리된다.
+// ══════════════════════════════════════════════════════════
+const U_RANK = {'재고소진':0,'발주지연':0,'발주임박':1,'주의':2,'여유':3,'예측불가':3};
+const STEPS  = ['대상 선정','수량 확정','발주서 확인'];
+
+let poStep = 1;      // 1~3, 4 = 등록 완료
+let poQty  = {};     // P_ID → 수량
+let poFilt = 'urgent';
+let poQ    = '';
+let poDate = '';
+let poGrp  = [];     // 3단계 미리보기 결과
+let poErr  = [];
+let poRes  = null;   // 등록 결과
+let poBusy = false;
+
+function poNextDay(d){
+  // toISOString() 은 UTC 로 바꿔버려 한국 시간대에서는 하루 밀린다.
+  // 날짜 문자열을 직접 만든다.
+  const t = new Date(d + 'T00:00:00');
+  t.setDate(t.getDate() + 1);
+  const z = n => String(n).padStart(2,'0');
+  return t.getFullYear() + '-' + z(t.getMonth()+1) + '-' + z(t.getDate());
+}
+
+function poOpen(){
+  poStep=1; poQty={}; poFilt='urgent'; poQ=''; poGrp=[]; poErr=[]; poRes=null;
+  poDate = poNextDay(BASE);
+  document.getElementById('poOvl').classList.add('on');
+  poRender();
+}
+function poClose(reload){
+  document.getElementById('poOvl').classList.remove('on');
+  if(reload) location.reload();      // 등록분을 목록에 반영
+}
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape' && document.getElementById('poOvl').classList.contains('on')) poClose();
+});
+
+function poPicked(){ return Object.keys(poQty).filter(k=>poQty[k]>0); }
+function poCand(pid){ return CANDS.filter(c=>c.P_ID===pid)[0]; }
+function poTotal(){
+  return poPicked().reduce((a,p)=>a + poQty[p]*(poCand(p).P_Price||0), 0);
+}
+
+function poGo(dir){
+  if(poBusy) return;
+  if(poStep===4){ poClose(true); return; }
+  const n = poStep + dir;
+  if(n<1) return;
+  if(n>3){ poSubmit(); return; }
+  if(dir>0 && poStep===1 && !poPicked().length) return;
+  poStep = n;
+  if(poStep===3) poPreview(); else poRender();
+}
+
+// ── 3단계: 서버에 미리보기 요청 (협력사별 분리는 서버가 판단) ──
+async function poPreview(){
+  poBusy=true; poGrp=[]; poErr=[]; poRender();
+  try{
+    const r = await fetch('/api/purchase/preview', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({date:poDate, items:poPicked().map(p=>({P_ID:p, qty:poQty[p]}))})
+    });
+    const d = await r.json();
+    poGrp = d.groups || []; poErr = d.errors || [];
+  }catch(e){ poErr=['서버와 통신하지 못했습니다: ' + e.message]; }
+  poBusy=false; poRender();
+}
+
+// ── 등록 ──
+async function poSubmit(){
+  poBusy=true; poRender();
+  try{
+    const r = await fetch('/api/purchase', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({date:poDate, items:poPicked().map(p=>({P_ID:p, qty:poQty[p]}))})
+    });
+    const d = await r.json();
+    if(d.ok){ poRes = d.orders; poStep = 4; poErr=[]; }
+    else poErr = d.errors || ['발주 등록에 실패했습니다.'];
+  }catch(e){ poErr=['서버와 통신하지 못했습니다: ' + e.message]; }
+  poBusy=false; poRender();
+}
+
+function poRender(){
+  // 단계 표시
+  document.getElementById('poSteps').innerHTML = STEPS.map(function(t,i){
+    const n=i+1;
+    const cls = poStep>n || poStep===4 ? 'done' : (poStep===n ? 'on' : '');
+    return '<span class="po-st ' + cls + '">' + n + ' ' + t + '</span>';
+  }).join('');
+
+  const body = document.getElementById('poBody');
+  const sum  = document.getElementById('poSum');
+  const prev = document.getElementById('poPrev');
+  const next = document.getElementById('poNext');
+
+  if(poStep===1)      { body.innerHTML = poView1(); }
+  else if(poStep===2) { body.innerHTML = poView2(); }
+  else if(poStep===3) { body.innerHTML = poView3(); }
+  else                { body.innerHTML = poView4(); }
+
+  const n = poPicked().length;
+  if(poStep===4){
+    sum.innerHTML = '';
+    prev.style.display='none';
+    next.textContent='목록에서 확인'; next.disabled=false;
+  }else{
+    sum.innerHTML = n ? ('<b>' + n + '</b>개 품목 선택 · 예상 <b>' + won(poTotal()) + '원</b>')
+                      : '발주할 자재를 선택하세요.';
+    prev.style.display = poStep>1 ? '' : 'none';
+    prev.disabled = poBusy;
+    next.textContent = poBusy ? '처리 중…' : (poStep===3 ? '발주 등록' : '다음');
+    next.disabled = poBusy || !n || (poStep===3 && (!poGrp.length || poErr.length));
+  }
+}
+
+// ── 1단계: 대상 선정 ──
+function poView1(){
+  const list = CANDS.filter(function(c){
+    if(poFilt==='urgent' && U_RANK[c.urgency]>1) return false;
+    if(poFilt==='rec'    && !(c.order_qty>0))    return false;
+    if(poQ){
+      const t=(c.P_ID+' '+c.P_N+' '+(c.Spec||'')+' '+(c.supplier||'')).toLowerCase();
+      if(t.indexOf(poQ)<0) return false;
+    }
+    return true;
+  }).sort(function(a,b){
+    const d=U_RANK[a.urgency]-U_RANK[b.urgency];
+    return d || (b.order_amt||0)-(a.order_amt||0);
+  });
+
+  let h = '<div class="po-info">'
+    + '<b>권장 발주량</b>은 수요 예측과 같은 계산입니다 — '
+    + '<code>일평균 사용량 × 리드타임 + 안전재고 − 현재고</code>를 '
+    + '최소발주수량(MOQ)과 포장단위로 올린 값입니다. 다음 단계에서 수량을 고칠 수 있습니다.'
+    + '</div>';
+
+  h += '<div class="po-bar">'
+    + poPill('urgent','긴급만') + poPill('rec','권장 발주 있음') + poPill('all','전체 200종')
+    + '<input type="search" placeholder="품번 · 품명 · 협력사" value="' + esc(poQ) + '" oninput="poSearch(this.value)">'
+    + '<span class="po-lbl" style="margin-left:auto">' + list.length + '종</span>'
+    + '</div>';
+
+  if(!list.length) return h + '<div class="po-empty">조건에 맞는 자재가 없습니다.</div>';
+
+  h += '<table class="po-tb"><thead><tr>'
+    + '<th style="width:26px"></th><th>품번 · 품명</th>'
+    + '<th class="hide-s">등급</th><th class="num">현재고</th><th class="num hide-s">안전재고</th>'
+    + '<th>긴급도</th><th class="num">권장 발주</th><th class="hide-s">협력사</th>'
+    + '</tr></thead><tbody>';
+
+  list.forEach(function(c){
+    const on = poQty[c.P_ID]>0;
+    h += '<tr class="' + (on?'pick':'') + '" onclick="poToggle(&quot;' + c.P_ID + '&quot;)">'
+      + '<td><input type="checkbox" ' + (on?'checked':'') + ' onclick="event.stopPropagation();poToggle(&quot;' + c.P_ID + '&quot;)"></td>'
+      + '<td><div class="po-nm">' + esc(c.P_N) + '</div>'
+      +   '<div class="po-sp">' + c.P_ID + ' · ' + esc(c.Spec||'') + '</div>'
+      +   (c.open_qty>0 ? '<div class="po-dup"><i class="ti ti-alert-circle"></i> 미입고 발주 '
+            + nf(c.open_qty) + '개 (' + c.open_po.map(function(o){return o.H_ID;}).join(', ') + ')</div>' : '')
+      + '</td>'
+      + '<td class="hide-s">' + (c.grade||'-') + '</td>'
+      + '<td class="num">' + nf(c.stock) + '</td>'
+      + '<td class="num hide-s">' + nf(c.safe_qty) + '</td>'
+      + '<td><span class="u u-' + U_RANK[c.urgency] + '">' + c.urgency + '</span></td>'
+      + '<td class="num">' + (c.order_qty>0 ? nf(c.order_qty) : '-') + '</td>'
+      + '<td class="hide-s">' + esc(c.supplier||'-')
+      +   (c.is_foreign==='Y' ? ' <span class="po-sp">해외</span>' : '') + '</td>'
+      + '</tr>';
+  });
+  return h + '</tbody></table>';
+}
+function poPill(v,t){
+  return '<button class="pill ' + (poFilt===v?'on':'') + '" onclick="poSetF(&quot;' + v + '&quot;)">' + t + '</button>';
+}
+function poSetF(v){ poFilt=v; poRender(); }
+function poSearch(v){ poQ=(v||'').trim().toLowerCase(); poRender(); }
+function poToggle(pid){
+  if(poQty[pid]>0) delete poQty[pid];
+  else{
+    const c=poCand(pid);
+    // 권장 발주량이 0이면(=아직 여유) 최소 발주 단위로 시작한다
+    poQty[pid] = c.order_qty>0 ? c.order_qty : Math.max(c.MinOrderQty||0, c.PkgUnit||1);
+  }
+  poRender();
+}
+
+// ── 2단계: 수량 확정 ──
+function poView2(){
+  let h = '<div class="po-bar">'
+    + '<span class="po-lbl">발주일</span>'
+    + '<input type="date" value="' + poDate + '" onchange="poDate=this.value;poRender()">'
+    + '<span class="po-lbl">데이터 기준일 ' + BASE + ' 다음 날로 잡았습니다</span>'
+    + '</div>';
+
+  const dup = poPicked().filter(function(p){ return poCand(p).open_qty>0; });
+  if(dup.length){
+    h += '<div class="po-warn"><i class="ti ti-alert-triangle"></i> '
+      + '<b>' + dup.length + '개 품목은 이미 나가 있는 발주가 있습니다.</b> '
+      + '아직 입고되지 않은 발주분을 감안해 수량을 정하세요 — '
+      + '현장에서 가장 흔한 사고가 발주한 줄 모르고 다시 발주하는 것입니다.</div>';
+  }
+
+  h += '<table class="po-tb"><thead><tr>'
+    + '<th>품번 · 품명</th><th class="num hide-s">현재고</th><th class="num hide-s">권장</th>'
+    + '<th class="num">발주 수량</th><th class="hide-s">발주 단위</th>'
+    + '<th class="num">금액</th><th style="width:26px"></th>'
+    + '</tr></thead><tbody>';
+
+  poPicked().forEach(function(p){
+    const c=poCand(p), q=poQty[p];
+    const pkg=c.PkgUnit||1, moq=c.MinOrderQty||0;
+    const bad = (q<moq) || (pkg>1 && q%pkg!==0);
+    h += '<tr>'
+      + '<td><div class="po-nm">' + esc(c.P_N) + '</div>'
+      +   '<div class="po-sp">' + c.P_ID + ' · ' + esc(c.supplier||'-') + '</div>'
+      +   (c.open_qty>0 ? '<div class="po-dup"><i class="ti ti-alert-circle"></i> 미입고 '
+            + nf(c.open_qty) + '개</div>' : '')
+      + '</td>'
+      + '<td class="num hide-s">' + nf(c.stock) + '</td>'
+      + '<td class="num hide-s">' + (c.order_qty>0 ? nf(c.order_qty) : '-') + '</td>'
+      + '<td class="num"><input class="po-q ' + (bad?'warn':'') + '" type="number" min="1" step="1" value="' + q + '"'
+      +   ' onchange="poSetQ(&quot;' + p + '&quot;, this.value)"></td>'
+      + '<td class="hide-s"><span class="po-sp">MOQ ' + nf(moq) + ' · 포장 ' + nf(pkg) + '</span>'
+      +   (bad ? '<br><a href="#" onclick="poFix(&quot;' + p + '&quot;);return false" style="font-size:10px;color:var(--acc)">'
+                 + nf(poRound(q,moq,pkg)) + '개로 맞추기</a>' : '') + '</td>'
+      + '<td class="num">' + nf(q*(c.P_Price||0)) + '</td>'
+      + '<td><button class="po-x" onclick="poToggle(&quot;' + p + '&quot;)"><i class="ti ti-x"></i></button></td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div class="po-note" style="border:0.5px solid var(--border);border-radius:var(--r);margin-top:9px">'
+    + '발주 수량은 <b>최소발주수량 이상</b>이면서 <b>포장단위의 배수</b>여야 합니다. '
+    + '상자 단위로 출하되므로 낱개 발주가 되지 않습니다. '
+    + '조건에 맞지 않는 수량은 노란색으로 표시했습니다.</div>';
+  return h;
+}
+function poRound(need,moq,pkg){
+  need=Math.max(parseInt(need,10)||0,0);
+  if(need<=0) return 0;
+  need=Math.max(need,moq||0);
+  pkg=pkg||1;
+  return pkg>1 ? Math.ceil(need/pkg)*pkg : need;
+}
+function poSetQ(pid,v){
+  const q=parseInt(v,10);
+  if(!q || q<1){ poRender(); return; }
+  poQty[pid]=q; poRender();
+}
+function poFix(pid){
+  const c=poCand(pid);
+  poQty[pid]=poRound(poQty[pid], c.MinOrderQty||0, c.PkgUnit||1);
+  poRender();
+}
+
+// ── 3단계: 발주서 확인 ──
+function poView3(){
+  if(poBusy) return '<div class="po-empty">발주서를 만드는 중…</div>';
+  let h='';
+  if(poErr.length){
+    h += '<div class="po-err"><b>발주서를 만들 수 없습니다.</b><br>' + poErr.map(esc).join('<br>') + '</div>';
+  }
+  if(!poGrp.length) return h || '<div class="po-empty">발주할 자재가 없습니다.</div>';
+
+  h += '<div class="po-info">'
+    + '<b>발주서 1장은 협력사 1곳 앞으로 나갑니다.</b> 자재마다 공급처가 정해져 있어 '
+    + '선택한 ' + poPicked().length + '개 품목이 <b>협력사 ' + poGrp.length + '곳</b>의 발주서 '
+    + poGrp.length + '장으로 나뉘었습니다. 발주번호는 등록 시점에 채번됩니다.</div>';
+
+  poGrp.forEach(function(g){
+    h += '<div class="po-card">'
+      + '<div class="po-ch"><i class="ti ti-building-warehouse" style="color:var(--acc)"></i>'
+      +   '<span class="po-cn">' + esc(g.supplier||'-') + '</span>'
+      +   (g.is_foreign==='Y' ? '<span class="u u-2">해외</span>' : '')
+      +   '<span class="po-cm">' + g.line_cnt + '개 품목 · 발주일 ' + poDate
+      +     ' · 예상 입고 <b>' + g.eta + '</b></span>'
+      +   '<span class="po-camt">' + nf(g.amount) + '원</span></div>'
+      + '<table class="po-tb"><thead><tr><th>품번 · 품명</th><th class="hide-s">등급</th>'
+      +   '<th class="num">수량</th><th class="num hide-s">단가</th><th class="num">금액</th>'
+      +   '<th class="num hide-s">리드타임</th></tr></thead><tbody>';
+    g.items.forEach(function(it){
+      h += '<tr><td><div class="po-nm">' + esc(it.P_N) + '</div>'
+        +   '<div class="po-sp">' + it.P_ID + ' · ' + esc(it.Spec||'') + '</div></td>'
+        + '<td class="hide-s">' + (it.grade||'-') + '</td>'
+        + '<td class="num">' + nf(it.qty) + '</td>'
+        + '<td class="num hide-s">' + nf(it.price) + '</td>'
+        + '<td class="num">' + nf(it.amount) + '</td>'
+        + '<td class="num hide-s">' + nf(it.lead_time) + '일</td></tr>';
+    });
+    h += '</tbody></table>'
+      + '<div class="po-note">예상 입고일은 이 발주서에서 <b>가장 리드타임이 긴 자재</b> 기준입니다. '
+      + '한 장에 묶인 품목은 함께 들어오는 것을 전제로 합니다.</div></div>';
+  });
+
+  const tot = poGrp.reduce(function(a,g){return a+g.amount;},0);
+  h += '<div class="po-info" style="background:var(--bg-ac)">'
+    + '합계 <b>' + poGrp.length + '장</b> · <b>' + poPicked().length + '개 품목</b> · '
+    + '<b>' + nf(tot) + '원</b> (' + won(tot) + '원)<br>'
+    + '[발주 등록]을 누르면 <code>Purchase_Header_tb</code>와 <code>Purchase_Detail_tb</code>에 '
+    + '실제로 저장되고, 아래 발주 목록에 <b>미입고</b> 상태로 나타납니다.</div>';
+  return h;
+}
+
+// ── 완료 ──
+function poView4(){
+  const tot = poRes.reduce(function(a,g){return a+g.amount;},0);
+  let h = '<div class="po-ok"><i class="ti ti-circle-check"></i>'
+    + '<div class="t">발주 ' + poRes.length + '건이 등록되었습니다</div>'
+    + '<div class="s">' + poRes.reduce(function(a,g){return a+g.line_cnt;},0)
+    + '개 품목 · ' + nf(tot) + '원</div></div>';
+  poRes.forEach(function(g){
+    h += '<div class="po-card"><div class="po-ch">'
+      + '<span class="po-hid">' + g.H_ID + '</span>'
+      + '<span class="po-cn">' + esc(g.supplier||'-') + '</span>'
+      + '<span class="po-cm">' + g.line_cnt + '개 품목 · 예상 입고 ' + g.eta + '</span>'
+      + '<span class="po-camt">' + nf(g.amount) + '원</span></div></div>';
+  });
+  h += '<div class="po-note" style="border:0.5px solid var(--border);border-radius:var(--r)">'
+    + '입고가 등록되면 발주 수량과 실제 입고 수량이 대조되어 '
+    + '<b>일치 / 부족 / 초과</b>로 판정됩니다. 지금은 <b>미입고</b> 상태입니다.'
+    + '<br>※ Render 처럼 디스크가 초기화되는 배포 환경에서는 재배포 시 '
+    + '등록한 발주가 사라질 수 있습니다.</div>';
+  return h;
+}
+
 </script>
 </body>
 </html>

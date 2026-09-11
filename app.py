@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request
-import json, os
+import json, os, re, sqlite3
 
 import db
 
@@ -311,11 +311,15 @@ def _ctx_purchase():
     conn = db.connect()
     try:
         orders = db.purchase_orders(conn)
+        cands, base = db.order_candidates(conn)
         return {
             "orders": orders,
             "prods": db.prod_products(conn),
             "monthly": db.purchase_monthly(conn),
             "summary": db.purchase_summary(orders),
+            # 발주하기 워크플로우용 — 자재 200종 + 권장 발주량 + 미입고 발주
+            "cands": cands,
+            "base_date": base,
         }
     finally:
         conn.close()
@@ -435,6 +439,58 @@ def _ctx_workbench():
     finally:
         conn.close()
 
+
+
+# ── 발주 등록 API ───────────────────────────────────────────
+# 이 앱에서 유일하게 DB 를 쓰는 엔드포인트다.
+# 나머지 화면은 전부 조회 전용이라 GET 만 있다.
+
+@app.route("/api/purchase/preview", methods=["POST"])
+def api_purchase_preview():
+    """등록 전 미리보기 — 협력사별로 발주서가 어떻게 나뉘는지 보여준다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        groups, errors = db.preview_purchase(
+            conn, _order_date(body), body.get("items") or [])
+        return jsonify({"ok": not errors, "groups": groups, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/purchase", methods=["POST"])
+def api_purchase_create():
+    """발주 등록. 협력사별로 발주서를 나눠 저장한다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        created, errors = db.create_purchase(
+            conn, _order_date(body), body.get("items") or [])
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "orders": created})
+    except sqlite3.OperationalError as e:
+        # 배포 환경에서 DB 파일이 읽기 전용이면 여기로 온다
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+def _order_date(body):
+    """발주일. 지정이 없으면 데이터의 마지막 거래일 다음 날을 쓴다.
+
+    더미데이터의 시간축(2025-07 ~ 2026-02)과 실제 오늘이 다르므로
+    오늘 날짜를 그대로 쓰면 발주가 목록 맨 위에 동떨어져 붙는다.
+    """
+    d = (body.get("date") or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+        return d
+    conn = db.connect()
+    try:
+        base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    finally:
+        conn.close()
+    return db._add_days(base, 1)
 
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
