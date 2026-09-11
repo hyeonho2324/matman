@@ -2055,3 +2055,99 @@ def picking_summary(picks):
         "short_qty": sum(p["short"] for p in picks),
         "multi_lot": len([p for p in picks if p["lot_n"] > 1]),
     }
+
+
+# ── 입출고 작업 화면 (입고/불출/승인/스캐너) ─────────────────
+# 이 4개는 본래 '입력' 화면이라 조회할 이력이 없다.
+# 대신 입력에 필요한 실제 참조 데이터를 붙여, 작업 맥락을 보여준다.
+def workbench(conn):
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+
+    # 입고: 발주 → 입고 실적 (LOT 채번 규칙 확인용)
+    recent_po = _rows(conn, """
+        SELECT h.H_ID, h.P_Date, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               COUNT(*) AS lines, SUM(d.P_Qty) AS qty,
+               SUM(d.P_Qty * p.P_Price) AS amount,
+               MIN(l.Lot_Date) AS recv_date,
+               CAST(julianday(MIN(l.Lot_Date)) - julianday(h.P_Date) AS INT) AS lead_days
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c    ON h.BRN = c.BRN
+          LEFT JOIN Lot_tb l        ON l.H_ID = h.H_ID
+         GROUP BY h.H_ID, h.P_Date, c.CP_N, c.Is_Foreign
+         ORDER BY h.P_Date DESC LIMIT 20
+    """)
+    po_detail = {}
+    for r in _rows(conn, """
+        SELECT d.H_ID, d.P_ID, p.P_N, p.PkgUnit, d.P_Qty AS ord_qty,
+               l.Lot_ID, l.P_Qty AS in_qty, l.Lot_Date, lo.Loc_N AS loc_name
+          FROM Purchase_Detail_tb d
+          JOIN Product_tb p ON d.P_ID = p.P_ID
+          LEFT JOIN Lot_tb l ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+         ORDER BY d.H_ID, d.Purchase_num
+    """):
+        po_detail.setdefault(r["H_ID"], []).append(r)
+
+    # 불출: 잔여 LOT 이 있는 자재 (FIFO 대상)
+    disburse = _rows(conn, f"""
+        WITH live AS (
+            SELECT l.P_ID, l.Lot_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
+                   l.P_Qty - COALESCE(x.out_qty,0) AS remain
+              FROM Lot_tb l
+              LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+              LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty FROM Transaction_tb
+                          WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+             WHERE l.P_Qty - COALESCE(x.out_qty,0) > 0
+        )
+        SELECT v.P_ID, p.P_N, p.Spec, s.Sf_Lv AS grade, s.Sf_Num AS safe_qty,
+               COUNT(*) AS lot_n, SUM(v.remain) AS stock,
+               MIN(v.Lot_ID) AS first_lot, MIN(v.Lot_Date) AS first_date,
+               MIN(v.loc_name) AS loc_name
+          FROM live v JOIN Product_tb p ON v.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s ON v.P_ID = s.P_ID
+         GROUP BY v.P_ID, p.P_N, p.Spec, s.Sf_Lv, s.Sf_Num
+         ORDER BY v.P_ID
+    """)
+
+    # 승인: 실제 불출 이력을 결재 이력처럼 본다 (금액 큰 순)
+    approvals = _rows(conn, """
+        SELECT t.T_ID, t.T_Date, t.T_Num, l.P_ID, p.P_N, p.Spec,
+               s.Sf_Lv AS grade, u.Name AS worker, u.Position AS pos,
+               lo.Loc_N AS loc_name, l.Lot_ID,
+               ROUND(t.T_Num * p.P_Price) AS amount
+          FROM Transaction_tb t
+          JOIN Lot_tb l     ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+          LEFT JOIN User_tb u ON t.EP_ID = u.EP_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+         WHERE t.T_Type = '불출'
+         ORDER BY (t.T_Num * p.P_Price) DESC LIMIT 40
+    """)
+
+    # 스캐너: 조회 대상 (LOT / 품번)
+    scan_lots = _rows(conn, f"""
+        SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date,
+               lo.Loc_N AS loc_name, l.P_Qty,
+               l.P_Qty - COALESCE(x.out_qty,0) AS remain,
+               c.CP_N AS supplier, l.H_ID,
+               s.Sf_Lv AS grade
+          FROM Lot_tb l
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN Company_tb c   ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) out_qty FROM Transaction_tb
+                      WHERE T_Type='불출' GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+         ORDER BY l.Lot_Date DESC
+    """)
+
+    return {
+        "base": base,
+        "recent_po": recent_po, "po_detail": po_detail,
+        "disburse": disburse,
+        "approvals": approvals,
+        "scan_lots": scan_lots,
+    }

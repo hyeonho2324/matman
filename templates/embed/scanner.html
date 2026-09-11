@@ -2,34 +2,220 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>바코드 / QR 스캐너</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스캐너</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit}
+.btn:hover{background:var(--s2)}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+
+/* 스캔 입력 */
+.scanbox{padding:16px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;background:var(--s1)}
+.inp{display:flex;align-items:center;gap:8px;background:var(--s0);border:1.5px solid var(--acc);border-radius:9px;padding:10px 13px;max-width:560px;margin:0 auto}
+.inp i{font-size:20px;color:var(--acc)}
+.inp input{flex:1;border:none;outline:none;background:transparent;font-size:15px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+.hint{text-align:center;font-size:10px;color:var(--txt3);margin-top:7px;line-height:1.6}
+.hint code{background:var(--s2);padding:1px 5px;border-radius:3px;cursor:pointer}
+.hint code:hover{background:var(--border)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.left{flex:1;overflow-y:auto;padding:14px;min-width:0}
+.hist{width:260px;border-left:0.5px solid var(--border);background:var(--s1);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.hh{padding:9px 12px;border-bottom:0.5px solid var(--border);font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px}
+.hlist{flex:1;overflow-y:auto}
+.hi{padding:8px 12px;border-bottom:0.5px solid var(--border);cursor:pointer;font-size:11px}
+.hi:hover{background:var(--s2)}
+.hi-c{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc)}
+.hi-n{font-size:11px;margin-top:2px}
+.hi-t{font-size:9px;color:var(--txt3);margin-top:1px}
+
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.ir{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 12px;border-bottom:0.5px solid var(--border);font-size:12px}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);font-size:10px}
+.iv{font-weight:500;text-align:right}
+.big{padding:14px 12px;text-align:center;border-bottom:0.5px solid var(--border)}
+.big-c{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:17px;font-weight:600;color:var(--acc)}
+.big-n{font-size:15px;font-weight:600;margin-top:5px}
+.big-s{font-size:11px;color:var(--txt3);margin-top:2px}
+.gauge{height:22px;border-radius:5px;background:var(--s2);position:relative;overflow:hidden;margin:10px 12px 4px;border:0.5px solid var(--border)}
+.gf{height:100%;background:var(--acc);opacity:.8}
+.gt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+.gs{display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);padding:0 12px 10px}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:9px;font-weight:500}
+.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
+.gr{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;font-size:10px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
+.blank{padding:56px 20px;text-align:center;color:var(--txt3)}
+.blank i{font-size:40px;color:var(--border-s);display:block;margin-bottom:10px}
+.err{padding:26px 20px;text-align:center;color:var(--dn);font-size:12px}
+@media(max-width:900px){
+  .main{flex-direction:column}
+  .hist{width:100%;max-height:32%;border-left:none;border-top:0.5px solid var(--border-s)}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-scan"></i></div>
-    <div class="title">바코드 / QR 스캐너</div>
-    <div class="sub">LOT 라벨 스캔으로 즉시 상세 조회 및 빠른 처리(불출/이동/불량)가 가능합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-qrcode"></i></div><div class="feat-t">QR 스캔</div><div class="feat-s">LOT·품목·발주서 식별</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-barcode"></i></div><div class="feat-t">바코드 지원</div><div class="feat-s">수동 입력 병행</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-history"></i></div><div class="feat-t">스캔 이력</div><div class="feat-s">최근 12건 유지</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-bolt"></i></div><div class="feat-t">빠른 처리</div><div class="feat-s">불출·이동·불량 원터치</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-scan" style="color:var(--acc)"></i>스캐너 · LOT 조회
+      <span class="tag">실제 DB · LOT {{ scan_lots|length }}건</span></div>
+    <button class="btn" onclick="demo()"><i class="ti ti-wand"></i>임의 스캔</button>
+  </div>
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>실제 바코드 스캐너는 하드웨어 연동이 필요하다.</b> 여기서는 스캐너가 읽어들일
+    <b>LOT 번호나 품번을 입력하면 그 자리에서 재고·이력을 조회</b>하는 부분만 구현했다.
+  </div>
+
+  <div class="scanbox">
+    <div class="inp">
+      <i class="ti ti-barcode"></i>
+      <input id="code" placeholder="LOT 번호 또는 품번 입력 후 Enter" autocomplete="off"
+             onkeydown="if(event.key==='Enter') scan()">
+      <button class="btn" onclick="scan()"><i class="ti ti-search"></i>조회</button>
+    </div>
+    <div class="hint">예시 — <code onclick="fill(this)" id="ex1"></code>
+      <code onclick="fill(this)" id="ex2"></code> <code onclick="fill(this)" id="ex3"></code>
+      <br>클릭하면 입력창에 채워진다</div>
+  </div>
+
+  <div class="main">
+    <div class="left" id="out"></div>
+    <div class="hist">
+      <div class="hh"><i class="ti ti-history"></i>스캔 이력
+        <span id="hc" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
+      <div class="hlist" id="hist"></div>
+    </div>
   </div>
 </div>
+<script>
+const LOTS = {{ scan_lots|tojson }};
+const hist = [];
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 예시 코드 채우기
+(function(){
+  const live = LOTS.filter(function(l){return l.remain>0;});
+  document.getElementById('ex1').textContent = live.length ? live[0].Lot_ID : LOTS[0].Lot_ID;
+  document.getElementById('ex2').textContent = LOTS[LOTS.length-1].Lot_ID;
+  document.getElementById('ex3').textContent = LOTS[0].P_ID;
+  blank();
+})();
+
+function fill(el){ document.getElementById('code').value = el.textContent; scan(); }
+function demo(){
+  const l = LOTS[Math.floor(Math.random()*LOTS.length)];
+  document.getElementById('code').value = l.Lot_ID;
+  scan();
+}
+function blank(){
+  document.getElementById('out').innerHTML =
+    '<div class="blank"><i class="ti ti-barcode"></i>'
+  + 'LOT 번호나 품번을 입력하면 재고와 이력을 조회한다.<br>'
+  + '상단 예시를 클릭하거나 <b>임의 스캔</b> 버튼을 눌러보라.</div>';
+}
+
+function scan(){
+  const q = (document.getElementById('code').value||'').trim().toUpperCase();
+  if(!q){ blank(); return; }
+
+  const lot = LOTS.filter(function(l){return l.Lot_ID.toUpperCase()===q;})[0];
+  const byPid = LOTS.filter(function(l){return l.P_ID.toUpperCase()===q;});
+
+  if(lot)       { showLot(lot);  push(lot.Lot_ID, lot.P_N, 'LOT'); }
+  else if(byPid.length) { showPid(byPid); push(byPid[0].P_ID, byPid[0].P_N, '품번'); }
+  else {
+    document.getElementById('out').innerHTML =
+      '<div class="sec"><div class="err"><i class="ti ti-alert-circle"></i> '
+    + '<b>' + esc(q) + '</b> 에 해당하는 LOT 이나 품번이 없다.</div>'
+    + '<div class="note">LOT 은 <code>LOT+날짜+순번</code>, 품번은 <code>9자리</code> 형식이다.</div></div>';
+  }
+  document.getElementById('code').select();
+}
+
+function push(code, name, kind){
+  hist.unshift({code:code, name:name, kind:kind, at:new Date().toLocaleTimeString('ko-KR')});
+  if(hist.length>20) hist.pop();
+  document.getElementById('hc').textContent = hist.length + '건';
+  document.getElementById('hist').innerHTML = hist.map(function(h,i){
+    return '<div class="hi" onclick="fillCode(\'' + h.code + '\')">'
+      + '<div class="hi-c">' + h.code + ' <span class="bg bmu">' + h.kind + '</span></div>'
+      + '<div class="hi-n">' + esc(h.name||'') + '</div>'
+      + '<div class="hi-t">' + h.at + '</div></div>';
+  }).join('');
+}
+function fillCode(c){ document.getElementById('code').value=c; scan(); }
+
+function showLot(l){
+  const used = l.P_Qty - l.remain;
+  const pct = l.P_Qty ? used/l.P_Qty*100 : 0;
+  const live = l.remain > 0;
+  document.getElementById('out').innerHTML =
+    '<div class="sec">'
+  +   '<div class="big"><div class="big-c">' + l.Lot_ID + '</div>'
+  +     '<div class="big-n">' + esc(l.P_N)
+  +       (l.grade ? ' <span class="gr gr'+l.grade+'">'+l.grade+'</span>' : '') + '</div>'
+  +     '<div class="big-s">' + l.P_ID + ' · ' + esc(l.Spec||'') + '</div>'
+  +     '<div style="margin-top:7px">' + (live
+        ? '<span class="bg bok">보유중 ' + nf(l.remain) + '개</span>'
+        : '<span class="bg bmu">소진완료</span>') + '</div></div>'
+  +   '<div class="gauge"><div class="gf" style="width:' + pct + '%"></div>'
+  +     '<div class="gt">' + nf(used) + ' / ' + nf(l.P_Qty) + ' 소진</div></div>'
+  +   '<div class="gs"><span>입고 ' + nf(l.P_Qty) + '</span><span>잔여 ' + nf(l.remain) + '</span></div>'
+  + '</div>'
+  + '<div class="sec"><div class="sech"><i class="ti ti-info-circle"></i>'
+  +   '<span class="sech-t">LOT 정보</span></div>'
+  +   '<div class="ir"><span class="ik">입고일</span><span class="iv">' + l.Lot_Date + '</span></div>'
+  +   '<div class="ir"><span class="ik">보관 위치</span><span class="iv">' + esc(l.loc_name||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">공급사</span><span class="iv">' + esc(l.supplier||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">발주번호</span><span class="iv">' + (l.H_ID||'-') + '</span></div>'
+  + '</div>'
+  + '<div class="note">현장에서 LOT 라벨을 스캔하면 이 정보가 바로 뜬다. '
+  +   '보관 위치와 잔여 수량을 즉시 확인해 피킹·재고실사에 쓴다.</div>';
+}
+
+function showPid(ls){
+  const stock = ls.reduce(function(a,l){return a+l.remain;},0);
+  const live  = ls.filter(function(l){return l.remain>0;});
+  const f = ls[0];
+  document.getElementById('out').innerHTML =
+    '<div class="sec">'
+  +   '<div class="big"><div class="big-c">' + f.P_ID + '</div>'
+  +     '<div class="big-n">' + esc(f.P_N)
+  +       (f.grade ? ' <span class="gr gr'+f.grade+'">'+f.grade+'</span>' : '') + '</div>'
+  +     '<div class="big-s">' + esc(f.Spec||'') + ' · ' + esc(f.supplier||'-') + '</div>'
+  +     '<div style="margin-top:7px"><span class="bg ' + (stock>0?'bok':'bdn') + '">'
+  +       '재고 ' + nf(stock) + '개</span> <span class="bg bmu">LOT ' + ls.length + '건</span></div></div>'
+  + '</div>'
+  + '<div class="sec"><div class="sech"><i class="ti ti-stack-2"></i>'
+  +   '<span class="sech-t">보유 LOT (FIFO 순)</span>'
+  +   '<span style="font-size:10px;color:var(--txt3)">잔여 ' + live.length + ' / 전체 ' + ls.length + '</span></div>'
+  +   (live.length
+      ? live.slice().sort(function(a,b){return a.Lot_Date<b.Lot_Date?-1:1;}).slice(0,8).map(function(l){
+          return '<div class="ir"><span class="ik">' + l.Lot_ID + '<br>'
+               + l.Lot_Date + ' · ' + esc(l.loc_name||'-') + '</span>'
+               + '<span class="iv">' + nf(l.remain) + '개</span></div>';
+        }).join('')
+      : '<div class="note">잔여 LOT 이 없다. 전량 소진됐다.</div>')
+  + '</div>'
+  + '<div class="note">품번으로 조회하면 그 자재의 보유 LOT 이 입고순으로 나온다. '
+  +   '불출 시 맨 위 LOT 부터 꺼내는 것이 선입선출(FIFO)이다.</div>';
+}
+</script>
 </body>
 </html>

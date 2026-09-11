@@ -2,34 +2,205 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>불출 처리</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.left{width:320px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.lh{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500}
+.srch{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s0)}
+.srch input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;flex:1;color:var(--txt)}
+.llist{flex:1;overflow-y:auto}
+.it{padding:8px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.it:hover{background:var(--s2)}
+.it.on{background:var(--bg-ac);border-left:3px solid var(--acc);padding-left:9px}
+.it-h{display:flex;align-items:center;gap:5px}
+.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.it-n{font-size:11px;margin-top:2px}
+.it-s{font-size:10px;color:var(--txt3);margin-top:1px}
+.right{flex:1;overflow-y:auto;padding:14px;min-width:0}
+.qtybar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--s1);border:0.5px solid var(--border);border-radius:8px;margin-bottom:14px;flex-wrap:wrap}
+.qtybar label{font-size:11px;font-weight:500}
+input[type=range]{accent-color:var(--acc);width:220px;height:18px}
+.qv{font-size:17px;font-weight:700;color:var(--acc);min-width:64px;text-align:right}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:19px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:3px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}.c-v.wn{color:var(--wn)}
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.sech-m{font-size:10px;color:var(--txt3)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.use{background:var(--bg-ac)}
+.num{text-align:right}
+.lotid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.fifo{width:17px;height:17px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;background:var(--s2);color:var(--txt3)}
+.fifo.on{background:var(--ok);color:#fff}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
+.alert{padding:9px 12px;border-radius:8px;font-size:11px;line-height:1.7;margin-bottom:14px;border:0.5px solid}
+.a-ok{background:var(--bg-ok);border-color:rgba(29,158,117,.3);color:#1D6E52}
+.a-wn{background:var(--bg-wn);border-color:rgba(239,159,39,.3);color:#854F0B}
+.a-dn{background:var(--bg-dn);border-color:rgba(224,75,74,.3);color:#9B1C1C}
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .main{flex-direction:column}
+  .left{width:100%;max-height:34%;border-right:none;border-bottom:0.5px solid var(--border-s)}
+  input[type=range]{width:150px}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-arrow-bar-up"></i></div>
-    <div class="title">불출 처리</div>
-    <div class="sub">수량 입력 시 FIFO 기준으로 LOT를 자동 차감하는 미리보기를 제공합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-stack"></i></div><div class="feat-t">FIFO 자동 적용</div><div class="feat-s">LOT 순서 자동 계산</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-sliders"></i></div><div class="feat-t">수량 슬라이더</div><div class="feat-s">실시간 LOT 차감 시뮬</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-check"></i></div><div class="feat-t">가용 재고 확인</div><div class="feat-s">부족 시 경고</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-history"></i></div><div class="feat-t">불출 이력</div><div class="feat-s">T_Type = 불출 기록</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-arrow-bar-up" style="color:var(--wn)"></i>불출 처리
+      <span class="tag">실제 DB · FIFO 자동 지정 · 잔여 LOT 기준</span></div>
+  </div>
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>이 앱은 조회 전용이다.</b> 실제 불출 등록 대신, 자재와 수량을 고르면
+    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산해 보여준다.
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="lh"><i class="ti ti-package"></i>불출 가능 자재
+        <span id="cnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
+      <div class="srch"><i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+        <input id="q" placeholder="품번 · 품명" oninput="drawList()"></div>
+      <div class="llist" id="list"></div>
+    </div>
+    <div class="right" id="right"></div>
   </div>
 </div>
+<script>
+const ITEMS = {{ disburse|tojson }};
+const LOTS  = {{ scan_lots|tojson }};
+let sel = ITEMS.length ? ITEMS[0].P_ID : null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// 자재별 잔여 LOT (FIFO 순)
+const byPid = {};
+LOTS.forEach(function(l){
+  if(l.remain > 0) (byPid[l.P_ID] = byPid[l.P_ID] || []).push(l);
+});
+Object.keys(byPid).forEach(function(k){
+  byPid[k].sort(function(a,b){ return a.Lot_Date < b.Lot_Date ? -1 : 1; });
+});
+
+function drawList(){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  const r=ITEMS.filter(function(x){
+    if(!q) return true;
+    return (x.P_ID+' '+(x.P_N||'')+' '+(x.Spec||'')).toLowerCase().indexOf(q)>=0;
+  });
+  document.getElementById('cnt').textContent = r.length + '종';
+  document.getElementById('list').innerHTML = r.map(function(x){
+    return '<div class="it ' + (sel===x.P_ID?'on':'') + '" onclick="pick(\'' + x.P_ID + '\')">'
+      + '<div class="it-h"><span class="pid">' + x.P_ID + '</span>'
+      +   (x.grade ? '<span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '') + '</div>'
+      + '<div class="it-n">' + esc(x.P_N) + '</div>'
+      + '<div class="it-s">재고 ' + nf(x.stock) + ' · LOT ' + x.lot_n + '개 · ' + esc(x.loc_name||'-') + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function pick(pid){ sel=pid; drawList(); draw(true); }
+
+function draw(resetQty){
+  const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
+  if(!it) return;
+  const lots = byPid[sel] || [];
+  const r = document.getElementById('right');
+
+  if(resetQty){
+    r.innerHTML = '<div class="qtybar"><label>불출 수량</label>'
+      + '<input type="range" id="qty" min="0" max="' + it.stock + '" value="'
+      + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="draw(false)">'
+      + '<span class="qv" id="qv">0</span><span style="font-size:11px;color:var(--txt3)">개</span>'
+      + '<span style="font-size:10px;color:var(--txt3);margin-left:auto">보유 ' + nf(it.stock)
+      + '개 · LOT ' + lots.length + '개</span></div><div id="out"></div>';
+  }
+  const qty = +document.getElementById('qty').value;
+  document.getElementById('qv').textContent = nf(qty);
+
+  // FIFO 배분
+  let left = qty; const alloc = [];
+  for(let i=0;i<lots.length && left>0;i++){
+    const take = Math.min(left, lots[i].remain);
+    alloc.push({l:lots[i], take:take, idx:alloc.length+1});
+    left -= take;
+  }
+  const after = it.stock - (qty - left);
+  const belowSafe = it.safe_qty && after < it.safe_qty;
+
+  let msg, cls;
+  if(qty<=0){ cls='a-wn'; msg='불출 수량을 지정하라.'; }
+  else if(left>0){ cls='a-dn'; msg='재고가 <b>' + nf(left) + '개 부족</b>하다. 보유 ' + nf(it.stock) + '개 전량을 꺼내도 모자란다.'; }
+  else if(belowSafe){ cls='a-wn'; msg='불출 후 재고 <b>' + nf(after) + '개</b>로 안전재고 ' + nf(it.safe_qty) + '개 <b>아래</b>가 된다. 발주를 검토하라.'; }
+  else { cls='a-ok'; msg='LOT ' + alloc.length + '개에서 불출 가능하다. 불출 후 재고 ' + nf(after) + '개로 안전재고를 유지한다.'; }
+
+  document.getElementById('out').innerHTML =
+    '<div class="alert ' + cls + '"><i class="ti ti-info-circle"></i> ' + msg + '</div>'
+  + '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>현재고</div>'
+  +     '<div class="c-v">' + nf(it.stock) + '<small>개</small></div>'
+  +     '<div class="c-s">LOT ' + lots.length + '개</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-up"></i>불출</div>'
+  +     '<div class="c-v wn">' + nf(qty-left) + '<small>개</small></div>'
+  +     '<div class="c-s">LOT ' + alloc.length + '개에서</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-box"></i>불출 후 재고</div>'
+  +     '<div class="c-v ' + (belowSafe?'dn':'ok') + '">' + nf(after) + '<small>개</small></div>'
+  +     '<div class="c-s">안전재고 ' + nf(it.safe_qty) + '개</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>부족</div>'
+  +     '<div class="c-v ' + (left?'dn':'ok') + '">' + nf(left) + '<small>개</small></div>'
+  +     '<div class="c-s">' + (left ? '재고 모자람' : '전량 가능') + '</div></div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-arrows-sort"></i>'
+  +   '<span class="sech-t">FIFO 불출 지시</span>'
+  +   '<span class="sech-m">입고가 오래된 LOT부터 꺼낸다</span></div>'
+  +   '<table><thead><tr><th style="width:30px">순</th><th>LOT</th><th>입고일</th><th>창고</th>'
+  +     '<th class="num">잔여</th><th class="num">불출</th><th class="num">남음</th></tr></thead><tbody>'
+  +   lots.map(function(l){
+        const a = alloc.filter(function(x){return x.l.Lot_ID===l.Lot_ID;})[0];
+        return '<tr class="' + (a?'use':'') + '">'
+          + '<td><span class="fifo ' + (a?'on':'') + '">' + (a ? a.idx : '·') + '</span></td>'
+          + '<td><span class="lotid">' + l.Lot_ID + '</span></td>'
+          + '<td>' + l.Lot_Date + '</td>'
+          + '<td>' + esc(l.loc_name||'-') + '</td>'
+          + '<td class="num">' + nf(l.remain) + '</td>'
+          + '<td class="num">' + (a ? '<b style="color:var(--acc)">' + nf(a.take) + '</b>' : '-') + '</td>'
+          + '<td class="num">' + nf(l.remain - (a?a.take:0)) + '</td></tr>';
+      }).join('')
+  +   '</tbody></table>'
+  +   '<div class="note">선입선출(FIFO) — 오래된 LOT을 먼저 소진해 재고 노후화를 막는다. '
+  +     '한 LOT으로 부족하면 다음 LOT에서 이어 꺼낸다.</div>'
+  + '</div>';
+}
+
+drawList();
+if(sel) pick(sel);
+</script>
 </body>
 </html>

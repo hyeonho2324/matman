@@ -2,34 +2,172 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>불출 요청 · 승인 워크플로우</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>불출 승인</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.dn{color:var(--dn)}.kv.wn{color:var(--wn)}.kv.ok{color:var(--ok)}
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+.cnt{font-size:11px;color:var(--txt3)}
+.listwrap{flex:1;overflow:auto;min-height:0;padding:12px 14px}
+.row{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;margin-bottom:9px;overflow:hidden}
+.rh{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:0.5px solid var(--border)}
+.tid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.rt{flex:1;min-width:0}
+.rt-n{font-size:12px;font-weight:500}
+.rt-s{font-size:10px;color:var(--txt3);margin-top:1px}
+.amt{font-size:14px;font-weight:600;text-align:right;white-space:nowrap}
+.amt small{display:block;font-size:10px;font-weight:400;color:var(--txt3)}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}.bok{background:var(--bg-ok);color:#1D6E52}
+/* 결재선 */
+.line{display:flex;align-items:center;padding:9px 12px;background:var(--s1);gap:0}
+.st{flex:1;display:flex;align-items:center;gap:7px;min-width:0}
+.sd{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;flex-shrink:0}
+.sd.ok{background:var(--ok)}
+.sd.wait{background:var(--s2);color:var(--txt3);border:1px dashed var(--border-s)}
+.sl{font-size:10px;line-height:1.4;min-width:0}
+.sl b{display:block;font-size:11px}
+.sl span{color:var(--txt3)}
+.sarw{color:var(--border-s);margin:0 6px;font-size:13px}
+.need{padding:7px 12px;font-size:10px;color:var(--txt3);line-height:1.6;border-top:0.5px solid var(--border)}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .kpi:nth-child(n+3){border-top:0.5px solid var(--border)}
+  .line{flex-direction:column;align-items:stretch;gap:6px}
+  .sarw{display:none}
+  .hide-sm{display:none}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-check"></i></div>
-    <div class="title">불출 요청 · 승인 워크플로우</div>
-    <div class="sub">3단계 결재선(불출담당→자재관리자→팀장)을 통한 불출 요청 처리 시스템입니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-list"></i></div><div class="feat-t">요청 목록</div><div class="feat-s">전체/대기/승인/반려 필터</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-users"></i></div><div class="feat-t">3단계 결재선</div><div class="feat-s">시각적 승인 플로우</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-stack"></i></div><div class="feat-t">FIFO 미리보기</div><div class="feat-s">승인 전 LOT 차감 확인</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-x"></i></div><div class="feat-t">반려 처리</div><div class="feat-s">사유 입력 및 이력 기록</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-check" style="color:var(--ok)"></i>불출 승인
+      <span class="tag">실제 DB · 불출 이력 기준 결재선</span></div>
   </div>
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>원본 데이터에 승인 이력 테이블이 없다.</b> 그래서 실제 불출 건에 대해
+    <b>금액·등급 기준으로 어떤 결재선이 필요한지</b>를 판정해 보여준다. 승인 버튼은 쓰기 기능이 필요해 동작하지 않는다.
+  </div>
+  <div class="kpi-row" id="kpis"></div>
+  <div class="filter-bar">
+    <button class="pill on" data-f="all"  onclick="setF('all')">전체</button>
+    <button class="pill" data-f="3" onclick="setF('3')">3단계 결재</button>
+    <button class="pill" data-f="2" onclick="setF('2')">2단계</button>
+    <button class="pill" data-f="A" onclick="setF('A')">A등급 자재</button>
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div class="listwrap" id="list"></div>
 </div>
+<script>
+const ROWS = {{ approvals|tojson }};
+let filter='all';
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 결재선 판정 — 금액과 자재 등급으로 필요한 단계를 정한다
+function chain(r){
+  const a = r.amount || 0;
+  if(a >= 50000000 || r.grade === 'A')
+    return {n:3, why: (a>=50000000 ? '5천만원 이상' : 'A등급 자재'),
+            steps:['담당자','팀장','부서장']};
+  if(a >= 10000000)
+    return {n:2, why:'1천만원 이상', steps:['담당자','팀장']};
+  return {n:1, why:'1천만원 미만', steps:['담당자']};
+}
+
+function view(){
+  return ROWS.filter(function(r){
+    const c = chain(r);
+    if(filter==='3' && c.n!==3) return false;
+    if(filter==='2' && c.n!==2) return false;
+    if(filter==='A' && r.grade!=='A') return false;
+    return true;
+  });
+}
+
+function render(){
+  const all = ROWS.map(chain);
+  const n3 = all.filter(function(c){return c.n===3;}).length;
+  const n2 = all.filter(function(c){return c.n===2;}).length;
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="kl"><i class="ti ti-file-text"></i>불출 건</div>'
+  +   '<div class="kv">' + ROWS.length + '<span style="font-size:11px;color:var(--txt3)">건</span></div>'
+  +   '<div class="ks">금액 상위 기준</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-3"></i>3단계 결재</div>'
+  +   '<div class="kv dn">' + n3 + '<span style="font-size:11px">건</span></div>'
+  +   '<div class="ks">5천만원↑ 또는 A등급</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>2단계 결재</div>'
+  +   '<div class="kv wn">' + n2 + '<span style="font-size:11px">건</span></div>'
+  +   '<div class="ks">1천만원 이상</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-coin"></i>총 불출 금액</div>'
+  +   '<div class="kv">' + won(ROWS.reduce(function(a,r){return a+(r.amount||0);},0))
+  +     '<span style="font-size:11px;color:var(--txt3)">원</span></div>'
+  +   '<div class="ks">상위 ' + ROWS.length + '건 합계</div></div>';
+
+  const r = view();
+  document.getElementById('cnt').textContent = r.length + '건';
+  const el = document.getElementById('list');
+  if(!r.length){ el.innerHTML='<div class="empty">조건에 맞는 건이 없습니다.</div>'; return; }
+
+  el.innerHTML = r.map(function(x){
+    const c = chain(x);
+    const steps = c.steps.map(function(s,i){
+      const done = (i===0);      // 실제 데이터로 확인 가능한 건 담당자 처리뿐이다
+      return (i? '<span class="sarw">→</span>' : '')
+        + '<div class="st"><div class="sd ' + (done?'ok':'wait') + '">'
+        + (done ? '<i class="ti ti-check"></i>' : (i+1)) + '</div>'
+        + '<div class="sl"><b>' + s + '</b>'
+        + (done ? '<span>' + esc(x.worker||'-') + ' ' + esc(x.pos||'') + ' · ' + x.T_Date + '</span>'
+                : '<span>데이터 없음</span>') + '</div></div>';
+    }).join('');
+    return '<div class="row">'
+      + '<div class="rh"><span class="tid">' + x.T_ID + '</span>'
+      +   '<div class="rt"><div class="rt-n">' + esc(x.P_N)
+      +     (x.grade ? ' <span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '') + '</div>'
+      +     '<div class="rt-s">' + x.P_ID + ' · ' + esc(x.Spec||'') + ' · '
+      +       esc(x.loc_name||'-') + ' · LOT ' + x.Lot_ID + '</div></div>'
+      +   '<span class="bg ' + (c.n===3?'bdn':(c.n===2?'bwn':'bmu')) + '">' + c.n + '단계</span>'
+      +   '<div class="amt">' + won(x.amount) + '원<small>' + nf(x.T_Num) + '개</small></div></div>'
+      + '<div class="line">' + steps + '</div>'
+      + '<div class="need">결재 단계 판정 근거: <b>' + c.why + '</b>. '
+      +   '담당자 처리는 <code>Transaction_tb.EP_ID</code> 로 확인되지만, '
+      +   '상위 결재 이력은 원본 데이터에 없다.</div>'
+      + '</div>';
+  }).join('');
+}
+
+function setF(f){
+  filter=f;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+render();
+</script>
 </body>
 </html>

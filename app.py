@@ -421,6 +421,19 @@ def _ctx_picking():
         conn.close()
 
 
+_WB_CACHE = {}
+
+
+def _ctx_workbench():
+    """입고/불출/승인/스캐너 공용 참조 데이터.
+    네 화면이 같은 조회를 하므로 한 번만 읽어 재사용한다."""
+    conn = db.connect()
+    try:
+        return db.workbench(conn)
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -440,6 +453,11 @@ EMBED_CONTEXT = {
     "wizard":       _ctx_wizard,
     "simulator":    _ctx_simulator,
     "picking":      _ctx_picking,
+    # 입출고 작업 화면 4종은 같은 참조 데이터를 공유한다
+    "inbound":      _ctx_workbench,
+    "disburse":     _ctx_workbench,
+    "approval":     _ctx_workbench,
+    "scanner":      _ctx_workbench,
 }
 
 

@@ -2,34 +2,174 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>입고 처리</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.left{width:330px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.lh{padding:9px 12px;border-bottom:0.5px solid var(--border);font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px}
+.llist{flex:1;overflow-y:auto}
+.po{padding:9px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.po:hover{background:var(--s2)}
+.po.on{background:var(--bg-ac);border-left:3px solid var(--acc);padding-left:9px}
+.po-h{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.hid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.po-s{font-size:10px;color:var(--txt3);line-height:1.5}
+.right{flex:1;overflow-y:auto;padding:14px;min-width:0}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:19px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:3px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.sech-m{font-size:10px;color:var(--txt3)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.num{text-align:right}
+.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc)}
+.lotid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}
+.fx{padding:9px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.8;color:var(--txt2);background:var(--s1);border-bottom:0.5px solid var(--border);white-space:pre-wrap}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
+.flow{display:flex;align-items:center;padding:10px 12px;background:var(--s1);border-bottom:0.5px solid var(--border)}
+.fs{flex:1;text-align:center}
+.fd{width:22px;height:22px;border-radius:50%;margin:0 auto 4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;background:var(--ok)}
+.fl{font-size:9px;color:var(--txt3);line-height:1.4}
+.fl b{display:block;color:var(--txt);font-size:10px}
+.fline{height:1.5px;background:var(--ok);flex:0 0 20px;margin-bottom:20px}
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .main{flex-direction:column}
+  .left{width:100%;max-height:34%;border-right:none;border-bottom:0.5px solid var(--border-s)}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-arrow-bar-to-down"></i></div>
-    <div class="title">입고 처리</div>
-    <div class="sub">발주 건별 입고 처리, LOT 생성 미리보기, 검수 체크리스트를 제공합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-box"></i></div><div class="feat-t">LOT 생성 미리보기</div><div class="feat-s">입고 전 확인</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-checklist"></i></div><div class="feat-t">검수 체크리스트</div><div class="feat-s">품질 확인 항목</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-chart-bar"></i></div><div class="feat-t">재고 변동 예측</div><div class="feat-s">입고 후 수량</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-printer"></i></div><div class="feat-t">LOT 라벨</div><div class="feat-s">QR 라벨 즉시 출력</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-arrow-bar-to-down" style="color:var(--acc)"></i>입고 처리
+      <span class="tag">실제 DB · 발주 → 입고 · LOT 생성 규칙</span></div>
+  </div>
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>이 앱은 조회 전용이다.</b> 실제 입고 등록은 쓰기 기능이 필요하므로, 여기서는
+    <b>이미 처리된 발주가 어떻게 입고·LOT 생성으로 이어졌는지</b>를 보여준다.
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="lh"><i class="ti ti-file-text"></i>최근 발주 <span id="cnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
+      <div class="llist" id="list"></div>
+    </div>
+    <div class="right" id="right"></div>
   </div>
 </div>
+<script>
+const PO   = {{ recent_po|tojson }};
+const DET  = {{ po_detail|tojson }};
+let sel = PO.length ? PO[0].H_ID : null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+function drawList(){
+  document.getElementById('cnt').textContent = PO.length + '건';
+  document.getElementById('list').innerHTML = PO.map(function(o){
+    return '<div class="po ' + (sel===o.H_ID?'on':'') + '" onclick="pick(\'' + o.H_ID + '\')">'
+      + '<div class="po-h"><span class="hid">' + o.H_ID + '</span>'
+      +   (o.is_foreign==='Y' ? '<span class="bg bac">해외</span>' : '') + '</div>'
+      + '<div class="po-s">' + esc(o.supplier||'-') + ' · ' + o.lines + '품목 · ' + won(o.amount) + '원<br>'
+      +   '발주 ' + o.P_Date + (o.recv_date ? ' → 입고 ' + o.recv_date + ' (' + o.lead_days + '일)' : ' · 미입고') + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function pick(hid){
+  sel = hid; drawList();
+  const o = PO.filter(function(x){return x.H_ID===hid;})[0];
+  const ds = DET[hid] || [];
+  const ok = ds.filter(function(d){return d.in_qty===d.ord_qty;}).length;
+  const short = ds.filter(function(d){return d.in_qty!=null && d.in_qty<d.ord_qty;});
+
+  document.getElementById('right').innerHTML =
+    '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-list"></i>발주 품목</div>'
+  +     '<div class="c-v">' + ds.length + '<small>종</small></div>'
+  +     '<div class="c-s">' + nf(o.qty) + '개 · ' + won(o.amount) + '원</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-check"></i>수량 일치</div>'
+  +     '<div class="c-v ok">' + ok + '<small>/' + ds.length + '</small></div>'
+  +     '<div class="c-s">발주 = 입고</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>부족 입고</div>'
+  +     '<div class="c-v ' + (short.length?'dn':'') + '">' + short.length + '<small>종</small></div>'
+  +     '<div class="c-s">' + (short.length ? '포장단위 배수' : '없음') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-clock"></i>리드타임</div>'
+  +     '<div class="c-v">' + (o.lead_days!=null ? o.lead_days : '-') + '<small>일</small></div>'
+  +     '<div class="c-s">' + o.P_Date + ' → ' + (o.recv_date||'-') + '</div></div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-route"></i>'
+  +   '<span class="sech-t">입고 처리 흐름</span><span class="sech-m">' + esc(o.supplier||'-') + '</span></div>'
+  +   '<div class="flow">'
+  +     '<div class="fs"><div class="fd"><i class="ti ti-file-text"></i></div>'
+  +       '<div class="fl"><b>발주 등록</b>' + o.P_Date + '</div></div>'
+  +     '<div class="fline"></div>'
+  +     '<div class="fs"><div class="fd"><i class="ti ti-truck"></i></div>'
+  +       '<div class="fl"><b>' + (o.lead_days!=null?o.lead_days+'일':'-') + '</b>리드타임</div></div>'
+  +     '<div class="fline"></div>'
+  +     '<div class="fs"><div class="fd"><i class="ti ti-package"></i></div>'
+  +       '<div class="fl"><b>검수 · 수량확인</b>' + ds.length + '품목</div></div>'
+  +     '<div class="fline"></div>'
+  +     '<div class="fs"><div class="fd"><i class="ti ti-box"></i></div>'
+  +       '<div class="fl"><b>LOT 생성</b>' + (o.recv_date||'-') + '</div></div>'
+  +   '</div>'
+  +   '<div class="fx">LOT 번호 규칙\n  LOT + 입고일(YYYYMMDD) + 당일순번(4자리)\n'
+  +   '  예: ' + (ds.find(function(d){return d.Lot_ID;}) || {Lot_ID:'LOT202507030001'}).Lot_ID + '\n\n'
+  +   '발주번호 규칙\n  PO + 발주일(YYYYMMDD) + 당일순번(4자리)\n  예: ' + o.H_ID + '</div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-git-compare"></i>'
+  +   '<span class="sech-t">품목별 발주 → 입고</span>'
+  +   '<span class="sech-m">생성된 LOT 포함</span></div>'
+  +   '<table><thead><tr><th>자재</th><th>품명</th><th class="num">발주</th><th class="num">입고</th>'
+  +     '<th class="num">차이</th><th>생성 LOT</th><th>보관</th></tr></thead><tbody>'
+  +   ds.map(function(d){
+        const gap = d.in_qty==null ? null : d.in_qty - d.ord_qty;
+        return '<tr><td><span class="pid">' + d.P_ID + '</span></td>'
+          + '<td>' + esc((d.P_N||'').slice(0,12)) + '</td>'
+          + '<td class="num">' + nf(d.ord_qty) + '</td>'
+          + '<td class="num">' + (d.in_qty==null ? '-' : nf(d.in_qty)) + '</td>'
+          + '<td class="num">' + (gap ? '<span class="bg bdn">' + nf(gap) + '</span>'
+              + (d.PkgUnit ? '<div style="font-size:9px;color:var(--txt3)">포장 ' + d.PkgUnit + '×' + Math.abs(gap/d.PkgUnit) + '</div>' : '')
+              : (gap===0 ? '<span class="bg bok">일치</span>' : '-')) + '</td>'
+          + '<td><span class="lotid">' + (d.Lot_ID||'-') + '</span></td>'
+          + '<td>' + esc(d.loc_name||'-') + '</td></tr>';
+      }).join('')
+  +   '</tbody></table>'
+  +   (short.length
+      ? '<div class="note">⚠️ 부족 입고 ' + short.length + '건. 부족분이 모두 <b>포장단위의 배수</b>다 — '
+        + '상자 단위로 출하되므로 낱개 부족은 생기지 않는다.</div>'
+      : '<div class="note">발주 수량과 입고 수량이 전량 일치한다.</div>')
+  + '</div>';
+}
+
+drawList();
+if(sel) pick(sel);
+</script>
 </body>
 </html>
