@@ -1653,3 +1653,122 @@ def user_summary(rows, conn=None):
         "max_total": max((r["total"] for r in rows), default=1),
         "avg_total": round(sum(r["total"] for r in rows) / len(rows), 1) if rows else 0,
     }
+
+
+# ── 월간 리포트 화면 ─────────────────────────────────────────
+def monthly_report(conn):
+    """월별 입출고·발주·생산·재고 종합 집계. 월 선택형 리포트."""
+    months = [r["ym"] for r in _rows(conn, """
+        SELECT DISTINCT substr(T_Date,1,7) AS ym FROM Transaction_tb ORDER BY ym
+    """)]
+
+    def by_month(sql):
+        return {r["ym"]: r for r in _rows(conn, sql)}
+
+    tx = by_month("""
+        SELECT substr(t.T_Date,1,7) AS ym,
+               SUM(CASE WHEN t.T_Type='입고' THEN 1 ELSE 0 END) AS in_cnt,
+               SUM(CASE WHEN t.T_Type='불출' THEN 1 ELSE 0 END) AS out_cnt,
+               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num ELSE 0 END) AS in_qty,
+               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num ELSE 0 END) AS out_qty,
+               SUM(CASE WHEN t.T_Type='입고' THEN t.T_Num*p.P_Price ELSE 0 END) AS in_amt,
+               SUM(CASE WHEN t.T_Type='불출' THEN t.T_Num*p.P_Price ELSE 0 END) AS out_amt,
+               COUNT(DISTINCT l.P_ID) AS items,
+               COUNT(DISTINCT t.EP_ID) AS workers
+          FROM Transaction_tb t
+          JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+         GROUP BY ym
+    """)
+    po = by_month("""
+        SELECT substr(h.P_Date,1,7) AS ym,
+               COUNT(DISTINCT h.H_ID) AS cnt,
+               COUNT(*) AS lines,
+               SUM(d.P_Qty * p.P_Price) AS amt,
+               COUNT(DISTINCT h.BRN) AS suppliers
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p ON d.P_ID = p.P_ID
+         GROUP BY ym
+    """)
+    prod = by_month("""
+        SELECT substr(r.Prod_Date,1,7) AS ym,
+               COUNT(DISTINCT r.Work_Order) AS wo,
+               COUNT(DISTINCT r.FG_ID) AS fg,
+               SUM(r.Prod_Qty * p.P_Price) AS amt
+          FROM Production_tb r JOIN Product_tb p ON r.P_ID = p.P_ID
+         GROUP BY ym
+    """)
+    lot = by_month("""
+        SELECT substr(Lot_Date,1,7) AS ym, COUNT(*) AS cnt FROM Lot_tb GROUP BY ym
+    """)
+
+    out = []
+    for ym in months:
+        t, o, r, l = tx.get(ym, {}), po.get(ym, {}), prod.get(ym, {}), lot.get(ym, {})
+        out.append({
+            "ym": ym,
+            "in_cnt": t.get("in_cnt", 0), "out_cnt": t.get("out_cnt", 0),
+            "in_qty": t.get("in_qty", 0), "out_qty": t.get("out_qty", 0),
+            "in_amt": t.get("in_amt", 0) or 0, "out_amt": t.get("out_amt", 0) or 0,
+            "items": t.get("items", 0), "workers": t.get("workers", 0),
+            "po_cnt": o.get("cnt", 0), "po_lines": o.get("lines", 0),
+            "po_amt": o.get("amt", 0) or 0, "po_suppliers": o.get("suppliers", 0),
+            "wo_cnt": r.get("wo", 0), "fg_cnt": r.get("fg", 0),
+            "prod_amt": r.get("amt", 0) or 0,
+            "lot_cnt": l.get("cnt", 0),
+        })
+
+    # 월별 상위 품목 (불출 금액 기준)
+    top = {}
+    for r in _rows(conn, """
+        SELECT substr(t.T_Date,1,7) AS ym, l.P_ID, p.P_N, s.Sf_Lv AS grade,
+               SUM(t.T_Num) AS qty, SUM(t.T_Num * p.P_Price) AS amt
+          FROM Transaction_tb t
+          JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+         WHERE t.T_Type = '불출'
+         GROUP BY ym, l.P_ID, p.P_N, s.Sf_Lv
+         ORDER BY ym, amt DESC
+    """):
+        lst = top.setdefault(r["ym"], [])
+        if len(lst) < 6:
+            lst.append(r)
+
+    # 월별 협력사 상위 (발주 금액)
+    sup = {}
+    for r in _rows(conn, """
+        SELECT substr(h.P_Date,1,7) AS ym, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               COUNT(DISTINCT h.H_ID) AS cnt, SUM(d.P_Qty * p.P_Price) AS amt
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON h.BRN = c.BRN
+         GROUP BY ym, c.CP_N, c.Is_Foreign
+         ORDER BY ym, amt DESC
+    """):
+        lst = sup.setdefault(r["ym"], [])
+        if len(lst) < 5:
+            lst.append(r)
+
+    for m in out:
+        m["top_items"] = top.get(m["ym"], [])
+        m["top_suppliers"] = sup.get(m["ym"], [])
+    return out
+
+
+def report_summary(months):
+    return {
+        "months": len(months),
+        "date_from": months[0]["ym"] if months else "-",
+        "date_to": months[-1]["ym"] if months else "-",
+        "in_amt": sum(m["in_amt"] for m in months),
+        "out_amt": sum(m["out_amt"] for m in months),
+        "po_amt": sum(m["po_amt"] for m in months),
+        "po_cnt": sum(m["po_cnt"] for m in months),
+        "wo_cnt": sum(m["wo_cnt"] for m in months),
+        "max_in": max((m["in_qty"] for m in months), default=1),
+        "max_out": max((m["out_qty"] for m in months), default=1),
+        "max_amt": max((max(m["in_amt"], m["out_amt"], m["po_amt"]) for m in months), default=1),
+    }

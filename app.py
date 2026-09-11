@@ -385,6 +385,15 @@ def _ctx_users():
         conn.close()
 
 
+def _ctx_report():
+    conn = db.connect()
+    try:
+        months = db.monthly_report(conn)
+        return {"months": months, "summary": db.report_summary(months)}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -400,6 +409,7 @@ EMBED_CONTEXT = {
     "calendar":     _ctx_calendar,
     "risk_radar":   _ctx_risk_radar,
     "users":        _ctx_users,
+    "report":       _ctx_report,
 }
 
 

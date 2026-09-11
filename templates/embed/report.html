@@ -2,34 +2,255 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>월간 자재 현황 리포트</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>월간 리포트</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+/* 월 선택 탭 */
+.mtabs{display:flex;gap:0;padding:0 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;overflow-x:auto}
+.mt{padding:8px 14px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--txt2);white-space:nowrap;font-family:inherit;background:transparent;border-top:none;border-left:none;border-right:none}
+.mt:hover{background:var(--s2)}
+.mt.on{border-bottom-color:var(--acc);color:var(--acc);font-weight:600}
+.mt small{display:block;font-size:9px;color:var(--txt3);font-weight:400;margin-top:1px}
+.mt.on small{color:var(--acc);opacity:.75}
+
+.body{flex:1;overflow-y:auto;padding:14px}
+.rtitle{font-size:17px;font-weight:600;margin-bottom:2px}
+.rsub{font-size:11px;color:var(--txt3);margin-bottom:12px}
+
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:11px 13px}
+.c-l{font-size:10px;color:var(--txt3);display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.c-v{font-size:21px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:4px}
+.delta{display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:600;padding:1px 5px;border-radius:99px}
+.up{background:var(--bg-ok);color:#1D6E52}
+.down{background:var(--bg-dn);color:#9B1C1C}
+.flat{background:var(--s2);color:var(--txt3)}
+
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.sech-m{font-size:10px;color:var(--txt3)}
+.secb{padding:12px}
+
+svg{display:block;width:100%;height:120px}
+.leg{display:flex;gap:12px;font-size:10px;color:var(--txt3);margin-top:6px;justify-content:center}
+.leg span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.num{text-align:right}
+.rank{width:20px;height:20px;border-radius:50%;background:var(--s2);color:var(--txt3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+.rank.r1{background:var(--dn);color:#fff}.rank.r2{background:var(--wn);color:#fff}.rank.r3{background:var(--acc);color:#fff}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px;border-top:0.5px solid var(--border)}
+.empty{padding:24px;text-align:center;color:var(--txt3);font-size:11px}
+
+@media(max-width:900px){
+  .cards{grid-template-columns:repeat(2,1fr)}
+  .two{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-file-text"></i></div>
-    <div class="title">월간 자재 현황 리포트</div>
-    <div class="sub">월간 입고/불출/생산/재고/협력사 실적을 8개 섹션으로 정리한 보고서입니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-list"></i></div><div class="feat-t">8개 섹션 목차</div><div class="feat-s">클릭 스크롤 네비게이션</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-chart-bar"></i></div><div class="feat-t">입고 추이</div><div class="feat-s">6개월 바차트</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-building-store"></i></div><div class="feat-t">협력사 실적</div><div class="feat-s">납기 준수율 비교</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-file-type-pdf"></i></div><div class="feat-t">PDF 출력</div><div class="feat-s">팀장 보고용</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-file-text" style="color:var(--acc)"></i>월간 리포트
+      <span class="tag">실제 DB · {{ summary.date_from }} ~ {{ summary.date_to }} ({{ summary.months }}개월)</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
+
+  <div class="mtabs" id="mtabs"></div>
+
+  <div class="body" id="body"></div>
 </div>
+
+<script>
+const M   = {{ months|tojson }};
+const SUM = {{ summary|tojson }};
+
+let mi = 0;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 기본 선택 = 데이터가 가장 많은 달
+(function(){
+  let best=0, bi=0;
+  M.forEach(function(m,i){ const v=m.in_cnt+m.out_cnt; if(v>best){best=v;bi=i;} });
+  mi=bi;
+})();
+
+function delta(cur, prev){
+  if(prev===undefined || prev===null || prev===0) return '<span class="delta flat">기준</span>';
+  const d = (cur-prev)/prev*100;
+  if(Math.abs(d) < 1) return '<span class="delta flat">유지</span>';
+  const cls = d>0 ? 'up' : 'down';
+  const ar  = d>0 ? '▲' : '▼';
+  return '<span class="delta '+cls+'">'+ar+' '+Math.abs(d).toFixed(0)+'%</span>';
+}
+
+function drawTabs(){
+  document.getElementById('mtabs').innerHTML = M.map(function(m,i){
+    return '<button class="mt ' + (i===mi?'on':'') + '" onclick="sel(' + i + ')">'
+         + m.ym + '<small>' + (m.in_cnt+m.out_cnt) + '건</small></button>';
+  }).join('');
+}
+
+// 월별 추이 차트 (선택 월 강조)
+function trend(){
+  const W=1000,H=120,pad={t:12,b:18},n=M.length;
+  const gw=W/n, bw=Math.min(gw*0.3,30);
+  const mx=Math.max.apply(null,M.map(function(m){return Math.max(m.in_qty,m.out_qty);}))||1;
+  const mxA=SUM.max_amt||1;
+  const ph=H-pad.t-pad.b;
+  let g='', line='', dots='';
+  M.forEach(function(m,i){
+    const cx=gw*i+gw/2;
+    const cur = (i===mi);
+    [[m.in_qty,'#2a78d6',-1],[m.out_qty,'#EF9F27',1]].forEach(function(d){
+      const bh=d[0]/mx*ph;
+      const x=cx+(d[2]<0?-bw-1:1);
+      g+='<rect x="'+x.toFixed(1)+'" y="'+(pad.t+ph-bh).toFixed(1)+'" width="'+bw.toFixed(1)
+       + '" height="'+Math.max(bh,0.5).toFixed(1)+'" fill="'+d[1]+'" opacity="'+(cur?'.95':'.4')+'" rx="1">'
+       + '<title>'+m.ym+' '+(d[2]<0?'입고':'불출')+' '+nf(d[0])+'개</title></rect>';
+    });
+    const py=(pad.t+ph-(m.po_amt/mxA*ph)).toFixed(1);
+    line+=(i?' L':'M')+cx.toFixed(1)+' '+py;
+    dots+='<circle cx="'+cx.toFixed(1)+'" cy="'+py+'" r="'+(cur?3.4:2)+'" fill="#1D9E75" opacity="'+(cur?1:.55)+'"><title>'+m.ym+' 발주 '+won(m.po_amt)+'원</title></circle>';
+    g+='<text x="'+cx.toFixed(1)+'" y="'+(H-4)+'" font-size="9" fill="'+(cur?'#2a78d6':'#898781')
+     + '" text-anchor="middle" font-weight="'+(cur?'600':'400')+'">'+m.ym.slice(2)+'</text>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' + g
+       + '<path d="'+line+'" fill="none" stroke="#1D9E75" stroke-width="1.4" opacity=".7"/>' + dots
+       + '<line x1="0" y1="'+(pad.t+ph)+'" x2="'+W+'" y2="'+(pad.t+ph)+'" stroke="#D4D3CE" stroke-width="1"/></svg>'
+       + '<div class="leg"><span><i class="sw" style="background:#2a78d6"></i>입고 수량</span>'
+       + '<span><i class="sw" style="background:#EF9F27"></i>불출 수량</span>'
+       + '<span><i class="sw" style="background:#1D9E75"></i>발주 금액</span></div>';
+}
+
+function render(){
+  drawTabs();
+  const m = M[mi], p = mi>0 ? M[mi-1] : null;
+  const y=m.ym.slice(0,4), mo=+m.ym.slice(5,7);
+
+  const items = m.top_items.length
+    ? '<table><thead><tr><th style="width:34px"></th><th>자재</th><th>품명</th><th class="num">수량</th><th class="num">금액</th></tr></thead><tbody>'
+      + m.top_items.map(function(t,i){
+          return '<tr><td><span class="rank r' + (i+1) + '">' + (i+1) + '</span></td>'
+               + '<td style="font-family:ui-monospace,monospace;font-size:11px;color:var(--acc)">' + t.P_ID + '</td>'
+               + '<td>' + esc(t.P_N) + (t.grade?' <span class="gr gr'+t.grade+'">'+t.grade+'</span>':'') + '</td>'
+               + '<td class="num">' + nf(t.qty) + '</td>'
+               + '<td class="num">' + won(t.amt) + '원</td></tr>';
+        }).join('') + '</tbody></table>'
+    : '<div class="empty">이 달에는 불출 실적이 없습니다.</div>';
+
+  const sups = m.top_suppliers.length
+    ? '<table><thead><tr><th style="width:34px"></th><th>협력사</th><th class="num">발주</th><th class="num">금액</th></tr></thead><tbody>'
+      + m.top_suppliers.map(function(s,i){
+          return '<tr><td><span class="rank r' + (i+1) + '">' + (i+1) + '</span></td>'
+               + '<td>' + esc(s.supplier||'-') + (s.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</td>'
+               + '<td class="num">' + s.cnt + '건</td>'
+               + '<td class="num">' + won(s.amt) + '원</td></tr>';
+        }).join('') + '</tbody></table>'
+    : '<div class="empty">이 달에는 발주가 없습니다.</div>';
+
+  document.getElementById('body').innerHTML =
+    '<div class="rtitle">' + y + '년 ' + mo + '월 자재관리 리포트</div>'
+  + '<div class="rsub">입출고 · 발주 · 생산 종합' + (p ? ' · 증감은 ' + p.ym + ' 대비' : ' · 첫 달이라 비교 기준 없음') + '</div>'
+
+  + '<div class="cards">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-to-down"></i>입고</div>'
+  +     '<div class="c-v">' + won(m.in_amt) + '<small>원</small></div>'
+  +     '<div class="c-s">' + m.in_cnt + '건 · ' + nf(m.in_qty) + '개 ' + delta(m.in_amt, p&&p.in_amt) + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-arrow-bar-up"></i>불출</div>'
+  +     '<div class="c-v">' + won(m.out_amt) + '<small>원</small></div>'
+  +     '<div class="c-s">' + m.out_cnt + '건 · ' + nf(m.out_qty) + '개 ' + delta(m.out_amt, p&&p.out_amt) + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-truck-delivery"></i>발주</div>'
+  +     '<div class="c-v">' + won(m.po_amt) + '<small>원</small></div>'
+  +     '<div class="c-s">' + m.po_cnt + '건 · 협력사 ' + m.po_suppliers + ' ' + delta(m.po_amt, p&&p.po_amt) + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-tool"></i>생산</div>'
+  +     '<div class="c-v">' + m.wo_cnt + '<small>건</small></div>'
+  +     '<div class="c-s">완제품 ' + m.fg_cnt + '종 · 자재비 ' + won(m.prod_amt) + '원 ' + delta(m.wo_cnt, p&&p.wo_cnt) + '</div></div>'
+  + '</div>'
+
+  + '<div class="sec">'
+  +   '<div class="sech"><i class="ti ti-chart-bar" style="color:var(--acc)"></i>'
+  +     '<span class="sech-t">월별 추이</span>'
+  +     '<span class="sech-m">선택한 달이 진하게 표시됩니다</span></div>'
+  +   '<div class="secb">' + trend() + '</div>'
+  + '</div>'
+
+  + '<div class="two">'
+  +   '<div class="sec"><div class="sech"><i class="ti ti-package" style="color:var(--wn)"></i>'
+  +     '<span class="sech-t">불출 상위 품목</span><span class="sech-m">금액 기준</span></div>'
+  +     items + '</div>'
+  +   '<div class="sec"><div class="sech"><i class="ti ti-building-store" style="color:var(--ok)"></i>'
+  +     '<span class="sech-t">발주 상위 협력사</span><span class="sech-m">금액 기준</span></div>'
+  +     sups + '</div>'
+  + '</div>'
+
+  + '<div class="sec">'
+  +   '<div class="sech"><i class="ti ti-list-details" style="color:var(--txt3)"></i>'
+  +     '<span class="sech-t">상세 지표</span></div>'
+  +   '<table><tbody>'
+  +     '<tr><td>취급 품목 수</td><td class="num">' + m.items + '종</td>'
+  +       '<td>처리 담당자</td><td class="num">' + m.workers + '명</td></tr>'
+  +     '<tr><td>생성 LOT</td><td class="num">' + m.lot_cnt + '개</td>'
+  +       '<td>발주 품목 라인</td><td class="num">' + m.po_lines + '건</td></tr>'
+  +     '<tr><td>입고 − 불출 (금액)</td><td class="num" style="color:' + (m.in_amt-m.out_amt>=0?'var(--ok)':'var(--dn)') + '">'
+  +       (m.in_amt-m.out_amt>=0?'+':'') + won(m.in_amt-m.out_amt) + '원</td>'
+  +       '<td>재고 순증감 (수량)</td><td class="num" style="color:' + (m.in_qty-m.out_qty>=0?'var(--ok)':'var(--dn)') + '">'
+  +       (m.in_qty-m.out_qty>=0?'+':'') + nf(m.in_qty-m.out_qty) + '개</td></tr>'
+  +   '</tbody></table>'
+  +   '<div class="note">입고보다 불출이 많으면 재고가 줄어든 달이다. '
+  +     '발주 금액은 <b>발주한 달</b> 기준이라, 리드타임 때문에 실제 입고는 다음 달 이후로 잡힐 수 있다.</div>'
+  + '</div>';
+}
+
+function sel(i){ mi=i; render(); document.getElementById('body').scrollTop=0; }
+
+function dl(){
+  const head=['월','입고건수','입고수량','입고금액','불출건수','불출수량','불출금액',
+              '발주건수','발주라인','발주금액','발주협력사','작업지시','완제품종','생산자재비',
+              '생성LOT','취급품목','담당자'];
+  const lines=[head.join(',')];
+  M.forEach(function(m){
+    lines.push([m.ym,m.in_cnt,m.in_qty,Math.round(m.in_amt),m.out_cnt,m.out_qty,Math.round(m.out_amt),
+                m.po_cnt,m.po_lines,Math.round(m.po_amt),m.po_suppliers,m.wo_cnt,m.fg_cnt,Math.round(m.prod_amt),
+                m.lot_cnt,m.items,m.workers]
+      .map(function(v){ return '"' + v + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='월간리포트.csv';
+  a.click();
+}
+
+render();
+</script>
 </body>
 </html>
