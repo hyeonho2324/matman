@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>입출고 이력</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<script src="/static/js/period.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
@@ -23,7 +24,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
 .kv{font-size:18px;font-weight:500;line-height:1.1}
 .ks{font-size:10px;color:var(--txt3);margin-top:3px}
-.kv.in{color:var(--acc)}.kv.out{color:var(--wn)}
+.kv.in{color:var(--acc)}
+.ku{font-size:11px;color:var(--txt3);margin-left:1px}
+.snap{font-size:9px;background:var(--s2);color:var(--txt3);border-radius:99px;padding:0 5px;margin-left:3px}.kv.out{color:var(--wn)}
 
 .chartbox{padding:9px 14px 4px;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .charthead{display:flex;align-items:center;gap:10px;margin-bottom:5px}
@@ -129,33 +132,7 @@ tbody tr.on{background:var(--bg-ac)}
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
 
-  <div class="kpi-row">
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-arrows-exchange"></i>총 거래</div>
-      <div class="kv">{{ summary.total }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
-      <div class="ks">담당자 {{ summary.workers }}명</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-arrow-bar-to-down"></i>입고</div>
-      <div class="kv in">{{ summary.in_cnt }}<span style="font-size:11px">건</span></div>
-      <div class="ks">{{ "{:,}".format(summary.in_qty) }}개 · {{ (summary.in_amt/100000000)|round(1) }}억</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-arrow-bar-up"></i>출고</div>
-      <div class="kv out">{{ summary.out_cnt }}<span style="font-size:11px">건</span></div>
-      <div class="ks">{{ "{:,}".format(summary.out_qty) }}개 · {{ (summary.out_amt/100000000)|round(1) }}억</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-stack-2"></i>LOT 현황</div>
-      <div class="kv">{{ summary.lot_total }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
-      <div class="ks">잔여 {{ summary.lot_live }} · 소진 {{ summary.lot_done }}</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-percentage"></i>소진율</div>
-      <div class="kv">{{ ((summary.out_qty / summary.in_qty * 100) if summary.in_qty else 0)|round(1) }}<span style="font-size:11px">%</span></div>
-      <div class="ks">차감량 ÷ 입고량</div>
-    </div>
-  </div>
+  <div class="kpi-row" id="kpis"></div>
 
   <div class="chartbox">
     <div class="charthead">
@@ -217,6 +194,7 @@ tbody tr.on{background:var(--bg-ac)}
 
 <script>
 const ROWS  = {{ rows|tojson }};
+const SUM   = {{ summary|tojson }};   // LOT 현황 등 시점 스냅샷 지표
 const LOTS  = {{ lots|tojson }};
 const MON   = {{ monthly|tojson }};
 const TXM   = {{ tx_meta|tojson }};   // 거래 유형 7종 정의
@@ -350,6 +328,18 @@ function view(){
 }
 
 function render(){
+  // KPI 는 '어느 범위를 보는가'(기간·창고)만 따른다.
+  // 유형 필터나 검색어까지 반영하면 불출만 골랐을 때 입고가 0건이 되어
+  // 소진율 같은 비율 지표가 의미를 잃는다.
+  const df0=document.getElementById('from').value, dt0=document.getElementById('to').value;
+  const loc0=document.getElementById('loc').value;
+  drawKpi(ROWS.filter(function(x){
+    if(df0 && (x.T_Date||'') < df0)   return false;
+    if(dt0 && (x.T_Date||'') > dt0)   return false;
+    if(loc0 && locName(x)!==loc0)     return false;
+    return true;
+  }));
+
   const r=view();
   const df=document.getElementById('from').value, dt=document.getElementById('to').value;
   const isAll = (df===DMIN && dt===DMAX);
@@ -492,6 +482,47 @@ function dl(){
 
 drawChart();
 render();
+
+
+// ── 기간 KPI ──────────────────────────────────────────────
+// 위 날짜 범위(from~to)를 그대로 따라간다.
+// 'LOT 현황'만 예외 — 기간 누적이 아니라 지금 창고에 무엇이 남아 있는지라
+// 조회 기간을 바꿔도 변하지 않는다. 그래서 라벨에 '현재'를 붙였다.
+function drawKpi(rows){
+  const df=document.getElementById('from').value, dt=document.getElementById('to').value;
+  const isAll = (df===DMIN && dt===DMAX);
+  let inC=0,inQ=0,inA=0,outC=0,outQ=0,outA=0;
+  const wk={};
+  rows.forEach(function(r){
+    const price=(P(r).P_Price)||0, k=txKind(r.T_Type);
+    if(r.worker) wk[r.worker]=1;
+    if(k==='in'){ inC++;  inQ+=r.T_Num; inA+=r.T_Num*price; }
+    else if(k==='out'||k==='bad'){ outC++; outQ+=r.T_Num; outA+=r.T_Num*price; }
+  });
+  const 억 = v => (v/100000000).toFixed(1);
+  document.getElementById('kpis').innerHTML =
+      '<div class="kpi"><div class="kl"><i class="ti ti-arrows-exchange"></i>총 거래</div>'
+    +   '<div class="kv">' + nf(rows.length) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">담당자 ' + Object.keys(wk).length + '명 · '
+    +     (isAll ? '전체 기간' : df + ' ~ ' + dt) + '</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-arrow-bar-to-down"></i>입고</div>'
+    +   '<div class="kv in">' + nf(inC) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">' + nf(inQ) + '개 · ' + 억(inA) + '억</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-arrow-bar-up"></i>출고</div>'
+    +   '<div class="kv out">' + nf(outC) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">' + nf(outQ) + '개 · ' + 억(outA) + '억</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>LOT 현황 <span class="snap">현재</span></div>'
+    +   '<div class="kv">' + nf(SUM.lot_total) + '<span class="ku">개</span></div>'
+    +   '<div class="ks">잔여 ' + nf(SUM.lot_live) + ' · 소진 ' + nf(SUM.lot_done) + '</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-percentage"></i>소진율</div>'
+    +   '<div class="kv">' + (inQ ? Period.pct(outQ, inQ) : '-') + '<span class="ku">%</span></div>'
+    +   '<div class="ks">차감량 ÷ 입고량</div></div>';
+}
+
 </script>
 </body>
 </html>

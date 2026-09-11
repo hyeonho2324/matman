@@ -445,8 +445,15 @@ def bom_summary(fgs, brows):
 PARETO_CUT = {"A": 75, "B": 90}
 
 
-def abc_analysis(conn):
-    """불출 이력 × 단가로 파레토 분석해 Usage 등급을 산정한다."""
+def abc_analysis(conn, period=""):
+    """불출 이력 × 단가로 파레토 분석해 Usage 등급을 산정한다.
+
+    period 를 주면 그 기간의 불출만으로 집계한다.
+    전체 누적으로만 보면 예전에 많이 쓰고 지금은 안 쓰는 자재가 계속 A 로 남는다.
+    """
+    base = conn.execute(f"SELECT MAX(T_Date) FROM Transaction_tb WHERE {DEMAND_IN}").fetchone()[0]
+    pf, pt = period_range(base, period)
+    where = f"{DEMAND_T} AND {_between('t.T_Date', pf, pt)}"
     rows = _rows(conn, f"""
         SELECT p.P_ID, p.P_N, p.Spec, p.P_Price,
                p.MainCat, p.SubCat, p.DetailCat,
@@ -465,7 +472,7 @@ def abc_analysis(conn):
                             SUM(t.T_Num) AS out_qty,
                             COUNT(*)     AS out_cnt
                        FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                      WHERE {DEMAND_T}
+                      WHERE {where}
                       GROUP BY l.P_ID) u ON p.P_ID = u.P_ID
           LEFT JOIN Company_tb c ON p.BRN = c.BRN
           LEFT JOIN Cat_tb cat   ON p.MainCat=cat.MainCat AND p.SubCat=cat.SubCat
@@ -661,15 +668,25 @@ def tx_summary(rows, lots, prods=None):
 import statistics as _st
 
 
-def supplier_list(conn):
-    """협력사 20개사 + 리드타임 통계 + 발주 실적 + 공급 리스크."""
+def supplier_list(conn, period=""):
+    """협력사 20개사 + 리드타임 통계 + 발주 실적 + 공급 리스크.
+
+    period 를 주면 리드타임·발주 실적을 그 기간의 발주만으로 집계한다.
+    ⚠️ 공급 품목 수·A등급·안전재고 미달·재고자산은 '현재 상태'라 기간을 타지 않는다.
+       작년에 발주한 자재도 지금 재고가 모자라면 모자란 것이다.
+    """
     comps = _rows(conn, "SELECT BRN, CP_N, Is_Foreign FROM Company_tb ORDER BY CP_N")
 
+    base = conn.execute("SELECT MAX(P_Date) FROM Purchase_Header_tb").fetchone()[0]
+    pf, pt = period_range(base, period)
+    pw = _between("h.P_Date", pf, pt)
+
     # 발주-입고 쌍에서 리드타임 실측
-    lt_raw = _rows(conn, """
+    lt_raw = _rows(conn, f"""
         SELECT h.BRN, l.Lot_ID, h.H_ID, h.P_Date, l.Lot_Date,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lt
           FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+         WHERE {pw}
          ORDER BY h.P_Date
     """)
     by_brn = {}
@@ -677,7 +694,7 @@ def supplier_list(conn):
         by_brn.setdefault(r["BRN"], []).append(r)
 
     # 발주 실적 (금액은 발주상세 × 단가)
-    orders = {r["BRN"]: r for r in _rows(conn, """
+    orders = {r["BRN"]: r for r in _rows(conn, f"""
         SELECT h.BRN,
                COUNT(DISTINCT h.H_ID)   AS order_cnt,
                COUNT(*)                 AS line_cnt,
@@ -688,6 +705,7 @@ def supplier_list(conn):
           FROM Purchase_Header_tb h
           JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
           JOIN Product_tb p         ON d.P_ID = p.P_ID
+         WHERE {pw}
          GROUP BY h.BRN
     """)}
 
@@ -1024,23 +1042,107 @@ def purchase_monthly(conn):
     """)
 
 
+# ── 기간 구분 ────────────────────────────────────────────────
+# 화면의 static/js/period.js 와 같은 구분을 쓴다.
+#   ''  = 전체 / 'm3' = 최근 3개월 / '2025-09' = 특정 월
+#
+# ⚠️ 기준일은 '오늘'이 아니라 데이터의 마지막 날짜다.
+#    더미데이터의 시간축과 실제 오늘이 달라 오늘 기준으로 자르면 전부 0건이 된다.
+PERIOD_MONTHS = [12, 6, 3, 1]
+
+
+def period_range(base, period):
+    """(시작일, 종료일) 을 돌려준다. 전체면 (None, None).
+
+    base 는 그 화면의 기준일(데이터 마지막 날짜).
+    """
+    import datetime
+    import re as _re
+    if not period or not base:
+        return None, None
+    if _re.fullmatch(r"m(\d{1,2})", period or ""):
+        n = int(period[1:])
+        if n not in PERIOD_MONTHS:
+            return None, None
+        y, m, d = (int(x) for x in base.split("-"))
+        m2 = m - n
+        y2 = y + (m2 - 1) // 12
+        m2 = (m2 - 1) % 12 + 1
+        # 말일 보정 — 3/31 의 1개월 전은 2/28
+        nxt = datetime.date(y2 + (m2 == 12), (m2 % 12) + 1, 1)
+        last = (nxt - datetime.timedelta(days=1)).day
+        return datetime.date(y2, m2, min(d, last)).isoformat(), base
+    if _re.fullmatch(r"\d{4}-\d{2}", period or ""):
+        return period + "-01", period + "-31"
+    return None, None
+
+
+def month_list(conn, table, col, where="1=1"):
+    """그 테이블에 실제로 데이터가 있는 월 목록. 기간 선택의 '특정 월' 용."""
+    return [r["ym"] for r in _rows(conn, f"""
+        SELECT DISTINCT substr({col},1,7) AS ym
+          FROM {table} WHERE {where} AND {col} IS NOT NULL
+         ORDER BY ym
+    """)]
+
+
+def period_label(base, period):
+    """화면 상단에 쓸 문장."""
+    if not period:
+        return "전체 기간"
+    f, t = period_range(base, period)
+    if not f:
+        return "전체 기간"
+    names = {12: "최근 1년", 6: "최근 6개월", 3: "최근 3개월 (분기)", 1: "최근 1개월"}
+    if period.startswith("m"):
+        return "%s (%s ~ %s)" % (names.get(int(period[1:]), period), f, t)
+    return period + " 한 달"
+
+
+def _between(col, f, t):
+    """WHERE 조각. 기간이 없으면 항상 참이라 SQL 을 그대로 쓸 수 있다."""
+    if not f:
+        return "1=1"
+    return "%s BETWEEN '%s' AND '%s'" % (col, f, t)
+
+
+def _pct(part, whole, nd=1):
+    """백분율 반올림. 파이썬 round() 는 은행가 반올림이라 96.25 → 96.2 가 되어
+    화면(JS Math.round, 올림)과 값이 갈린다. 표시용은 0.5 올림으로 통일한다."""
+    if not whole:
+        return 0
+    import math
+    f = 10 ** nd
+    return math.floor(part / whole * 100 * f + 0.5) / f
+
+
 def purchase_summary(orders):
+    """발주 요약.
+
+    ⚠️ 입고 일치율의 분모는 '이미 입고된 품목'뿐이다.
+       아직 들어오지 않은 발주(미입고)를 불일치로 세면,
+       최근 발주가 많을수록 일치율이 가짜로 떨어진다.
+       발주 직후에는 전부 미입고이므로 0% 가 되어버린다.
+    """
     lines = [i for o in orders for i in o["items"]]
     ok = len([i for i in lines if i["status"] == "일치"])
     short = [i for i in lines if i["status"] == "부족"]
+    pending = len([i for i in lines if i["status"] == "미입고"])
+    recv = len(lines) - pending          # 입고 판정이 끝난 품목
     dates = [o["date"] for o in orders if o["date"]]
     lds = [o["lead_days"] for o in orders if o["lead_days"] is not None]
     return {
         "order_cnt": len(orders),
         "line_cnt": len(lines),
+        "recv_cnt": recv,
         "amount": sum(o["amount"] for o in orders),
         "in_amount": sum(o["in_amount"] for o in orders),
         "ok": ok,
-        "ok_pct": round(ok / len(lines) * 100, 1) if lines else 0,
+        "ok_pct": _pct(ok, recv),
         "short": len(short),
         "short_qty": sum(abs(i["gap"] or 0) for i in short),
         "short_pkg_ok": len([i for i in short if i["pkg_multiple"]]),
-        "pending": len([i for i in lines if i["status"] == "미입고"]),
+        "pending": pending,
         "short_orders": len([o for o in orders if o["short"]]),
         "lead_avg": round(sum(lds) / len(lds), 1) if lds else 0,
         "date_from": min(dates) if dates else "-",
@@ -1675,7 +1777,16 @@ def risk_summary(rows):
 POSITION_ORDER = ["부장", "차장", "과장", "대리", "주임", "사원"]
 
 
-def user_list(conn):
+def user_list(conn, period=""):
+    """사원 30명 + 처리 실적.
+
+    period 를 주면 처리 실적(입출고·LOT 등록·작업지시)을 그 기간으로 집계한다.
+    직급과 담당 구역은 현재 상태라 기간을 타지 않는다.
+    """
+    pf, pt = period_range(user_base(conn), period)
+    tw = _between("T_Date", pf, pt)
+    lw = _between("Lot_Date", pf, pt)
+    dw = _between("Prod_Date", pf, pt)
     rows = _rows(conn, f"""
         SELECT u.EP_ID, u.Name, u.Birth, u.Phone, u.Position,
                COALESCE(l.n, 0)  AS lot_cnt,
@@ -1687,16 +1798,17 @@ def user_list(conn):
                COALESCE(p.n, 0)  AS prod_cnt,
                t.first_tx, t.last_tx
           FROM User_tb u
-          LEFT JOIN (SELECT EP_ID, COUNT(*) n, SUM(P_Qty) qty FROM Lot_tb GROUP BY EP_ID) l
+          LEFT JOIN (SELECT EP_ID, COUNT(*) n, SUM(P_Qty) qty
+                       FROM Lot_tb WHERE {lw} GROUP BY EP_ID) l
                  ON u.EP_ID = l.EP_ID
           LEFT JOIN (SELECT EP_ID, COUNT(*) n,
                             SUM(CASE WHEN {TX_IN_SQL} THEN 1 ELSE 0 END) in_n,
                             SUM(CASE WHEN {TX_OUT_SQL} THEN 1 ELSE 0 END) out_n,
                             MIN(T_Date) first_tx, MAX(T_Date) last_tx
-                       FROM Transaction_tb GROUP BY EP_ID) t
+                       FROM Transaction_tb WHERE {tw} GROUP BY EP_ID) t
                  ON u.EP_ID = t.EP_ID
           LEFT JOIN (SELECT EP_ID, COUNT(DISTINCT Work_Order) wo, COUNT(*) n
-                       FROM Production_tb GROUP BY EP_ID) p
+                       FROM Production_tb WHERE {dw} GROUP BY EP_ID) p
                  ON u.EP_ID = p.EP_ID
     """)
 
@@ -1711,7 +1823,7 @@ def user_list(conn):
 
     # 최근 처리 이력
     recent = {}
-    for r in _rows(conn, """
+    for r in _rows(conn, f"""
         SELECT t.EP_ID, t.T_ID, t.T_Type, t.T_Date, t.T_Num, p.P_N
           FROM Transaction_tb t
           JOIN Lot_tb l     ON t.Lot_ID = l.Lot_ID
@@ -1732,7 +1844,35 @@ def user_list(conn):
     return rows
 
 
-def user_summary(rows, conn=None):
+def user_base(conn):
+    """사용자 화면의 기준일 — 거래·LOT·생산 중 가장 마지막 날.
+
+    테이블마다 마지막 날짜가 다르므로(거래 2026-02-07 / 생산 2025-12-31)
+    기준일을 하나로 못 박지 않으면 같은 '최근 6개월'이 지표마다 다른 구간을 가리킨다.
+    """
+    return max(x for x in (
+        conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0],
+        conn.execute("SELECT MAX(Lot_Date) FROM Lot_tb").fetchone()[0],
+        conn.execute("SELECT MAX(Prod_Date) FROM Production_tb").fetchone()[0],
+    ) if x)
+
+
+def _wo_total(conn, period="", base=None):
+    """실제 작업지시 건수. 기간을 주면 그 기간만 센다.
+
+    base 는 반드시 화면과 같은 기준일을 받는다. 테이블마다 마지막 날짜가 달라
+    (거래 2026-02-07 / 생산 2025-12-31) 각자 기준일을 쓰면 같은 '최근 6개월'이
+    서로 다른 구간을 가리키게 된다.
+    """
+    if base is None:
+        base = conn.execute("SELECT MAX(Prod_Date) FROM Production_tb").fetchone()[0]
+    pf, pt = period_range(base, period)
+    return conn.execute(
+        f"SELECT COUNT(DISTINCT Work_Order) FROM Production_tb"
+        f" WHERE {_between('Prod_Date', pf, pt)}").fetchone()[0]
+
+
+def user_summary(rows, conn=None, period="", base=None):
     pos = {}
     for p in POSITION_ORDER:
         n = len([r for r in rows if r["Position"] == p])
@@ -1745,9 +1885,7 @@ def user_summary(rows, conn=None):
         "lot_total": sum(r["lot_cnt"] for r in rows),
         # 주의: 사용자별 wo_cnt 를 그냥 더하면 한 작업지시에 여러 명이 참여한 만큼
         #       중복 합산된다(3,874 vs 실제 488). 실제 건수를 따로 센다.
-        "wo_total": (conn.execute(
-            "SELECT COUNT(DISTINCT Work_Order) FROM Production_tb").fetchone()[0]
-            if conn else sum(r["wo_cnt"] for r in rows)),
+        "wo_total": _wo_total(conn, period, base) if conn else sum(r["wo_cnt"] for r in rows),
         "active": len([r for r in rows if r["total"] > 0]),
         "max_total": max((r["total"] for r in rows), default=1),
         "avg_total": round(sum(r["total"] for r in rows) / len(rows), 1) if rows else 0,

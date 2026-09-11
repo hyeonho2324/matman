@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ABC 분석</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<script src="/static/js/period.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
@@ -80,7 +81,7 @@ tbody tr.hl{background:var(--bg-ac)}
   <div class="topbar">
     <div class="pt">
       <i class="ti ti-chart-bar" style="color:var(--acc)"></i>ABC 분석 · 파레토
-      <span class="tag">실제 DB · 불출이력 기준 {{ summary.total }}종</span>
+      <span class="tag">실제 DB · 불출이력 기준 {{ summary.total }}종 · {{ period_label }}</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
@@ -119,6 +120,7 @@ tbody tr.hl{background:var(--bg-ac)}
   </div>
 
   <div class="filter-bar">
+    <select id="period" onchange="Period.reloadWith(this.value)" title="집계 기간"></select>
     <button class="pill on" data-f="all"     onclick="setF('all')">전체</button>
     <button class="pill"    data-f="A"       onclick="setF('A')">A등급</button>
     <button class="pill"    data-f="B"       onclick="setF('B')">B등급</button>
@@ -296,6 +298,14 @@ function dl(){
 
 drawChart();
 render();
+
+const MONTHS = {{ months|tojson }};   // 데이터가 있는 월 목록
+
+// ── 기간 선택 ─────────────────────────────────────────────
+// 이 화면은 서버에서 집계하므로 선택하면 ?period= 를 붙여 다시 불러온다.
+// (원본 거래를 전부 화면에 내려보내면 payload 가 지나치게 커진다)
+Period.fill(document.getElementById('period'), MONTHS, Period.current());
+
 </script>
 </body>
 </html>

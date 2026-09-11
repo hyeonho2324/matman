@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>구매 발주</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<script src="/static/js/period.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
@@ -96,6 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .kv{font-size:18px;font-weight:500;line-height:1.1}
 .ks{font-size:10px;color:var(--txt3);margin-top:3px}
 .kv.ok{color:var(--ok)}.kv.wn{color:var(--wn)}.kv.ac{color:var(--acc)}
+.ku{font-size:11px;color:var(--txt3);margin-left:1px}
 
 .chartbox{padding:9px 14px 4px;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .charthead{display:flex;align-items:center;gap:10px;margin-bottom:5px}
@@ -189,39 +191,13 @@ tbody tr.on{background:var(--bg-ac)}
   <div class="topbar">
     <div class="pt">
       <i class="ti ti-truck-delivery" style="color:var(--acc)"></i>구매 발주 · 입고 대조
-      <span class="tag">실제 DB · {{ summary.order_cnt }}건 · {{ summary.date_from }} ~ {{ summary.date_to }}</span>
+      <span class="tag" id="ptag">실제 DB</span>
     </div>
     <button class="btn btnp" onclick="poOpen()"><i class="ti ti-file-plus"></i>발주하기</button>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
 
-  <div class="kpi-row">
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-file-text"></i>발주</div>
-      <div class="kv">{{ summary.order_cnt }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
-      <div class="ks">{{ summary.line_cnt }}개 품목 · 협력사 {{ summary.suppliers }}</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-coin"></i>발주 금액</div>
-      <div class="kv">{{ (summary.amount/100000000)|round(1) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
-      <div class="ks">입고 {{ (summary.in_amount/100000000)|round(1) }}억</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-circle-check"></i>입고 일치율</div>
-      <div class="kv ok">{{ summary.ok_pct }}<span style="font-size:11px">%</span></div>
-      <div class="ks">{{ summary.ok }}/{{ summary.line_cnt }} 품목</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-alert-triangle"></i>부족 입고</div>
-      <div class="kv wn">{{ summary.short }}<span style="font-size:11px">건</span></div>
-      <div class="ks">{{ "{:,}".format(summary.short_qty) }}개 · 발주 {{ summary.short_orders }}건</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-clock"></i>평균 리드타임</div>
-      <div class="kv ac">{{ summary.lead_avg }}<span style="font-size:11px">일</span></div>
-      <div class="ks">발주 → 입고</div>
-    </div>
-  </div>
+  <div class="kpi-row" id="kpis"></div>
 
   <div class="chartbox">
     <div class="charthead">
@@ -239,7 +215,7 @@ tbody tr.on{background:var(--bg-ac)}
     <button class="pill"    data-f="short"   onclick="setF('short')">부족 입고</button>
     <button class="pill"    data-f="foreign" onclick="setF('foreign')">해외</button>
     <select id="sup" onchange="render()"><option value="">전체 협력사</option></select>
-    <select id="ym" onchange="render()"><option value="">전체 기간</option></select>
+    <select id="ym" onchange="render()"></select>
     <span class="cnt" id="cnt"></span>
     <div class="search">
       <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
@@ -296,6 +272,8 @@ const ORD   = {{ orders|tojson }};
 const MON   = {{ monthly|tojson }};
 const PRODS = {{ prods|tojson }};
 const EMPTY = {};
+// 기준일 = 데이터의 마지막 발주일
+const PBASE = ORD.map(function(o){return o.date||'';}).filter(Boolean).sort().slice(-1)[0] || '';
 const CANDS = {{ cands|tojson }};      // 발주 후보 200종 (권장 발주량 포함)
 const BASE  = {{ base_date|tojson }};  // 데이터 기준일
 function P(pid){ return PRODS[pid] || EMPTY; }
@@ -311,8 +289,9 @@ const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(
   ORD.forEach(function(o){ if(o.supplier) sup[o.supplier]=1; });
   const ss=document.getElementById('sup');
   Object.keys(sup).sort().forEach(function(k){ ss.innerHTML+='<option value="'+k+'">'+k+'</option>'; });
-  const ys=document.getElementById('ym');
-  MON.forEach(function(m){ ys.innerHTML+='<option value="'+m.ym+'">'+m.ym+'</option>'; });
+  // 기간 선택 — 최근 N개월은 '오늘'이 아니라 데이터의 마지막 발주일 기준이다.
+  // 더미데이터의 시간축(~2025-12-30)과 실제 오늘이 달라 오늘 기준으로 하면 전부 0건이 된다.
+  Period.fill(document.getElementById('ym'), MON);
 })();
 
 function drawChart(){
@@ -345,7 +324,7 @@ function view(){
     if(filter==='short'   && !o.short)            return false;
     if(filter==='foreign' && o.is_foreign!=='Y')  return false;
     if(sup && o.supplier!==sup)                   return false;
-    if(ym && (o.date||'').slice(0,7)!==ym)        return false;
+    if(ym && !inPeriod(o.date, ym))               return false;
     if(q){
       const hay=(o.H_ID+' '+(o.supplier||'')+' '+o.BRN).toLowerCase();
       if(hay.indexOf(q)<0) return false;
@@ -365,6 +344,17 @@ function view(){
 }
 
 function render(){
+  const pv  = document.getElementById('ym').value;
+  const sup = document.getElementById('sup').value;
+  // KPI 는 '어느 범위를 보는가'(기간·협력사)만 따른다.
+  // 부족입고·해외 pill 이나 검색어까지 반영하면 분모가 한쪽으로 쏠려
+  // 일치율 같은 비율 지표가 왜곡된다(부족만 걸러 보면 일치율 0%).
+  drawKpi(ORD.filter(function(o){
+    if(pv && !inPeriod(o.date, pv))  return false;
+    if(sup && o.supplier!==sup)      return false;
+    return true;
+  }), pv, sup);
+
   const r=view();
   document.getElementById('cnt').textContent=r.length+'건';
   const tb=document.getElementById('tb');
@@ -826,6 +816,78 @@ function poView4(){
     + '<br>※ Render 처럼 디스크가 초기화되는 배포 환경에서는 재배포 시 '
     + '등록한 발주가 사라질 수 있습니다.</div>';
   return h;
+}
+
+
+
+// ══════════════════════════════════════════════════════════
+//  기간별 KPI
+//
+//  전체 누적으로만 보여주면 데이터가 쌓일수록 최근 상황이 묻힌다.
+//  (작년에 잘했으면 이번 달 납품이 엉망이어도 일치율이 좋아 보인다)
+//  그래서 KPI를 화면에서 계산해 기간 선택을 따라가게 한다.
+// ══════════════════════════════════════════════════════════
+
+// 기간 계산은 공통 모듈(static/js/period.js)을 쓴다 — 화면마다 같은 구분을 유지하기 위해
+function inPeriod(date, v){ return Period.has(date, v, PBASE); }
+function periodLabel(v){ return Period.label(v, PBASE); }
+
+function calcKpi(list){
+  const lines = [];
+  list.forEach(function(o){ (o.items||[]).forEach(function(i){ lines.push(i); }); });
+  const ok      = lines.filter(function(i){return i.status==='일치';}).length;
+  const shorts  = lines.filter(function(i){return i.status==='부족';});
+  const pending = lines.filter(function(i){return i.status==='미입고';}).length;
+  const recv    = lines.length - pending;        // 입고 판정이 끝난 품목만 분모
+  const lds     = list.map(function(o){return o.lead_days;}).filter(function(v){return v!=null;});
+  const dates   = list.map(function(o){return o.date||'';}).filter(Boolean).sort();
+  return {
+    order_cnt: list.length,
+    line_cnt : lines.length,
+    recv_cnt : recv,
+    pending  : pending,
+    suppliers: new Set(list.map(function(o){return o.BRN;})).size,
+    amount   : list.reduce(function(a,o){return a+(o.amount||0);},0),
+    in_amount: list.reduce(function(a,o){return a+(o.in_amount||0);},0),
+    ok       : ok,
+    ok_pct   : Period.pct(ok, recv),
+    short    : shorts.length,
+    short_qty: shorts.reduce(function(a,i){return a+Math.abs(i.gap||0);},0),
+    short_orders: list.filter(function(o){return o.short;}).length,
+    lead_avg : lds.length ? Math.round(lds.reduce(function(a,b){return a+b;},0)/lds.length*10)/10 : null,
+    from     : dates[0] || '-',
+    to       : dates[dates.length-1] || '-'
+  };
+}
+
+function drawKpi(list, pv, sup){
+  const k = calcKpi(list);
+  const eok = n => n==null ? '-' : n;
+  document.getElementById('ptag').textContent =
+    '실제 DB · ' + periodLabel(pv) + (sup ? ' · ' + sup : '') + ' · ' + k.order_cnt + '건';
+
+  document.getElementById('kpis').innerHTML =
+      '<div class="kpi"><div class="kl"><i class="ti ti-file-text"></i>발주</div>'
+    +   '<div class="kv">' + nf(k.order_cnt) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">' + nf(k.line_cnt) + '개 품목 · 협력사 ' + k.suppliers + '</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-coin"></i>발주 금액</div>'
+    +   '<div class="kv">' + won(k.amount) + '<span class="ku">원</span></div>'
+    +   '<div class="ks">입고 ' + won(k.in_amount) + '원</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-circle-check"></i>입고 일치율</div>'
+    +   '<div class="kv ok">' + eok(k.ok_pct) + '<span class="ku">%</span></div>'
+    +   '<div class="ks">' + nf(k.ok) + '/' + nf(k.recv_cnt) + ' 품목'
+    +     (k.pending ? ' · <span style="color:var(--txt3)">미입고 ' + nf(k.pending) + ' 제외</span>' : '')
+    +   '</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-alert-triangle"></i>부족 입고</div>'
+    +   '<div class="kv wn">' + nf(k.short) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">' + nf(k.short_qty) + '개 · 발주 ' + nf(k.short_orders) + '건</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-clock"></i>평균 리드타임</div>'
+    +   '<div class="kv ac">' + eok(k.lead_avg) + '<span class="ku">일</span></div>'
+    +   '<div class="ks">' + (k.pending && !k.lead_avg ? '입고 건이 없어 산출 불가' : '발주 → 입고') + '</div></div>';
 }
 
 </script>

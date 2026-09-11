@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>생산 실적</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+<script src="/static/js/period.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
@@ -24,6 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .kv{font-size:18px;font-weight:500;line-height:1.1}
 .ks{font-size:10px;color:var(--txt3);margin-top:3px}
 .kv.ok{color:var(--ok)}.kv.wn{color:var(--wn)}
+.ku{font-size:11px;color:var(--txt3);margin-left:1px}
 
 .chartbox{padding:9px 14px 4px;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .charthead{display:flex;align-items:center;gap:10px;margin-bottom:5px}
@@ -113,33 +115,7 @@ tbody tr.on{background:var(--bg-ac)}
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
 
-  <div class="kpi-row">
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-clipboard-list"></i>작업지시</div>
-      <div class="kv">{{ summary.wo_cnt }}<span style="font-size:11px;color:var(--txt3)">건</span></div>
-      <div class="ks">완제품 {{ summary.fg_cnt }}종</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-box-multiple"></i>생산 수량</div>
-      <div class="kv">{{ "{:,}".format(summary.units) }}<span style="font-size:11px;color:var(--txt3)">대</span></div>
-      <div class="ks">투입 기준 추정</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-coin"></i>투입 자재비</div>
-      <div class="kv">{{ (summary.amount/100000000)|round(1) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
-      <div class="ks">{{ "{:,}".format(summary.line_cnt) }}개 자재 투입</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-circle-check"></i>BOM 일치율</div>
-      <div class="kv ok">{{ summary.match_pct }}<span style="font-size:11px">%</span></div>
-      <div class="ks">불일치 {{ summary.diff }}건</div>
-    </div>
-    <div class="kpi">
-      <div class="kl"><i class="ti ti-replace"></i>대체품 사용</div>
-      <div class="kv wn">{{ summary.alt_wo_pct }}<span style="font-size:11px">%</span></div>
-      <div class="ks">{{ summary.alt_wo }}개 WO · {{ summary.alt_used }}건</div>
-    </div>
-  </div>
+  <div class="kpi-row" id="kpis"></div>
 
   <div class="chartbox">
     <div class="charthead">
@@ -157,7 +133,7 @@ tbody tr.on{background:var(--bg-ac)}
     <button class="pill"    data-f="alt"  onclick="setF('alt')">대체품 사용</button>
     <button class="pill"    data-f="diff" onclick="setF('diff')">BOM 불일치</button>
     <select id="fg" onchange="render()"><option value="">전체 완제품</option></select>
-    <select id="ym" onchange="render()"><option value="">전체 기간</option></select>
+    <select id="ym" onchange="render()"></select>
     <span class="cnt" id="cnt"></span>
     <div class="search">
       <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
@@ -199,6 +175,8 @@ const EMPTY = {};
 function P(pid){ return PRODS[pid] || EMPTY; }
 const MON = {{ monthly|tojson }};
 const SUM = {{ summary|tojson }};
+// 기준일 = 데이터의 마지막 생산일 ('오늘'이 아니다 — 더미데이터 시간축과 어긋난다)
+const PBASE = ORD.map(function(o){return o.date||'';}).filter(Boolean).sort().slice(-1)[0] || '';
 
 let filter='all', sortKey='date', sortAsc=false, sel=null;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
@@ -214,7 +192,7 @@ const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(
     fs.innerHTML+='<option value="'+k+'">'+k+' '+fgs[k]+'</option>';
   });
   const ys=document.getElementById('ym');
-  MON.forEach(function(m){ ys.innerHTML+='<option value="'+m.ym+'">'+m.ym+'</option>'; });
+  Period.fill(ys, MON);   // 전체 / 최근 1년·6개월·3개월·1개월 / 특정 월
 })();
 
 // 월별 차트 — 작업지시 건수(막대) + 자재비(선)
@@ -251,7 +229,7 @@ function view(){
     if(filter==='alt'  && !o.alt_used) return false;
     if(filter==='diff' && !o.diff)     return false;
     if(fg && o.FG_ID!==fg)             return false;
-    if(ym && (o.date||'').slice(0,7)!==ym) return false;
+    if(ym && !Period.has(o.date, ym, PBASE)) return false;
     if(q){
       const hay=(o.wo+' '+o.FG_ID+' '+(o.FG_N||'')+' '+(o.worker||'')).toLowerCase();
       if(hay.indexOf(q)<0) return false;
@@ -271,6 +249,16 @@ function view(){
 }
 
 function render(){
+  // KPI 는 '어느 범위를 보는가'(기간·완제품)만 따른다.
+  // 대체품·차이 pill 이나 검색어까지 반영하면 BOM 일치율의 분모가 한쪽으로 쏠린다
+  // (차이 건만 골라 보면 일치율이 0% 가 된다).
+  const pv=document.getElementById('ym').value, fg0=document.getElementById('fg').value;
+  drawKpi(ORD.filter(function(o){
+    if(pv && !Period.has(o.date, pv, PBASE)) return false;
+    if(fg0 && o.FG_ID!==fg0)                 return false;
+    return true;
+  }), pv, fg0);
+
   const r=view();
   document.getElementById('cnt').textContent=r.length+'건';
   const tb=document.getElementById('tb');
@@ -379,6 +367,52 @@ function dl(){
 
 drawChart();
 render();
+
+
+// ── 기간 KPI ──────────────────────────────────────────────
+// 전체 누적만 보면 데이터가 쌓일수록 최근 생산 품질이 묻힌다.
+// 이번 분기 BOM 일치율이 떨어져도 누적값은 잘 안 움직이기 때문이다.
+function drawKpi(list, pv, fg){
+  let units=0, amount=0, lineCnt=0, match=0, diff=0, altUsed=0, altWo=0;
+  const fgs={};
+  list.forEach(function(o){
+    units   += o.units  || 0;
+    amount  += o.amount || 0;
+    lineCnt += o.line_cnt || 0;
+    match   += o.match  || 0;
+    diff    += o.diff   || 0;
+    altUsed += o.alt_used || 0;
+    if(o.alt_used) altWo++;
+    if(o.FG_ID) fgs[o.FG_ID]=1;
+  });
+  // BOM 일치율 분모 = 판정이 끝난 투입 자재(일치 + 대체 + 차이)
+  const judged = match + altUsed + diff;
+  const tag=document.getElementById('ptag');
+  if(tag) tag.textContent = '실제 DB · ' + Period.label(pv, PBASE)
+                          + (fg ? ' · ' + fg : '') + ' · ' + list.length + '건';
+
+  document.getElementById('kpis').innerHTML =
+      '<div class="kpi"><div class="kl"><i class="ti ti-clipboard-list"></i>작업지시</div>'
+    +   '<div class="kv">' + nf(list.length) + '<span class="ku">건</span></div>'
+    +   '<div class="ks">완제품 ' + Object.keys(fgs).length + '종</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-box-multiple"></i>생산 수량</div>'
+    +   '<div class="kv">' + nf(units) + '<span class="ku">대</span></div>'
+    +   '<div class="ks">투입 기준 추정</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-coin"></i>투입 자재비</div>'
+    +   '<div class="kv">' + (amount/100000000).toFixed(1) + '<span class="ku">억원</span></div>'
+    +   '<div class="ks">' + nf(lineCnt) + '개 자재 투입</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-circle-check"></i>BOM 일치율</div>'
+    +   '<div class="kv ok">' + (judged ? Period.pct(match, judged) : '-') + '<span class="ku">%</span></div>'
+    +   '<div class="ks">불일치 ' + nf(diff) + '건 · 대체 ' + nf(altUsed) + '건</div></div>'
+
+    + '<div class="kpi"><div class="kl"><i class="ti ti-replace"></i>대체품 사용</div>'
+    +   '<div class="kv wn">' + (list.length ? Period.pct(altWo, list.length) : '-') + '<span class="ku">%</span></div>'
+    +   '<div class="ks">' + nf(altWo) + '개 WO · ' + nf(altUsed) + '건</div></div>';
+}
+
 </script>
 </body>
 </html>

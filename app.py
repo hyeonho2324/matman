@@ -252,11 +252,15 @@ def _ctx_bom():
         conn.close()
 
 
-def _ctx_abc():
+def _ctx_abc(period=""):
     conn = db.connect()
     try:
-        rows = db.abc_analysis(conn)
-        return {"rows": rows, "summary": db.abc_summary(rows)}
+        rows = db.abc_analysis(conn, period)
+        base = conn.execute(
+            f"SELECT MAX(T_Date) FROM Transaction_tb WHERE {db.DEMAND_IN}").fetchone()[0]
+        return {"rows": rows, "summary": db.abc_summary(rows),
+                "period": period, "period_label": db.period_label(base, period),
+                "months": db.month_list(conn, "Transaction_tb", "T_Date", db.DEMAND_IN)}
     finally:
         conn.close()
 
@@ -280,14 +284,17 @@ def _ctx_tx_history():
         conn.close()
 
 
-def _ctx_suppliers():
+def _ctx_suppliers(period=""):
     conn = db.connect()
     try:
-        comps = db.supplier_list(conn)
+        comps = db.supplier_list(conn, period)
+        base = conn.execute("SELECT MAX(P_Date) FROM Purchase_Header_tb").fetchone()[0]
         return {
             "comps": comps,
             "items": db.supplier_items(conn),
             "summary": db.supplier_summary(comps),
+            "period": period, "period_label": db.period_label(base, period),
+            "months": db.month_list(conn, "Purchase_Header_tb", "P_Date"),
         }
     finally:
         conn.close()
@@ -381,12 +388,15 @@ def _ctx_risk_radar():
         conn.close()
 
 
-def _ctx_users():
+def _ctx_users(period=""):
     conn = db.connect()
     try:
-        rows = db.user_list(conn)
-        return {"rows": rows, "summary": db.user_summary(rows, conn),
-                "tx_meta": db.TX_META}
+        rows = db.user_list(conn, period)
+        base = db.user_base(conn)      # user_list 와 같은 기준일을 쓴다
+        return {"rows": rows, "summary": db.user_summary(rows, conn, period, base),
+                "tx_meta": db.TX_META,
+                "period": period, "period_label": db.period_label(base, period),
+                "months": db.month_list(conn, "Transaction_tb", "T_Date")}
     finally:
         conn.close()
 
@@ -523,7 +533,15 @@ EMBED_CONTEXT = {
 def embed(screen):
     tmpl = f"embed/{screen}.html"
     provider = EMBED_CONTEXT.get(screen)
-    ctx = provider() if provider else {}
+    # 서버에서 집계하는 화면(협력사·사용자·ABC)은 기간을 인자로 받는다.
+    # 화면에서 계산하는 화면은 이 값을 쓰지 않으므로 인자를 받지 않는다.
+    ctx = {}
+    if provider:
+        period = (request.args.get("period") or "").strip()
+        try:
+            ctx = provider(period)
+        except TypeError:
+            ctx = provider()
     try:
         return render_template(tmpl, **ctx)
     except Exception:
