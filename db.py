@@ -1853,3 +1853,32 @@ def wizard_summary(rows, base, due):
         "grade_dist_old": {g: len([r for r in rows if r["old_grade"] == g]) for g in "ABC"},
         "grade_dist_new": {g: len([r for r in rows if r["new_grade"] == g]) for g in "ABC"},
     }
+
+
+# ── 발주 시뮬레이터 ──────────────────────────────────────────
+# 실제 품목 데이터를 주고, 발주량·발주시점·리드타임을 바꿔가며
+# 향후 재고 추이가 어떻게 달라지는지 화면에서 계산한다.
+def simulator_items(conn):
+    rows, base, span = forecast_list(conn)
+    out = []
+    for r in rows:
+        if not r["lead_time"]:
+            continue
+        out.append({
+            "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
+            "P_Price": r["P_Price"], "MinOrderQty": r["MinOrderQty"], "PkgUnit": r["PkgUnit"],
+            "supplier": r["supplier"], "is_foreign": r["is_foreign"],
+            "grade": r["grade"], "safe_qty": r["safe_qty"] or 0,
+            "lead_time": r["lead_time"] or 0,
+            "stock": r["stock"] or 0,
+            "daily": r["daily"] or 0,
+            "out_cnt": r["out_cnt"],
+            "confidence": r["confidence"],
+            "days_left": r["days_left"],
+            "order_qty": r["order_qty"],
+            "urgency": r["urgency"],
+        })
+    # 기본 선택은 리스크가 큰 품목부터
+    order = {"재고소진": 0, "발주지연": 1, "발주임박": 2, "주의": 3, "여유": 4, "예측불가": 5}
+    out.sort(key=lambda x: (order.get(x["urgency"], 9), -(x["daily"] or 0)))
+    return out, base, span

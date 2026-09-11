@@ -403,6 +403,15 @@ def _ctx_wizard():
         conn.close()
 
 
+def _ctx_simulator():
+    conn = db.connect()
+    try:
+        items, base, span = db.simulator_items(conn)
+        return {"items": items, "base": base, "span": span}
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -420,6 +429,7 @@ EMBED_CONTEXT = {
     "users":        _ctx_users,
     "report":       _ctx_report,
     "wizard":       _ctx_wizard,
+    "simulator":    _ctx_simulator,
 }
 
 
