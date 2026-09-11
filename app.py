@@ -395,6 +395,9 @@ def _ctx_users(period=""):
         base = db.user_base(conn)      # user_list 와 같은 기준일을 쓴다
         return {"rows": rows, "summary": db.user_summary(rows, conn, period, base),
                 "tx_meta": db.TX_META,
+                # 직급 표시 순서. dict 키 순서에 기대면 안 된다 —
+                # Flask 의 tojson 이 키를 가나다순으로 정렬해버린다.
+                "pos_order": db.POSITION_ORDER,
                 "period": period, "period_label": db.period_label(base, period),
                 "months": db.month_list(conn, "Transaction_tb", "T_Date")}
     finally:
