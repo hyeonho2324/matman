@@ -2,34 +2,419 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LOT 상세</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:#1A1917;background:#F8F7F4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 :root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;align-items:center;justify-content:center}
-.inner{text-align:center;max-width:500px;padding:24px}
-.icon{font-size:48px;margin-bottom:16px;color:var(--acc)}
-.title{font-size:18px;font-weight:600;margin-bottom:8px}
-.sub{font-size:13px;color:var(--txt3);line-height:1.7;margin-bottom:16px}
-.features{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin-bottom:16px}
-.feat{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
-.feat-icon{font-size:16px;margin-bottom:4px}
-.feat-t{font-size:12px;font-weight:500}
-.feat-s{font-size:11px;color:var(--txt3)}
-.badge{display:inline-block;padding:4px 12px;background:var(--bg-ac);color:var(--acc);border-radius:99px;font-size:12px;font-weight:500}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.kv{font-size:18px;font-weight:500;line-height:1.1}
+.ks{font-size:10px;color:var(--txt3);margin-top:3px}
+.kv.dn{color:var(--dn)}.kv.ok{color:var(--ok)}.kv.wn{color:var(--wn)}
+
+/* 체류일수 분포 */
+.agebox{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.agehead{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.agehead .t{font-size:11px;font-weight:500}
+.agehead .m{margin-left:auto;font-size:10px;color:var(--txt3)}
+.agebar{display:flex;height:30px;border-radius:5px;overflow:hidden;border:0.5px solid var(--border)}
+.ab{display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600;cursor:pointer;transition:opacity .12s;min-width:0;overflow:hidden;white-space:nowrap}
+.ab:hover{opacity:.82}
+.agelbl{display:flex;margin-top:5px;gap:0}
+.al{text-align:center;font-size:9px;color:var(--txt3);line-height:1.4;cursor:pointer}
+.al b{display:block;color:var(--txt);font-size:10px}
+.al.on b{color:var(--acc)}
+
+.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
+select{padding:3px 8px;border-radius:var(--r);border:0.5px solid var(--border);font-size:11px;font-family:inherit;background:var(--s0);color:var(--txt)}
+.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
+.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:160px;color:var(--txt)}
+.cnt{font-size:11px;color:var(--txt3)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.listwrap{flex:1;overflow:auto;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
+thead th:hover{background:var(--s2)}
+thead th.num{text-align:right}
+tbody td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tbody td.num{text-align:right}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--s1)}
+tbody tr.on{background:var(--bg-ac)}
+.lotid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc);font-weight:500}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.nm{font-size:12px}
+.sp{font-size:10px;color:var(--txt3);margin-top:1px;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}.bok{background:var(--bg-ok);color:#1D6E52}
+.ubar{height:4px;border-radius:2px;background:var(--s2);overflow:hidden;margin-top:3px;width:70px;margin-left:auto}
+.ubar i{display:block;height:100%;border-radius:2px;background:var(--acc)}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+
+.detail{width:338px;border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.dh{padding:10px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.dh-t{font-size:12px;font-weight:500;margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dh-s{font-size:10px;color:var(--txt3);line-height:1.5}
+.dbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
+.pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s2)}
+.pnh-t{font-size:11px;font-weight:500;flex:1}
+.ir{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:0.5px solid var(--border);font-size:11px}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);font-size:10px;flex-shrink:0}
+.iv{font-weight:500;text-align:right;word-break:break-all}
+.note{padding:7px 10px;font-size:10px;color:var(--txt3);line-height:1.6}
+
+/* 소진 게이지 */
+.gg{padding:10px;background:var(--s1);border-bottom:0.5px solid var(--border)}
+.ggbar{height:22px;border-radius:5px;background:var(--s2);overflow:hidden;position:relative;border:0.5px solid var(--border)}
+.ggfill{height:100%;background:var(--acc);opacity:.8}
+.ggtxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+.ggsub{display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:4px}
+
+/* FIFO 순번 표시 */
+.fifo{display:flex;gap:3px;padding:9px 10px;flex-wrap:wrap;background:var(--s1);border-bottom:0.5px solid var(--border)}
+.fq{width:19px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.fq.done{background:var(--s0);color:var(--txt3);text-decoration:line-through}
+.fq.cur{background:var(--acc);color:#fff;border-color:transparent}
+.fq.live{background:var(--bg-ok);color:#1D6E52;border-color:rgba(29,158,117,.35)}
+
+@media(max-width:820px){
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
+  .main{flex-direction:column}
+  .detail{width:100%;max-height:48%;border-left:none;border-top:0.5px solid var(--border-s)}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .hide-sm{display:none}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="inner">
-    <div class="icon"><i class="ti ti-box"></i></div>
-    <div class="title">LOT 상세</div>
-    <div class="sub">품목별 FIFO 순 LOT를 선택하여 상세 정보, 트랜잭션, 이동 이력을 조회합니다.</div>
-    <div class="features"><div class="feat"><div class="feat-icon"><i class="ti ti-stack"></i></div><div class="feat-t">FIFO 순서</div><div class="feat-s">입고일 기준 자동 정렬</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-history"></i></div><div class="feat-t">트랜잭션 이력</div><div class="feat-s">입고→불출→생산 전체</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-map-pin"></i></div><div class="feat-t">위치 추적</div><div class="feat-s">현재 보관 구역</div></div><div class="feat"><div class="feat-icon"><i class="ti ti-qrcode"></i></div><div class="feat-t">라벨 인쇄</div><div class="feat-s">QR/바코드 출력</div></div></div>
-    <div class="badge">✓ 구현 완료 · 인터랙티브</div>
+
+  <div class="topbar">
+    <div class="pt">
+      <i class="ti ti-box" style="color:var(--acc)"></i>LOT 상세 · 재고 노후화
+      <span class="tag">실제 DB · {{ summary.total }}개 LOT · 기준일 {{ summary.base_date }}</span>
+    </div>
+    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-stack-2"></i>잔여 LOT</div>
+      <div class="kv">{{ summary.live }}<span style="font-size:11px;color:var(--txt3)">개</span></div>
+      <div class="ks">전체 {{ summary.total }} · 소진 {{ summary.done }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-coin"></i>묶인 재고자산</div>
+      <div class="kv">{{ (summary.value/100000000)|round(2) }}<span style="font-size:11px;color:var(--txt3)">억원</span></div>
+      <div class="ks">{{ "{:,}".format(summary.qty) }}개</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-clock"></i>평균 체류일수</div>
+      <div class="kv wn">{{ summary.age_avg }}<span style="font-size:11px">일</span></div>
+      <div class="ks">소진 LOT은 평균 {{ summary.hold_avg }}일 만에 출고</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-alert-triangle"></i>장기 체화 (180일+)</div>
+      <div class="kv dn">{{ summary.aged_n }}<span style="font-size:11px">개</span></div>
+      <div class="ks">잔여의 {{ summary.aged_pct }}% · {{ (summary.aged_value/100000000)|round(2) }}억원</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-arrows-sort"></i>FIFO 위반</div>
+      <div class="kv dn">{{ summary.fifo_bad }}<span style="font-size:11px">건</span></div>
+      <div class="ks">{{ (summary.fifo_bad_value/100000000)|round(2) }}억 묶임 · 준수 {{ summary.fifo_ok }}</div>
+    </div>
+  </div>
+
+  <div class="agebox">
+    <div class="agehead">
+      <span class="t">잔여 LOT 체류일수 분포</span>
+      <span class="m">구간을 클릭하면 해당 LOT만 표시됩니다 · 기준일 {{ summary.base_date }}</span>
+    </div>
+    <div class="agebar" id="agebar"></div>
+    <div class="agelbl" id="agelbl"></div>
+  </div>
+
+  <div class="filter-bar">
+    <button class="pill on" data-f="live" onclick="setF('live')">잔여 LOT</button>
+    <button class="pill"    data-f="all"  onclick="setF('all')">전체</button>
+    <button class="pill"    data-f="done" onclick="setF('done')">소진 완료</button>
+    <button class="pill"    data-f="aged" onclick="setF('aged')">장기 체화</button>
+    <button class="pill"    data-f="fifo" onclick="setF('fifo')">FIFO 위반</button>
+    <select id="loc" onchange="render()"><option value="">전체 창고</option></select>
+    <span class="cnt" id="cnt"></span>
+    <div class="search">
+      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+      <input id="q" placeholder="LOT · 품번 · 품명 · 협력사" oninput="render()">
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="listwrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortBy('Lot_ID')">LOT</th>
+          <th onclick="sortBy('P_N')">자재</th>
+          <th onclick="sortBy('Lot_Date')">입고일</th>
+          <th class="num" onclick="sortBy('age_days')">체류</th>
+          <th class="num" onclick="sortBy('P_Qty')">입고량</th>
+          <th class="num" onclick="sortBy('remain')">잔여</th>
+          <th class="num hide-sm" onclick="sortBy('value')">재고금액</th>
+          <th class="hide-sm" onclick="sortBy('loc_name')">창고</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+
+    <div class="detail">
+      <div class="dh">
+        <div class="dh-t" id="dt">LOT을 선택하세요</div>
+        <div class="dh-s" id="ds">행을 클릭하면 체류 현황과 FIFO 위치가 표시됩니다.</div>
+      </div>
+      <div class="dbody" id="db"></div>
+    </div>
   </div>
 </div>
+
+<script>
+const ROWS = {{ rows|tojson }};
+const SUM  = {{ summary|tojson }};
+const BANDS = ['90일 미만','90~180일','180~270일','270일 이상'];
+const BCOL  = ['#1D9E75','#EF9F27','#E24B4A','#9B1C1C'];
+
+let filter='live', band=null, sortKey='age_days', sortAsc=false, sel=null;
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 창고 옵션
+(function(){
+  const locs=[];
+  ROWS.forEach(function(r){ if(r.loc_name && locs.indexOf(r.loc_name)<0) locs.push(r.loc_name); });
+  locs.sort();
+  const ls=document.getElementById('loc');
+  locs.forEach(function(v){ ls.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
+})();
+
+function drawAge(){
+  const total = BANDS.reduce(function(a,b){return a + SUM.bands[b].n;},0) || 1;
+  let bar='', lbl='';
+  BANDS.forEach(function(b,i){
+    const d=SUM.bands[b];
+    const w=d.n/total*100;
+    if(d.n){
+      bar += '<div class="ab" style="width:' + w.toFixed(1) + '%;background:' + BCOL[i] + ';opacity:'
+           + (band===b?1:.82) + '" onclick="setBand(\'' + b + '\')" title="' + b + ' · '
+           + d.n + '개 LOT · ' + nf(d.qty) + '개 · ' + won(d.value) + '원">'
+           + (w > 10 ? d.n + '개' : '') + '</div>';
+    }
+    lbl += '<div class="al ' + (band===b?'on':'') + '" style="width:' + w.toFixed(1)
+         + '%" onclick="setBand(\'' + b + '\')"><b>' + b + '</b>' + won(d.value) + '원</div>';
+  });
+  document.getElementById('agebar').innerHTML=bar;
+  document.getElementById('agelbl').innerHTML=lbl;
+}
+
+function view(){
+  const q=(document.getElementById('q').value||'').trim().toLowerCase();
+  const loc=document.getElementById('loc').value;
+  let r=ROWS.filter(function(x){
+    const live = (x.remain||0) > 0;
+    if(filter==='live' && !live)               return false;
+    if(filter==='done' && live)                return false;
+    if(filter==='aged' && !(live && x.age_days>=180)) return false;
+    if(filter==='fifo' && x.fifo_ok)           return false;
+    if(band && !(live && x.age_band===band))   return false;
+    if(loc && x.loc_name!==loc)                return false;
+    if(q){
+      const hay=(x.Lot_ID+' '+x.P_ID+' '+(x.P_N||'')+' '+(x.Spec||'')+' '+(x.supplier||'')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+  r.sort(function(a,b){
+    let x=a[sortKey], y=b[sortKey];
+    if(typeof x==='string'||typeof y==='string'){
+      x=(x||'')+''; y=(y||'')+'';
+      return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
+    }
+    x=x||0; y=y||0;
+    return sortAsc ? (x-y) : (y-x);
+  });
+  return r;
+}
+
+function render(){
+  drawAge();
+  const r=view();
+  document.getElementById('cnt').textContent =
+    (band ? band + ' · ' : '') + r.length + '개';
+  const tb=document.getElementById('tb');
+  if(!r.length){
+    tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 LOT이 없습니다.</div></td></tr>';
+    return;
+  }
+  tb.innerHTML=r.slice(0,300).map(function(x){
+    const live=(x.remain||0)>0;
+    const ac = x.age_days>=180 ? 'var(--dn)' : (x.age_days>=90 ? 'var(--wn)' : 'var(--ok)');
+    return '<tr onclick="pick(\'' + x.Lot_ID + '\')" class="' + (sel===x.Lot_ID?'on':'') + '">'
+      + '<td><span class="lotid">' + x.Lot_ID + '</span>'
+      +   (live ? '' : ' <span class="bg bmu">소진</span>')
++   (x.fifo_ok ? '' : ' <span class="bg bdn">FIFO</span>') + '</td>'
+      + '<td><div class="nm">' + esc(x.P_N)
+      +   (x.grade ? ' <span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '')
+      +   '</div><div class="sp">' + esc(x.Spec) + '</div></td>'
+      + '<td class="mono">' + x.Lot_Date + '</td>'
+      + '<td class="num" style="color:' + (live?ac:'var(--txt3)') + ';font-weight:' + (live?'500':'400') + '">'
+      +   (live ? x.age_days + '일' : '<span style="font-size:10px">' + (x.hold_days!=null ? x.hold_days+'일 만에 출고' : '-') + '</span>') + '</td>'
+      + '<td class="num">' + nf(x.P_Qty) + '</td>'
+      + '<td class="num">' + nf(x.remain)
+      +   '<div class="ubar"><i style="width:' + x.used_pct + '%"></i></div></td>'
+      + '<td class="num hide-sm">' + (live ? won(x.value)+'원' : '-') + '</td>'
+      + '<td class="hide-sm">' + esc(x.loc_name||'-') + '</td>'
+      + '</tr>';
+  }).join('') + (r.length>300
+    ? '<tr><td colspan="8"><div class="empty">상위 300개만 표시 중 (전체 '+r.length+'개)</div></td></tr>'
+    : '');
+}
+
+function pick(id){
+  sel=id;
+  const x=ROWS.filter(function(v){return v.Lot_ID===id;})[0];
+  render();
+  const live=(x.remain||0)>0;
+  const sib=ROWS.filter(function(v){return v.P_ID===x.P_ID;})
+                .sort(function(a,b){return (a.Lot_Date>b.Lot_Date)?1:-1;});
+
+  document.getElementById('dt').innerHTML =
+    '<span class="lotid" style="font-size:12px">' + x.Lot_ID + '</span>'
+    + (live ? '<span class="bg bok">보유중</span>' : '<span class="bg bmu">소진완료</span>')
+    + (live && x.age_days>=180 ? '<span class="bg bdn">장기 체화</span>' : '')
+    + (x.fifo_ok ? '' : '<span class="bg bdn">FIFO 위반</span>');
+  document.getElementById('ds').innerHTML =
+    esc(x.P_ID) + ' · ' + esc(x.P_N) + '<br>' + esc(x.Spec||'') + ' · ' + esc(x.supplier||'-');
+
+  // FIFO 순번 칩
+  const chips = sib.map(function(s){
+    const cls = s.Lot_ID===x.Lot_ID ? 'cur' : ((s.remain||0)>0 ? 'live' : 'done');
+    return '<div class="fq ' + cls + '" title="' + s.Lot_ID + ' · ' + s.Lot_Date
+         + ((s.remain||0)>0 ? ' · 잔여 '+nf(s.remain) : ' · 소진') + '">' + s.fifo_seq + '</div>';
+  }).join('');
+
+  document.getElementById('db').innerHTML =
+    '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-progress"></i><span class="pnh-t">소진 현황</span>'
+  +     '<span class="bg ' + (live?'bok':'bmu') + '">' + x.used_pct + '% 소진</span></div>'
+  +   '<div class="gg">'
+  +     '<div class="ggbar"><div class="ggfill" style="width:' + x.used_pct + '%"></div>'
+  +       '<div class="ggtxt">' + nf(x.out_qty) + ' / ' + nf(x.P_Qty) + '</div></div>'
+  +     '<div class="ggsub"><span>입고 ' + nf(x.P_Qty) + '</span><span>잔여 ' + nf(x.remain) + '</span></div>'
+  +   '</div>'
+  +   '<div class="ir"><span class="ik">재고금액</span><span class="iv">' + nf(x.value) + '원</span></div>'
+  +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(x.P_Price) + '원</span></div>'
+  + '</div>'
+
+  + '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-clock"></i><span class="pnh-t">체류 현황</span>'
+  +     (live && x.age_days>=180 ? '<span class="bg bdn">180일+</span>' : '') + '</div>'
+  +   '<div class="ir"><span class="ik">입고일</span><span class="iv">' + x.Lot_Date + '</span></div>'
+  +   (live
+      ? '<div class="ir"><span class="ik">체류일수</span><span class="iv" style="color:'
+        + (x.age_days>=180?'var(--dn)':(x.age_days>=90?'var(--wn)':'var(--ok)')) + '">'
+        + x.age_days + '일 (' + x.age_band + ')</span></div>'
+      : '<div class="ir"><span class="ik">출고일</span><span class="iv">' + (x.out_date||'-') + '</span></div>'
+        + '<div class="ir"><span class="ik">보유 기간</span><span class="iv">' + (x.hold_days!=null ? x.hold_days+'일' : '-') + '</span></div>')
+  +   '<div class="ir"><span class="ik">창고</span><span class="iv">' + esc(x.loc_name||'-') + ' (' + x.Loc_ID + ')</span></div>'
+  +   '<div class="note">' + (live
+      ? (x.age_days>=180
+         ? '⚠️ 입고 후 ' + x.age_days + '일째 출고되지 않았다. 장기 체화 재고로 자금이 묶여 있다.'
+         : '기준일(' + SUM.base_date + ') 대비 체류일수. 전체 잔여 LOT 평균은 ' + SUM.age_avg + '일이다.')
+      : '소진 완료된 LOT은 평균 ' + SUM.hold_avg + '일 만에 출고되었다.') + '</div>'
+  + '</div>'
+
+  + '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-arrows-sort"></i><span class="pnh-t">FIFO 위치</span>'
+  +     '<span class="bg bmu">' + x.fifo_seq + '/' + x.fifo_total + '</span></div>'
+  +   '<div class="fifo">' + chips + '</div>'
+  +   '<div class="note">같은 자재(' + x.P_ID + ')의 LOT을 입고순으로 나열한 것이다.<br>'
+  +     '<b style="color:var(--acc)">파랑</b> = 선택한 LOT · '
+  +     '<b style="color:#1D6E52">초록</b> = 아직 보유 · '
+  +     '<span style="text-decoration:line-through;color:var(--txt3)">회색</span> = 소진됨<br>'
+  +     '전체 636개 LOT 중 선입선출 위반 <b>' + SUM.fifo_bad + '건</b>.</div>'
+  + '</div>'
+
+  + '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-route"></i><span class="pnh-t">입고 경로</span></div>'
+  +   '<div class="ir"><span class="ik">발주번호</span><span class="iv mono">' + (x.H_ID||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">발주일</span><span class="iv">' + (x.order_date||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">리드타임</span><span class="iv">' + (x.lead_days!=null ? x.lead_days+'일' : '-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">공급사</span><span class="iv">' + esc(x.supplier||'-') + '</span></div>'
+  +   '<div class="ir"><span class="ik">입고 담당</span><span class="iv">' + esc(x.receiver||'-') + '</span></div>'
+  +   (x.prod_wo
+      ? '<div class="ir"><span class="ik">생산 투입</span><span class="iv">' + x.prod_wo + '건 · '
+        + nf(x.prod_qty) + '개 (' + (x.prod_fg||'') + ')</span></div>'
+      : '')
+  + '</div>';
+}
+
+function setF(f){
+  filter=f; band=null;
+  const ps=document.querySelectorAll('.pill');
+  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
+  render();
+}
+function setBand(b){
+  band = (band===b ? null : b);
+  if(band){ filter='live';
+    const ps=document.querySelectorAll('.pill');
+    for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f==='live');
+  }
+  render();
+}
+function sortBy(k){
+  if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=false; }
+  render();
+}
+function dl(){
+  const r=view();
+  const head=['LOT','품번','자재명','규격','협력사','입고일','체류일수','구간','입고량','출고량','잔여','소진율','재고금액','창고','FIFO순번','건너뛴횟수','FIFO위반','발주번호','리드타임'];
+  const lines=[head.join(',')];
+  r.forEach(function(x){
+    lines.push([x.Lot_ID,x.P_ID,x.P_N,x.Spec,x.supplier,x.Lot_Date,x.age_days,x.age_band,
+                x.P_Qty,x.out_qty,x.remain,x.used_pct,x.value,x.loc_name,
+                x.fifo_seq+'/'+x.fifo_total,x.fifo_skipped,(x.fifo_ok?'':'위반'),x.H_ID,x.lead_days]
+      .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='LOT_재고노후화.csv';
+  a.click();
+}
+
+render();
+</script>
 </body>
 </html>

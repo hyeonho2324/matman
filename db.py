@@ -1139,3 +1139,121 @@ def dashboard(conn):
             key=lambda f: -(f["zero_parts"] / (f["part_cnt"] or 1)))[:5],
         "date_to": max((r["T_Date"] for r in tx if r["T_Date"]), default="-"),
     }
+
+
+# ── LOT 상세 화면 ────────────────────────────────────────────
+# 재고 체류일수 구간 (장기 체화 판정용)
+AGE_BANDS = [(90, "90일 미만"), (180, "90~180일"), (270, "180~270일"), (10**9, "270일 이상")]
+
+
+def _age_band(days):
+    for limit, label in AGE_BANDS:
+        if days < limit:
+            return label
+    return AGE_BANDS[-1][1]
+
+
+def lot_detail(conn):
+    """LOT 636건 + 체류일수 + FIFO 순번 + 소진 현황.
+
+    기준일은 데이터의 마지막 거래일로 잡는다(실시간 today 를 쓰면
+    더미데이터라 체류일수가 비현실적으로 커진다).
+    """
+    base = conn.execute(
+        "SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0] or "2026-02-07"
+
+    rows = _rows(conn, """
+        SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.P_Qty, l.Loc_ID, l.H_ID,
+               lo.Loc_N            AS loc_name,
+               p.P_N, p.Spec, p.P_Price,
+               c.CP_N              AS supplier,
+               s.Sf_Lv             AS grade,
+               u.Name              AS receiver,
+               h.P_Date            AS order_date,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
+               x.out_date, COALESCE(x.out_qty, 0) AS out_qty,
+               l.P_Qty - COALESCE(x.out_qty, 0)   AS remain,
+               CAST(julianday(?) - julianday(l.Lot_Date) AS INT)        AS age_days,
+               CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
+          FROM Lot_tb l
+          JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN Company_tb c   ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
+          LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
+          LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+          LEFT JOIN (SELECT Lot_ID, SUM(T_Num) AS out_qty, MIN(T_Date) AS out_date
+                       FROM Transaction_tb WHERE T_Type='불출' GROUP BY Lot_ID) x
+                 ON x.Lot_ID = l.Lot_ID
+         ORDER BY l.P_ID, l.Lot_Date
+    """, (base,))
+
+    # 생산 투입 요약
+    used = {}
+    for r in _rows(conn, """
+        SELECT Lot_ID, COUNT(DISTINCT Work_Order) AS wo_n,
+               SUM(Prod_Qty) AS qty, MIN(FG_ID) AS fg
+          FROM Production_tb GROUP BY Lot_ID
+    """):
+        used[r["Lot_ID"]] = r
+
+    # 자재별 FIFO 순번과 준수 여부
+    by_pid = {}
+    for r in rows:
+        by_pid.setdefault(r["P_ID"], []).append(r)
+
+    for pid, ls in by_pid.items():
+        ls.sort(key=lambda x: (x["Lot_Date"] or "", x["Lot_ID"]))
+        for i, r in enumerate(ls, 1):
+            r["fifo_seq"] = i
+            r["fifo_total"] = len(ls)
+        # FIFO 위반 판정
+        #   "소진된 LOT 끼리의 출고 순서"만 보면 위반이 잡히지 않는다(항상 순서대로 나감).
+        #   실제 위반은 **오래된 LOT이 아직 남아 있는데 더 늦게 들어온 LOT이 먼저 나간** 경우다.
+        #   이 LOT 이 건너뛰어진 횟수(skipped)를 함께 기록한다.
+        for i, r in enumerate(ls):
+            skipped = 0
+            if (r["remain"] or 0) > 0:
+                skipped = len([n for n in ls[i + 1:] if n["out_date"]])
+            r["fifo_skipped"] = skipped
+            r["fifo_ok"] = 0 if skipped else 1
+        for r in ls:
+            r["age_band"] = _age_band(r["age_days"] or 0)
+            u = used.get(r["Lot_ID"])
+            r["prod_wo"] = u["wo_n"] if u else 0
+            r["prod_qty"] = u["qty"] if u else 0
+            r["prod_fg"] = u["fg"] if u else None
+            r["value"] = round((r["remain"] or 0) * (r["P_Price"] or 0))
+            r["used_pct"] = round((r["out_qty"] or 0) / r["P_Qty"] * 100, 1) if r["P_Qty"] else 0
+    return rows, base
+
+
+def lot_summary(rows, base):
+    live = [r for r in rows if (r["remain"] or 0) > 0]
+    done = [r for r in rows if (r["remain"] or 0) <= 0]
+    holds = [r["hold_days"] for r in done if r["hold_days"] is not None]
+    bands = {}
+    for _, label in AGE_BANDS:
+        sub = [r for r in live if r["age_band"] == label]
+        bands[label] = {"n": len(sub),
+                        "qty": sum(r["remain"] or 0 for r in sub),
+                        "value": sum(r["value"] or 0 for r in sub)}
+    aged = [r for r in live if (r["age_days"] or 0) >= 180]
+    return {
+        "base_date": base,
+        "total": len(rows),
+        "live": len(live),
+        "done": len(done),
+        "qty": sum(r["remain"] or 0 for r in live),
+        "value": sum(r["value"] or 0 for r in live),
+        "age_avg": round(sum(r["age_days"] or 0 for r in live) / len(live), 1) if live else 0,
+        "hold_avg": round(sum(holds) / len(holds), 1) if holds else 0,
+        "bands": bands,
+        "aged_n": len(aged),
+        "aged_value": sum(r["value"] or 0 for r in aged),
+        "aged_pct": round(len(aged) / len(live) * 100, 1) if live else 0,
+        "fifo_ok": len([r for r in rows if r["fifo_ok"]]),
+        "fifo_bad": len([r for r in rows if not r["fifo_ok"]]),
+        "fifo_bad_qty": sum(r["remain"] or 0 for r in rows if not r["fifo_ok"]),
+        "fifo_bad_value": sum(r["value"] or 0 for r in rows if not r["fifo_ok"]),
+    }

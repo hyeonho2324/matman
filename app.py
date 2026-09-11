@@ -333,6 +333,18 @@ def _ctx_stock_map():
         conn.close()
 
 
+def _ctx_lot():
+    conn = db.connect()
+    try:
+        rows, base = db.lot_detail(conn)
+        return {
+            "rows": rows,
+            "summary": db.lot_summary(rows, base),
+        }
+    finally:
+        conn.close()
+
+
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
     "products":     _ctx_products,
@@ -343,6 +355,7 @@ EMBED_CONTEXT = {
     "production":   _ctx_production,
     "purchase":     _ctx_purchase,
     "stock_map":    _ctx_stock_map,
+    "lot":          _ctx_lot,
 }
 
 
