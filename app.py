@@ -623,9 +623,29 @@ def embed(screen):
         return f"<div style='padding:20px;color:#888;font-family:sans-serif'>embed/{screen}.html 준비 중...</div>"
 
 if __name__ == "__main__":
-    # 로컬 개발용. 배포 환경에서는 gunicorn 이 app 객체를 직접 실행하므로
-    # 이 블록은 실행되지 않는다.
+    # 로컬 개발용. 배포 환경에서는 gunicorn(Render) 또는 PythonAnywhere 가
+    # app 객체를 직접 실행하므로 이 블록은 실행되지 않는다.
     # DEBUG 는 기본 꺼짐 — 켜고 싶으면 환경변수로: FLASK_DEBUG=1 py app.py
     debug = os.environ.get("FLASK_DEBUG") == "1"
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=debug, host="0.0.0.0", port=port)
+
+    # ⚠️ 윈도우에서 Werkzeug 개발 서버는 응답을 간헐적으로 멈춘다.
+    #    화면마다 3~5번에 한 번꼴로 CSS·HTML 응답이 끝나지 않는데,
+    #    스타일시트가 pending 이면 브라우저가 그 뒤의 인라인 <script> 실행을
+    #    막아버려서 embed 화면이 통째로 빈 채로 굳는다(데이터 렌더링을 전부
+    #    인라인 스크립트가 하기 때문). 코드 문제로 보이지만 서버 문제다.
+    #    waitress 가 깔려 있으면 그걸 쓴다 — 순수 파이썬이고 윈도우에서 안정적이다.
+    #        py -m pip install waitress
+    #    디버그 모드는 자동 리로더가 필요하므로 그때만 개발 서버를 쓴다.
+    if debug:
+        app.run(debug=True, host="0.0.0.0", port=port)
+    else:
+        try:
+            from waitress import serve
+        except ImportError:
+            print("[warn] waitress 가 없어 개발 서버로 실행합니다. "
+                  "화면이 비어 보이면 'py -m pip install waitress' 후 다시 실행하세요.")
+            app.run(debug=False, host="0.0.0.0", port=port)
+        else:
+            print("Serving on http://127.0.0.1:%d  (waitress)" % port)
+            serve(app, host="0.0.0.0", port=port, threads=8)

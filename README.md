@@ -5,10 +5,14 @@ Python/Flask 기반 자재관리 웹 애플리케이션
 ## 실행 방법
 
 ```bash
-pip install flask
+pip install -r requirements.txt
 python app.py
-# → http://localhost:5000 접속
+# → http://127.0.0.1:5000 접속
 ```
+
+> 윈도우에서 `localhost` 로 붙으면 요청마다 2초쯤 더 걸립니다. `127.0.0.1` 을 쓰세요.
+> `requirements.txt` 의 waitress 가 로컬 서버로 쓰입니다 — 개발 서버는 큰 응답을
+> 간헐적으로 멈춰서 화면이 빈 채로 굳습니다.
 
 ## 화면 목록 (23개)
 

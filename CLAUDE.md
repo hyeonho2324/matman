@@ -699,9 +699,20 @@ embed 가 아닌 일반 템플릿이라 `EMBED_CONTEXT` 가 아니라 `/` 라우
 cd matman
 pip install -r requirements.txt
 py app.py
-# → http://localhost:5000
+# → http://127.0.0.1:5000
 ```
 `debug` 는 기본 꺼짐. 켜려면 `FLASK_DEBUG=1 py app.py`
+
+> ⚠️ **주소는 `127.0.0.1` 을 쓴다.** `localhost` 로 붙으면 IPv6(`::1`) 를 먼저 시도했다가
+> IPv4 로 떨어지느라 요청마다 2초쯤 더 걸린다. 서버는 `0.0.0.0`(IPv4) 에만 바인딩된다.
+
+> ⚠️ **개발 서버를 그냥 쓰면 화면이 빈 채로 굳는다 (2026-09-28 확인).**
+> 윈도우에서 Werkzeug 개발 서버는 3~5번에 한 번꼴로 응답을 끝내지 않는다.
+> 그게 스타일시트 요청에 걸리면 브라우저가 **그 뒤의 인라인 `<script>` 실행을 막아버려서**
+> embed 화면이 통째로 비어 보인다 — 데이터 렌더링을 전부 인라인 스크립트가 하기 때문이다.
+> 자바스크립트 오류도 안 나서 코드 문제로 착각하기 쉽다.
+> `requirements.txt` 의 **waitress** 가 깔려 있으면 `app.py` 가 알아서 그걸 쓴다(순수 파이썬, 윈도우에서 안정적).
+> 디버그 모드는 자동 리로더가 필요해 그때만 개발 서버를 쓴다.
 
 ### DB 재생성 (원본 데이터가 바뀐 경우만 · 윈도우 전용)
 ```bash
@@ -748,10 +759,30 @@ Flask 의 JSON 직렬화는 기본이 `sort_keys=True` 다.
 > 문구 검색·수정이 불가능했다. 2026-09-11 전부 한글로 복원했다.
 > **패치 스크립트로 템플릿을 쓸 때 한글을 이스케이프하지 말 것.**
 
+### 외부 CDN 을 쓰지 않는다 (2026-09-28)
+
+아이콘 CSS 를 jsDelivr 에서 받아 쓰고 있었다. 이걸 `static/vendor/` 로 옮겼다.
+
+**이유** — `<head>` 의 스타일시트가 pending 이면 브라우저는 **뒤따르는 인라인 `<script>` 를 실행하지 않는다.**
+embed 화면은 데이터 렌더링을 전부 인라인 스크립트가 하므로, CDN 이 느리거나 막히면
+화면이 **통째로 빈 채로** 굳는다. 자바스크립트 오류도 안 나므로 원인을 찾기 어렵다.
+
+```
+static/vendor/tabler-icons.css          232KB  (@font-face src 를 woff2 하나로 줄임)
+static/vendor/fonts/tabler-icons.woff2  851KB
+```
+
+면접용 링크라 심사자 네트워크에서 CDN 이 막혀도 그대로 돌아가야 한다.
+한 번 받으면 캐시되므로 반복 비용은 없다.
+
+> 아이콘은 5,610종 전부 들어 있다. 쓰는 것만 추려내면 훨씬 작아지지만,
+> 나중에 아이콘을 하나 추가할 때 조용히 깨지므로 전체를 그대로 둔다.
+
 ### embed 파일 작성 규칙
 1. 독립 HTML 파일 (DOCTYPE부터 시작)
 2. CSS 변수는 `:root`에 직접 정의 (base.html 미상속)
-3. Tabler Icons CDN 포함 필수
+3. Tabler Icons 는 **자체 호스팅**을 쓴다 — `<link rel="stylesheet" href="/static/vendor/tabler-icons.css">`
+   (base.html 은 `url_for` 로 같은 파일을 가리킨다)
 4. body는 `height:100vh; display:flex; flex-direction:column; overflow:hidden`
 5. 최상위 `.wrap`이 `flex:1; display:flex; flex-direction:column; overflow:hidden`
 6. 더미데이터는 JS 상단 const로 정의
