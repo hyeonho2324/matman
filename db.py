@@ -717,6 +717,60 @@ def supplier_list(conn, period=""):
          GROUP BY h.BRN
     """)}
 
+    # ── 입고 준수 ────────────────────────────────────────────
+    # "발주한 대로 들어왔는가" 를 세 갈래로 본다.
+    #   품번 준수 — 대체 입고가 아니다 (A 를 주문했는데 B 가 오지 않았다)
+    #   수량 준수 — 발주 수량 = 입고 수량
+    #   납기 준수 — 실제 리드타임 <= 계획 리드타임
+    #   종합      — 셋 다 만족
+    #
+    # ⚠️ 약속 납기일 컬럼이 데이터에 없다. 그래서 자재별 계획 리드타임
+    #    (Safe_tb.Lead_Time — 안전재고·발주 계산이 쓰는 그 값)을 약속 납기로 대용한다.
+    #    협력사가 실제로 약속한 날짜가 아니라 우리 쪽 계획값이라는 점을 화면에도 적는다.
+    #
+    # LOT 을 찾을 때 변경 이력을 먼저 본다. 대체 입고는 발주 품번과 LOT 품번이
+    # 달라 H_ID+P_ID 로는 못 찾고, 그대로 두면 미입고로 잘못 집계된다.
+    comply = {r["BRN"]: r for r in _rows(conn, """
+        SELECT h.BRN,
+               COUNT(*) AS po_lines,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL THEN 1 ELSE 0 END) AS recv,
+               SUM(CASE WHEN l.Lot_ID IS NULL  THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND ch.Chg_ID IS NOT NULL AND ch.In_P_ID <> ch.Ord_P_ID
+                        THEN 1 ELSE 0 END) AS swap,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty = d.P_Qty THEN 1 ELSE 0 END) AS qty_ok,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty < d.P_Qty THEN 1 ELSE 0 END) AS qty_short,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty > d.P_Qty THEN 1 ELSE 0 END) AS qty_over,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
+                        THEN 1 ELSE 0 END) AS due_base,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
+                         AND julianday(l.Lot_Date) - julianday(h.P_Date) <= s.Lead_Time
+                        THEN 1 ELSE 0 END) AS due_ok,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND l.P_Qty = d.P_Qty
+                         AND (ch.Chg_ID IS NULL OR ch.In_P_ID = ch.Ord_P_ID)
+                         AND s.Lead_Time IS NOT NULL
+                         AND julianday(l.Lot_Date) - julianday(h.P_Date) <= s.Lead_Time
+                        THEN 1 ELSE 0 END) AS all_ok,
+               AVG(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
+                        THEN julianday(l.Lot_Date) - julianday(h.P_Date) - s.Lead_Time END) AS delay,
+               MAX(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
+                        THEN julianday(l.Lot_Date) - julianday(h.P_Date) - s.Lead_Time END) AS delay_max
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
+          LEFT JOIN Purchase_Change_tb ch
+                 ON ch.H_ID = d.H_ID AND ch.Purchase_num = d.Purchase_num
+          LEFT JOIN Lot_tb l
+                 ON l.Lot_ID = COALESCE(ch.Lot_ID, (
+                        SELECT l2.Lot_ID FROM Lot_tb l2
+                         WHERE l2.H_ID = d.H_ID AND l2.P_ID = d.P_ID
+                           AND l2.Lot_ID NOT IN (%s)
+                         LIMIT 1))
+         WHERE %s
+         GROUP BY h.BRN
+    """ % (_CLAIMED_LOTS, pw))}
+
     # 공급 품목 + 리스크 (A등급 / 안전재고 미달)
     risk = {r["BRN"]: r for r in _rows(conn, f"""
         WITH stock AS ({STOCK_SQL})
@@ -758,6 +812,31 @@ def supplier_list(conn, period=""):
         c["first_order"] = o.get("first_order")
         c["last_order"] = o.get("last_order")
 
+        # 입고 준수율 — 분모는 '입고 판정이 끝난 라인'. 미입고를 분모에 넣으면
+        # 발주 직후 기간일수록 준수율이 0% 에 가깝게 떨어진다.
+        m = comply.get(b, {})
+        recv = m.get("recv", 0) or 0
+        due_base = m.get("due_base", 0) or 0
+        c["po_lines"] = m.get("po_lines", 0) or 0
+        c["recv_lines"] = recv
+        c["pending_lines"] = m.get("pending", 0) or 0
+        c["swap_lines"] = m.get("swap", 0) or 0
+        c["qty_ok"] = m.get("qty_ok", 0) or 0
+        c["qty_short"] = m.get("qty_short", 0) or 0
+        c["qty_over"] = m.get("qty_over", 0) or 0
+        c["due_ok"] = m.get("due_ok", 0) or 0
+        c["due_base"] = due_base
+        c["all_ok"] = m.get("all_ok", 0) or 0
+        c["qty_pct"] = _pct(c["qty_ok"], recv) if recv else None
+        c["due_pct"] = _pct(c["due_ok"], due_base) if due_base else None
+        c["comply_pct"] = _pct(c["all_ok"], recv) if recv else None
+        c["delay_avg"] = round(m["delay"], 1) if m.get("delay") is not None else None
+        c["delay_max"] = int(m["delay_max"]) if m.get("delay_max") is not None else None
+        c["comply_lv"] = (None if c["comply_pct"] is None else
+                          ("우수" if c["comply_pct"] >= 95 else
+                           ("양호" if c["comply_pct"] >= 80 else
+                            ("주의" if c["comply_pct"] >= 60 else "미흡"))))
+
         k = risk.get(b, {})
         c["item_cnt"] = k.get("item_cnt", 0)
         c["grade_a"] = k.get("grade_a", 0) or 0
@@ -796,6 +875,10 @@ def supplier_items(conn):
 
 def supplier_summary(comps):
     with_lt = [c for c in comps if c["lt_n"]]
+    # 전체 입고 준수율 — 협력사별 비율의 평균이 아니라 라인 수로 합산한다.
+    # 평균을 내면 한 라인짜리 협력사가 100라인짜리와 같은 무게를 갖는다.
+    recv = sum(c.get("recv_lines", 0) or 0 for c in comps)
+    dueb = sum(c.get("due_base", 0) or 0 for c in comps)
     return {
         "total": len(comps),
         "foreign": len([c for c in comps if c["Is_Foreign"] == "Y"]),
@@ -807,6 +890,13 @@ def supplier_summary(comps):
         "risk_high": len([c for c in comps if c["risk_lv"] == "높음"]),
         "risk_mid": len([c for c in comps if c["risk_lv"] == "보통"]),
         "risk_low": len([c for c in comps if c["risk_lv"] == "낮음"]),
+        "recv_lines": recv,
+        "pending_lines": sum(c.get("pending_lines", 0) or 0 for c in comps),
+        "qty_pct": _pct(sum(c.get("qty_ok", 0) or 0 for c in comps), recv) if recv else 0,
+        "due_pct": _pct(sum(c.get("due_ok", 0) or 0 for c in comps), dueb) if dueb else 0,
+        "comply_pct": _pct(sum(c.get("all_ok", 0) or 0 for c in comps), recv) if recv else 0,
+        "comply_poor": len([c for c in comps
+                            if c.get("comply_lv") in ("주의", "미흡")]),
     }
 
 

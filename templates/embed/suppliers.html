@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
 .btn:hover{background:var(--s2)}
 
-.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi-row{display:grid;grid-template-columns:repeat(6,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
 .kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
 .kpi:last-child{border-right:none}
 .kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
@@ -78,6 +78,14 @@ tbody tr.on{background:var(--bg-ac)}
 /* 리스크 분해 막대 */
 .rk{padding:6px 10px;border-bottom:0.5px solid var(--border)}
 .rkrow{display:flex;align-items:center;gap:7px;font-size:10px;padding:2px 0}
+.cbar{height:5px;background:var(--s2);border-radius:99px;overflow:hidden;margin-top:3px}
+.cbar i{display:block;height:100%}
+.crow{display:grid;grid-template-columns:62px 1fr 54px;align-items:center;gap:8px;padding:5px 0;font-size:11px}
+.crow .cl{color:var(--txt3)}
+.crow .cvv{text-align:right;font-weight:600}
+.cbig{display:flex;align-items:baseline;gap:6px;margin-bottom:2px}
+.cbig b{font-size:22px;line-height:1}
+.cnote{font-size:10px;color:var(--txt3);line-height:1.6;padding-top:6px}
 .rkn{width:74px;color:var(--txt3);flex-shrink:0}
 .rkb{flex:1;height:6px;border-radius:3px;background:var(--s2);overflow:hidden}
 .rkb i{display:block;height:100%;border-radius:3px;background:var(--wn)}
@@ -104,7 +112,7 @@ tbody tr.on{background:var(--bg-ac)}
 
   <div class="topbar">
     <div class="pt">
-      <i class="ti ti-building-store" style="color:var(--acc)"></i>협력사 관리 · 납기 안정성
+      <i class="ti ti-building-store" style="color:var(--acc)"></i>협력사 관리 · 납기 안정성 · 입고 준수율
       <span class="tag">실제 DB · {{ summary.total }}개사 · 발주 {{ summary.order_cnt }}건 · {{ period_label }}</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
@@ -125,6 +133,11 @@ tbody tr.on{background:var(--bg-ac)}
       <div class="kl"><i class="ti ti-clock"></i>평균 리드타임</div>
       <div class="kv ac">{{ summary.lt_avg }}<span style="font-size:11px">일</span></div>
       <div class="ks">발주 → 입고 실측</div>
+    </div>
+    <div class="kpi">
+      <div class="kl"><i class="ti ti-shield-check"></i>입고 준수율</div>
+      <div class="kv">{{ summary.comply_pct }}<span style="font-size:11px">%</span></div>
+      <div class="ks">수량 {{ summary.qty_pct }}% · 납기 {{ summary.due_pct }}%</div>
     </div>
     <div class="kpi">
       <div class="kl"><i class="ti ti-alert-triangle"></i>공급 리스크 높음</div>
@@ -155,6 +168,7 @@ tbody tr.on{background:var(--bg-ac)}
           <th onclick="sortBy('CP_N')">협력사</th>
           <th class="num" onclick="sortBy('lt_avg')">리드타임</th>
           <th class="num hide-sm" onclick="sortBy('lt_cv')">변동</th>
+          <th class="num" onclick="sortBy('comply_pct')">입고 준수율</th>
           <th class="num" onclick="sortBy('item_cnt')">공급품목</th>
           <th class="num hide-sm" onclick="sortBy('grade_a')">A등급</th>
           <th class="num" onclick="sortBy('short_cnt')">미달</th>
@@ -184,6 +198,11 @@ const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 const RC = {'높음':'bdn', '보통':'bwn', '낮음':'bok'};
+// 입고 준수율 등급 — 서버(comply_lv)와 같은 구간을 쓴다
+const CC = {'우수':'bok', '양호':'bac', '주의':'bwn', '미흡':'bdn'};
+function cColor(p){
+  return p >= 95 ? 'var(--ok)' : (p >= 80 ? 'var(--acc)' : (p >= 60 ? 'var(--wn)' : 'var(--dn)'));
+}
 const maxLt = Math.max.apply(null, COMPS.map(function(c){return c.lt_avg||0;})) || 1;
 
 function view(){
@@ -211,7 +230,7 @@ function render(){
   document.getElementById('cnt').textContent=r.length+'개사';
   const tb=document.getElementById('tb');
   if(!r.length){
-    tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 협력사가 없습니다.</div></td></tr>';
+    tb.innerHTML='<tr><td colspan="9"><div class="empty">조건에 맞는 협력사가 없습니다.</div></td></tr>';
     return;
   }
   tb.innerHTML=r.map(function(x){
@@ -224,6 +243,12 @@ function render(){
       + '<td class="num">' + (x.lt_avg!=null ? x.lt_avg+'일' : '-')
       +   '<div class="ltbar"><i style="width:' + pct + '%;background:' + col + '"></i></div></td>'
       + '<td class="num hide-sm">' + (x.lt_cv!=null ? x.lt_cv+'%' : '-') + '</td>'
+      + '<td class="num">' + (x.comply_pct!=null
+            ? '<span class="bg ' + CC[x.comply_lv] + '">' + x.comply_pct + '%</span>'
+              + '<div class="cbar"><i style="width:' + x.comply_pct + '%;background:'
+              + cColor(x.comply_pct) + '"></i></div>'
+              + '<div class="brn">수량 ' + x.qty_pct + '% · 납기 ' + x.due_pct + '%</div>'
+            : '-') + '</td>'
       + '<td class="num">' + x.item_cnt + '</td>'
       + '<td class="num hide-sm">' + (x.grade_a ? '<span class="gr grA">A</span> '+x.grade_a : '-') + '</td>'
       + '<td class="num ' + (x.short_cnt?'short':'') + '">' + (x.short_cnt||'-') + '</td>'
@@ -235,6 +260,44 @@ function render(){
 }
 
 // 리드타임 실측 이력 스파크라인
+// 입고 준수 상세 — 세 갈래를 각각 보여준다
+function complyBox(c){
+  if(c.comply_pct == null)
+    return '<div class="pn"><div class="pnh"><i class="ti ti-shield-check"></i>'
+      + '<span class="pnh-t">입고 준수율</span></div>'
+      + '<div class="note">이 기간에 입고된 발주가 없습니다.</div></div>';
+  const bar = function(label, pct, sub){
+    return '<div class="crow"><span class="cl">' + label + '</span>'
+      + '<span><div class="cbar"><i style="width:' + pct + '%;background:' + cColor(pct) + '"></i></div>'
+      +   '<div class="brn">' + sub + '</div></span>'
+      + '<span class="cvv" style="color:' + cColor(pct) + '">' + pct + '%</span></div>';
+  };
+  return '<div class="pn"><div class="pnh"><i class="ti ti-shield-check"></i>'
+  +   '<span class="pnh-t">입고 준수율</span>'
+  +   '<span class="bg bmu">입고 ' + c.recv_lines + '라인 기준</span></div>'
+  +   '<div style="padding:8px 12px">'
+  +     '<div class="cbig"><b style="color:' + cColor(c.comply_pct) + '">' + c.comply_pct + '%</b>'
+  +       '<span class="bg ' + CC[c.comply_lv] + '">' + c.comply_lv + '</span>'
+  +       '<span class="brn" style="margin-left:auto">발주 ' + c.po_lines + '라인'
+  +         (c.pending_lines ? ' · 미입고 ' + c.pending_lines : '') + '</span></div>'
+  +     bar('수량 준수', c.qty_pct,
+           '일치 ' + c.qty_ok + (c.qty_short ? ' · 부족 ' + c.qty_short : '')
+           + (c.qty_over ? ' · 초과 ' + c.qty_over : ''))
+  +     bar('납기 준수', c.due_pct,
+           '기한 내 ' + c.due_ok + ' / ' + c.due_base
+           + ' · 평균 ' + (c.delay_avg > 0 ? '+' : '') + c.delay_avg + '일'
+           + (c.delay_max != null ? ' · 최대 ' + (c.delay_max > 0 ? '+' : '') + c.delay_max + '일' : ''))
+  +     (c.swap_lines ? '<div class="crow"><span class="cl">품번 준수</span>'
+           + '<span><div class="brn">대체 입고 ' + c.swap_lines + '건 — 발주와 다른 품번이 들어왔습니다</div></span>'
+           + '<span class="cvv" style="color:var(--wn)">' + c.swap_lines + '건</span></div>' : '')
+  +   '</div>'
+  +   '<div class="note">종합은 <b>수량·납기·품번을 모두 만족한 라인</b>의 비율입니다. '
+  +     '분모는 입고 판정이 끝난 라인이라 미입고는 빼고 셉니다. '
+  +     '약속 납기일 컬럼이 데이터에 없어 <b>자재별 계획 리드타임</b>(안전재고 계산이 쓰는 값)을 '
+  +     '약속 납기로 대용했습니다 — 협력사가 실제로 약속한 날짜는 아닙니다.</div>'
+  + '</div>';
+}
+
 function sparkline(c){
   const h=c.lt_hist||[];
   if(h.length<2) return '';
@@ -291,7 +354,8 @@ function pick(brn){
   }).join('');
 
   document.getElementById('db').innerHTML =
-    '<div class="pn">'
+    complyBox(c)
+  + '<div class="pn">'
   +   '<div class="pnh"><i class="ti ti-clock"></i><span class="pnh-t">납기 실적</span>'
   +     '<span class="bg bmu">' + c.lt_n + '건 실측</span></div>'
   +   sparkline(c)
@@ -346,16 +410,21 @@ function sortBy(k){
 }
 function dl(){
   const r=view();
-  const head=['협력사','코드','해외','평균리드타임','중앙값','최소','최대','표준편차','변동계수(%)','공급품목','A등급','미달','발주건수','발주액','리스크점수','리스크등급'];
+  const head=['협력사','코드','해외','평균리드타임','중앙값','최소','최대','표준편차','변동계수(%)',
+              '발주라인','입고라인','미입고','입고준수율(%)','수량준수율(%)','납기준수율(%)',
+              '수량일치','수량부족','수량초과','납기내','대체입고','평균지연일','최대지연일','준수등급',
+              '공급품목','A등급','미달','발주건수','발주액','리스크점수','리스크등급'];
   const lines=[head.join(',')];
   r.forEach(function(x){
     lines.push([x.CP_N,x.BRN,x.Is_Foreign,x.lt_avg,x.lt_med,x.lt_min,x.lt_max,x.lt_sd,x.lt_cv,
+                x.po_lines,x.recv_lines,x.pending_lines,x.comply_pct,x.qty_pct,x.due_pct,
+                x.qty_ok,x.qty_short,x.qty_over,x.due_ok,x.swap_lines,x.delay_avg,x.delay_max,x.comply_lv,
                 x.item_cnt,x.grade_a,x.short_cnt,x.order_cnt,Math.round(x.amount),x.risk,x.risk_lv]
       .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
   });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
-  a.download='협력사_납기분석.csv';
+  a.download='협력사_납기_입고준수.csv';
   a.click();
 }
 
