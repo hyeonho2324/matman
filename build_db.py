@@ -207,7 +207,8 @@ CREATE TABLE Disburse_Req_Item_tb (
     Req_num   INTEGER NOT NULL,      -- 요청서 내 순번
     P_ID      TEXT NOT NULL,
     Need_Qty  INTEGER NOT NULL,      -- BOM 산출 소요량 (요청 근거)
-    Stock_Qty INTEGER NOT NULL,      -- 요청 시점 현재고 (요청 근거)
+    Site_Qty  INTEGER NOT NULL DEFAULT 0,  -- 요청 시점 현장 보유 (요청 근거)
+    Stock_Qty INTEGER NOT NULL,      -- 요청 시점 자재창고 재고 (요청 근거)
     Req_Qty   INTEGER NOT NULL,      -- 실제 요청 수량
     Pkg_Unit  INTEGER,               -- 요청 시점 포장단위
     Is_Manual TEXT NOT NULL,         -- Y = 포장단위 배수가 아닌 직접 입력

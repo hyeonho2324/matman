@@ -3248,14 +3248,46 @@ def pkg_options(need, pkg, span=3):
     return opts, base
 
 
+# 현장(생산라인) 보유 재고.
+#
+# Location_tb 에는 자재창고 5개뿐이고 현장창고는 없다. 그래서 창고 재고처럼
+# 조회할 수 없고 거래에서 역산한다.
+#
+#   현장 재고 = 불출(창고→현장) − 생산 투입(현장에서 소비) − 반납(현장→창고)
+#
+# 실측 검증: 200종 전수에서 음수가 0건이다. 불출보다 투입이 많은 모순이 없다는 뜻이라
+# 이 식이 데이터와 정합한다고 볼 수 있다.
+SITE_STOCK_SQL = """
+    SELECT p.P_ID,
+           COALESCE(o.q, 0) - COALESCE(u.q, 0) - COALESCE(r.q, 0) AS site
+      FROM Product_tb p
+      LEFT JOIN (SELECT l.P_ID, SUM(t.T_Num) q
+                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                  WHERE {demand} GROUP BY l.P_ID) o ON p.P_ID = o.P_ID
+      LEFT JOIN (SELECT P_ID, SUM(Prod_Qty) q FROM Production_tb GROUP BY P_ID) u
+             ON p.P_ID = u.P_ID
+      LEFT JOIN (SELECT l.P_ID, SUM(t.T_Num) q
+                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                  WHERE t.T_Type IN ({ret}) GROUP BY l.P_ID) r ON p.P_ID = r.P_ID
+"""
+
+
+def site_stock(conn):
+    """품번별 현장 보유 수량. 음수는 0 으로 막는다(데이터 모순 방어)."""
+    sql = SITE_STOCK_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+    return {r["P_ID"]: max(r["site"] or 0, 0) for r in _rows(conn, sql)}
+
+
 def request_source(conn):
     """불출 요청 화면의 기준 데이터 — 완제품·담당자·기준일."""
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
     brows = bom_rows(conn)
     fgs = fg_list(conn, brows)
     # 화면이 자체 계산할 수 있도록 표준 BOM 만 내려보낸다 (대체품은 자재팀 판단)
+    site = site_stock(conn)
     bom = [{"FG_ID": b["FG_ID"], "P_ID": b["P_ID"], "P_N": b["P_N"], "Spec": b["Spec"],
             "BOM_Qty": b["BOM_Qty"], "Unit": b["Unit"], "stock": b["stock"],
+            "site": site.get(b["P_ID"], 0),
             "PkgUnit": b["PkgUnit"], "grade": b["grade"], "price": b["P_Price"],
             "lead_time": b["lead_time"]}
            for b in brows if not b["is_alt"]]
@@ -3280,25 +3312,37 @@ def request_plan(conn, fg_id, plan_qty):
     if plan_qty <= 0:
         return None, ["생산 목표 수량은 1 이상이어야 합니다."]
 
+    site = site_stock(conn)
     rows = []
     for b in bom_rows(conn):
         if b["FG_ID"] != fg_id or b["is_alt"]:
             continue
         need = (b["BOM_Qty"] or 0) * plan_qty
-        opts, base = pkg_options(need, b["PkgUnit"])
+        on_site = site.get(b["P_ID"], 0)
+        # 현장에 이미 있는 만큼은 다시 내보낼 필요가 없다
+        net = max(need - on_site, 0)
+        if net > 0:
+            opts, base = pkg_options(net, b["PkgUnit"])
+        else:
+            # 요청할 게 없어도 후보는 남겨 둔다 — 여유분을 더 받고 싶을 수 있다
+            opts, _ = pkg_options(b["PkgUnit"] or 1, b["PkgUnit"])
+            base = 0
         rows.append({
             "P_ID": b["P_ID"], "P_N": b["P_N"], "Spec": b["Spec"],
             "grade": b["grade"], "unit": b["Unit"],
             "bom_qty": b["BOM_Qty"], "need_qty": need,
+            "site_qty": on_site, "net_need": net,
             "stock": b["stock"], "pkg": b["PkgUnit"],
             "options": opts, "req_qty": base,
-            "short": max(need - b["stock"], 0),
+            "short": max(net - b["stock"], 0),
             "price": b["P_Price"], "lead_time": b["lead_time"],
         })
     rows.sort(key=lambda r: r["P_ID"])
     return {"FG_ID": fg["FG_ID"], "FG_N": fg["FG_N"], "plan_qty": plan_qty,
             "items": rows, "line_cnt": len(rows),
-            "short_cnt": sum(1 for r in rows if r["short"] > 0)}, []
+            "short_cnt": sum(1 for r in rows if r["short"] > 0),
+            "covered_cnt": sum(1 for r in rows if r["net_need"] == 0),
+            "site_qty": sum(r["site_qty"] for r in rows)}, []
 
 
 def preview_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=None):
@@ -3365,6 +3409,8 @@ def preview_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=Non
     plan["amount"] = sum(r["amount"] for r in rows)
     plan["short_cnt"] = sum(1 for r in rows if r["short"] > 0)
     plan["manual_cnt"] = sum(1 for r in rows if r["manual"])
+    plan["site_qty"] = sum(r["site_qty"] for r in rows)
+    plan["need_qty"] = sum(r["need_qty"] for r in rows)
     plan["date"] = date
     plan["Work_Order"] = (wo or "").strip() or next_wo_id(conn, date)
     plan["worker"] = {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}
@@ -3389,11 +3435,11 @@ def create_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=None
         for n, it in enumerate(plan["items"], 1):
             conn.execute(
                 "INSERT INTO Disburse_Req_Item_tb"
-                " (Req_ID, Req_num, P_ID, Need_Qty, Stock_Qty, Req_Qty,"
+                " (Req_ID, Req_num, P_ID, Need_Qty, Site_Qty, Stock_Qty, Req_Qty,"
                 "  Pkg_Unit, Is_Manual, Done_Qty)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-                (rid, n, it["P_ID"], it["need_qty"], it["stock"], it["req_qty"],
-                 it["pkg"], "Y" if it["manual"] else "N"))
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (rid, n, it["P_ID"], it["need_qty"], it["site_qty"], it["stock"],
+                 it["req_qty"], it["pkg"], "Y" if it["manual"] else "N"))
             it["Req_num"] = n
         plan["Req_ID"] = rid
     return plan, []

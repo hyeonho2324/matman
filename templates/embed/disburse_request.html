@@ -57,6 +57,7 @@ td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tr.short{background:var(--bg-dn)}
 tr.manual{background:var(--bg-wn)}
+tr.covered{opacity:.5}
 .num{text-align:right}
 .sub{font-size:9px;color:var(--txt3);margin-top:1px}
 .bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
@@ -108,8 +109,9 @@ tr.manual{background:var(--bg-wn)}
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    생산 목표 대수를 넣으면 <b>BOM으로 자재 소요량을 자동 산출</b>합니다. 작업자가 현장 사정을 반영해 수량을 확정하면
-    자재팀이 <b>FIFO로 불출</b>합니다. 요청 수량은 <b>입고 포장단위의 배수</b>가 기본이고, 필요하면 직접 입력할 수 있습니다.
+    생산 목표 대수를 넣으면 <b>BOM으로 자재 소요량을 자동 산출</b>하고, <b>현장에 이미 있는 수량을 빼서</b>
+    요청 수량을 잡습니다(<b>소요량 − 현장 보유</b>, 포장단위로 올림). 현장에 충분한 자재는 요청에서 자동으로 빠집니다.
+    작업자가 확정하면 자재팀이 <b>FIFO로 불출</b>합니다. 필요하면 수량을 직접 입력할 수 있습니다.
   </div>
   <div class="main">
     <div class="left">
@@ -165,8 +167,13 @@ function rowsOf(fgId){
   return (BY_FG[fgId] || []).slice().sort(function(a,b){ return a.P_ID < b.P_ID ? -1 : 1; })
     .map(function(b){
       const need = (b.BOM_Qty||0) * planQty;
-      const po = pkgOptions(need, b.PkgUnit);
-      return Object.assign({}, b, {need: need, opts: po.opts, base: po.base});
+      // 현장에 이미 있는 만큼은 다시 내보낼 필요가 없다
+      const net  = Math.max(need - (b.site||0), 0);
+      let opts, base;
+      if(net > 0){ const po = pkgOptions(net, b.PkgUnit); opts = po.opts; base = po.base; }
+      // 요청할 게 없어도 후보는 남겨 둔다 — 여유분을 더 받고 싶을 수 있다
+      else { opts = pkgOptions(b.PkgUnit || 1, b.PkgUnit).opts; base = 0; }
+      return Object.assign({}, b, {need: need, net: net, opts: opts, base: base});
     });
 }
 
@@ -274,7 +281,9 @@ function drawNew(){
   const amt    = act.reduce(function(a,r){ return a + Q[r.P_ID].qty * (r.price||0); }, 0);
   const nShort = act.filter(function(r){ return Q[r.P_ID].qty > r.stock; }).length;
   const nMan   = act.filter(function(r){ return Q[r.P_ID].manual && r.PkgUnit && Q[r.P_ID].qty % r.PkgUnit !== 0; }).length;
-  const nOver  = act.filter(function(r){ return r.need > 0 && Q[r.P_ID].qty >= r.need * 2; }).length;
+  const nOver  = act.filter(function(r){ return r.net > 0 && Q[r.P_ID].qty >= r.net * 2; }).length;
+  const nCover = rows.filter(function(r){ return r.need > 0 && r.net === 0; }).length;
+  const siteTot = rows.reduce(function(a,r){ return a + (r.site||0); }, 0);
 
   document.getElementById('right').innerHTML =
     '<div class="planbar">'
@@ -306,20 +315,23 @@ function drawNew(){
   +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>요청 수량</div>'
   +     '<div class="c-v">' + nf(totQty) + '<small>개</small></div>'
   +     '<div class="c-s">' + won(amt) + '원</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
-  +     '<div class="c-v ' + (nShort?'dn':'ok') + '">' + nShort + '<small>종</small></div>'
-  +     '<div class="c-s">' + (nShort ? '자재창고 재고 미달' : '전량 불출 가능') + '</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-square"></i>과다 요청</div>'
-  +     '<div class="c-v ' + (nOver?'wn':'ok') + '">' + nOver + '<small>종</small></div>'
-  +     '<div class="c-s">' + (nOver ? '소요량의 2배 이상' : '적정 범위')
-  +       (nMan ? ' · 직접입력 ' + nMan : '') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-building-factory"></i>현장 충당</div>'
+  +     '<div class="c-v ' + (nCover?'ok':'') + '">' + nCover + '<small>종</small></div>'
+  +     '<div class="c-s">현장 보유 ' + nf(siteTot) + '개로 요청 불필요</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-square"></i>주의</div>'
+  +     '<div class="c-v ' + ((nOver||nShort)?'wn':'ok') + '">' + (nOver+nShort) + '<small>종</small></div>'
+  +     '<div class="c-s">' + (nShort ? '재고부족 ' + nShort : '')
+  +       (nShort && nOver ? ' · ' : '') + (nOver ? '과다 ' + nOver : '')
+  +       (nMan ? ' · 직접입력 ' + nMan : '')
+  +       (!nShort && !nOver && !nMan ? '적정 범위' : '') + '</div></div>'
   + '</div>'
 
   + '<div class="sec"><div class="sech"><i class="ti ti-sitemap"></i>'
   +   '<span class="sech-t">자재 소요량 (BOM 자동 산출)</span>'
   +   '<span class="sech-m">소요량 = BOM 소요 × ' + nf(planQty) + '대</span></div>'
   +   '<table><thead><tr><th>자재</th><th class="num">대당</th><th class="num">소요량</th>'
-  +     '<th class="num">현재고</th><th class="num">포장</th><th>요청 수량</th>'
+  +     '<th class="num">현장 보유</th><th class="num">필요</th>'
+  +     '<th class="num">창고재고</th><th class="num">포장</th><th>요청 수량</th>'
   +     '<th class="num">부족</th></tr></thead><tbody>'
   +   rows.map(function(r){
       const st = Q[r.P_ID];
@@ -327,7 +339,7 @@ function drawNew(){
       const shortQty = Math.max(st.qty - r.stock, 0);
       const boxes = (r.PkgUnit && !offPkg) ? (st.qty / r.PkgUnit) : null;
       // 포장단위가 크면 소요량보다 훨씬 많이 나갈 수 있다. 2배 넘으면 눈에 띄게 알린다.
-      const over = (r.need > 0 && st.qty >= r.need * 2) ? (st.qty / r.need).toFixed(1) : null;
+      const over = (r.net > 0 && st.qty >= r.net * 2) ? (st.qty / r.net).toFixed(1) : null;
       let ctl;
       if(st.manual){
         ctl = '<input class="qin" type="number" min="0" value="' + st.qty + '" data-pid="' + r.P_ID
@@ -343,12 +355,16 @@ function drawNew(){
             + '<option value="__manual">직접 입력…</option>'
             + '</select>';
       }
-      return '<tr class="' + (shortQty ? 'short' : (st.manual && offPkg ? 'manual' : '')) + '">'
+      return '<tr class="' + (shortQty ? 'short' : (st.manual && offPkg ? 'manual'
+              : (r.net === 0 && st.qty === 0 ? 'covered' : ''))) + '">'
         + '<td><span class="pid">' + r.P_ID + '</span>'
         +   (r.grade ? ' <span class="gr gr' + r.grade + '">' + r.grade + '</span>' : '')
         +   '<div class="sub">' + esc((r.P_N||'').slice(0,16)) + '</div></td>'
         + '<td class="num">' + nf(r.BOM_Qty) + '<div class="sub">' + esc(r.Unit||'') + '</div></td>'
-        + '<td class="num"><b>' + nf(r.need) + '</b></td>'
+        + '<td class="num">' + nf(r.need) + '</td>'
+        + '<td class="num">' + (r.site ? '<b style="color:var(--ok)">' + nf(r.site) + '</b>' : '0') + '</td>'
+        + '<td class="num">' + (r.net > 0 ? '<b>' + nf(r.net) + '</b>'
+              : '<span class="bg bok">충당</span>') + '</td>'
         + '<td class="num">' + nf(r.stock) + '</td>'
         + '<td class="num">' + nf(r.PkgUnit) + '</td>'
         + '<td>' + ctl + (boxes ? '<div class="sub">' + boxes + '박스</div>' : '')
@@ -359,7 +375,10 @@ function drawNew(){
         + '</tr>';
     }).join('')
   +   '</tbody></table>'
-  +   '<div class="note">입고가 상자 단위로 들어오므로 불출도 <b>포장단위 배수</b>가 기본입니다. '
+  +   '<div class="note"><b>현장 보유</b>는 <b>불출 − 생산 투입 − 반납</b>으로 산출합니다. '
+  +     '현장창고가 데이터에 없어 거래에서 역산한 값입니다. '
+  +     '소요량을 현장 보유가 이미 덮는 자재는 <b>충당</b>으로 표시되고 요청에서 빠집니다.<br>'
+  +     '입고가 상자 단위로 들어오므로 불출도 <b>포장단위 배수</b>가 기본입니다. '
   +     '낱개로 뜯으면 남은 수량의 관리 주체가 애매해집니다. '
   +     '다만 포장단위가 크면 소요량보다 훨씬 많이 나갈 수 있습니다 — '
   +     '<b style="color:#9B1C1C">소요 대비 배수</b>가 표시된 자재는 <b>직접 입력</b>으로 조정하세요. '
@@ -414,15 +433,16 @@ function drawReq(){
   + '<div class="sec"><div class="sech"><i class="ti ti-package"></i>'
   +   '<span class="sech-t">요청 품목</span>'
   +   '<span class="sech-m">' + (r.manual_cnt ? '포장단위 예외 ' + r.manual_cnt + '종' : '전부 포장단위 배수') + '</span></div>'
-  +   '<table><thead><tr><th>자재</th><th class="num">BOM 소요</th><th class="num">요청</th>'
-  +     '<th class="num">불출</th><th class="num">잔여</th><th class="num">현재고</th>'
-  +     '<th>비고</th></tr></thead><tbody>'
+  +   '<table><thead><tr><th>자재</th><th class="num">BOM 소요</th><th class="num">현장</th>'
+  +     '<th class="num">요청</th><th class="num">불출</th><th class="num">잔여</th>'
+  +     '<th class="num">창고재고</th><th>비고</th></tr></thead><tbody>'
   +   (r.items||[]).map(function(i){
       return '<tr class="' + (i.short ? 'short' : '') + '">'
         + '<td><span class="pid">' + i.P_ID + '</span>'
         +   (i.grade ? ' <span class="gr gr' + i.grade + '">' + i.grade + '</span>' : '')
         +   '<div class="sub">' + esc((i.P_N||'').slice(0,16)) + '</div></td>'
         + '<td class="num">' + nf(i.Need_Qty) + '</td>'
+        + '<td class="num">' + nf(i.Site_Qty || 0) + '</td>'
         + '<td class="num"><b>' + nf(i.Req_Qty) + '</b>'
         +   (i.Pkg_Unit && i.Req_Qty % i.Pkg_Unit === 0
               ? '<div class="sub">' + (i.Req_Qty/i.Pkg_Unit) + '박스</div>' : '') + '</td>'
