@@ -54,6 +54,10 @@ TX_PLUS   = [t for t, sg, _, _, _ in TX_TYPES if sg > 0]
 # 불출 등록이 Transaction_tb 에 남기는 T_Type 이 이 값이다.
 # TX_TYPES 에서 끌어오므로 유형명이 바뀌어도 여기만 따라간다.
 TX_DISBURSE = TX_DEMAND[0] if TX_DEMAND else "불출"
+# 협력사에서 자재창고로 들어오는 최초 입고 유형.
+# 입고 등록이 Transaction_tb 에 남기는 T_Type 이 이 값이다.
+# 재고 부호가 0 인 in 유형은 이것 하나다 (반납은 +1).
+TX_RECEIPT = next((t for t, sg, _, _, k in TX_TYPES if k == "in" and sg == 0), "입고")
 
 
 def _inlist(vals):
@@ -2381,7 +2385,10 @@ def workbench(conn):
          ORDER BY l.Lot_Date DESC
     """)
 
-    # 불출 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
+    # 입고 등록 대상 — 아직 입고되지 않은 발주.
+    pending = pending_po(conn)
+
+    # 불출·입고 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
     workers = _rows(conn, """
         SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name
     """)
@@ -2393,6 +2400,7 @@ def workbench(conn):
         "approvals": approvals,
         "scan_lots": scan_lots,
         "workers": workers,
+        "pending": pending,
     }
 
 # ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
@@ -2699,4 +2707,208 @@ def create_disburse(conn, date, pid, qty, ep_id):
                  a["take"], plan["worker"]["EP_ID"]))
             a["T_ID"] = tid
     plan["date"] = date
+    return plan, []
+# ── 입고 등록 (세 번째 쓰기 기능) ────────────────────────────
+#
+# 발주(입구) → 입고 → 불출(출구) 중 가운데 토막이다.
+# 입고가 저장돼야 발주한 물건이 LOT 으로 창고에 들어오고,
+# 그 LOT 에서 불출이 나가는 한 바퀴가 닫힌다.
+#
+# 입고는 테이블 두 개를 함께 쓴다.
+#   Lot_tb          새 LOT 1행 (재고의 실체)
+#   Transaction_tb  '입고' 거래 1행 (이력)
+# 기존 데이터도 LOT 636건 : 입고거래 636건으로 1:1 이므로 같은 모양을 유지한다.
+# 입고 거래의 재고 부호는 0 이다 — 수량이 Lot_tb.P_Qty 에 이미 들어 있어
+# 거래행을 또 더하면 이중 계산이 된다 (TX_TYPES 참조).
+
+# 대분류 → 보관 창고.
+# 기존 LOT 636건이 전수 이 매핑을 따르고 예외가 0건이라 상수로 고정한다.
+#   V 117건→L01 · S 97건→L02 · E 109건→L03 · U 166건→L04 · T 147건→L05
+LOC_BY_MAINCAT = {"V": "L01", "S": "L02", "E": "L03", "U": "L04", "T": "L05"}
+
+
+def next_lot_id(conn, date):
+    """Lot_ID 채번 — LOT + YYYYMMDD + 4자리 순번 (그날 기준).
+
+    H_ID · T_ID 와 같은 규칙이다. 한 발주에서 품목 여러 건이 들어오면
+    품목마다 LOT 이 생기므로 순번이 하나씩 올라간다.
+    """
+    pre = "LOT" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Lot_ID) FROM Lot_tb WHERE Lot_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def pending_po(conn):
+    """아직 입고되지 않은 발주. 입고 등록의 대상 목록이다.
+
+    Purchase_Detail_tb 에 있는데 짝이 되는 Lot_tb 행이 없으면 미입고다.
+    (발주 vs 입고 대조 화면이 쓰는 판정과 같은 기준)
+    """
+    rows = _rows(conn, """
+        SELECT h.H_ID, h.P_Date, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               d.Purchase_num, d.P_ID, p.P_N, p.Spec, p.PkgUnit, p.MinOrderQty,
+               p.P_Price, p.MainCat, s.Sf_Lv AS grade, s.Lead_Time AS lead_time,
+               d.P_Qty AS ord_qty
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c    ON h.BRN = c.BRN
+          LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
+          LEFT JOIN Lot_tb l        ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
+         WHERE l.Lot_ID IS NULL
+         ORDER BY h.P_Date, d.H_ID, d.Purchase_num
+    """)
+    loc_n = {r["Loc_ID"]: r["Loc_N"]
+             for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
+
+    groups = {}
+    for r in rows:
+        g = groups.setdefault(r["H_ID"], {
+            "H_ID": r["H_ID"], "P_Date": r["P_Date"],
+            "supplier": r["supplier"], "is_foreign": r["is_foreign"],
+            "lead_max": 0, "amount": 0, "qty": 0, "items": [],
+        })
+        loc = LOC_BY_MAINCAT.get(r["MainCat"])
+        lt = int(r["lead_time"] or 0)
+        g["items"].append({
+            "Purchase_num": r["Purchase_num"], "P_ID": r["P_ID"],
+            "P_N": r["P_N"], "Spec": r["Spec"], "grade": r["grade"],
+            "ord_qty": r["ord_qty"], "price": r["P_Price"],
+            "pkg": r["PkgUnit"], "moq": r["MinOrderQty"],
+            "Loc_ID": loc, "loc_name": loc_n.get(loc), "lead_time": lt,
+        })
+        g["qty"] += r["ord_qty"] or 0
+        g["amount"] += round((r["ord_qty"] or 0) * (r["P_Price"] or 0))
+        g["lead_max"] = max(g["lead_max"], lt)
+
+    out = sorted(groups.values(), key=lambda g: (g["P_Date"], g["H_ID"]))
+    for g in out:
+        g["line_cnt"] = len(g["items"])
+        g["eta"] = _add_days(g["P_Date"], g["lead_max"])   # 예상 입고일
+    return out
+
+
+def preview_inbound(conn, date, hid, lines, ep_id):
+    """입고 미리보기 — 발주 대비 판정과 배정 창고를 계산한다.
+
+    lines 는 {P_ID: 실입고수량} 형태. 보내지 않은 품목은 이번에 받지 않은
+    것으로 보고 미입고로 남긴다(부분 입고 허용).
+    """
+    hid = str(hid or "").strip()
+    pend = {g["H_ID"]: g for g in pending_po(conn)}
+    if hid not in pend:
+        done = conn.execute(
+            "SELECT 1 FROM Purchase_Header_tb WHERE H_ID = ?", (hid,)).fetchone()
+        return None, ["이미 전량 입고된 발주입니다: %s" % hid if done
+                      else "등록되지 않은 발주번호입니다: %s" % (hid or "(빈값)")]
+    po = pend[hid]
+
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["입고 담당자를 선택하세요."]
+    w = conn.execute(
+        "SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+        (ep_id,)).fetchone()
+    if w is None:
+        return None, ["등록되지 않은 사원번호입니다: %s" % ep_id]
+
+    # 입고일이 발주일보다 앞설 수는 없다
+    if date < po["P_Date"]:
+        return None, ["입고일(%s)이 발주일(%s)보다 앞설 수 없습니다." % (date, po["P_Date"])]
+
+    want = {}
+    for k, v in (lines or {}).items():
+        try:
+            n = int(v or 0)
+        except (TypeError, ValueError):
+            return None, ["%s 입고 수량이 숫자가 아닙니다." % k]
+        if n < 0:
+            return None, ["%s 입고 수량은 0 이상이어야 합니다." % k]
+        if n:
+            want[str(k).strip()] = n
+
+    # 아직 안 받은 품목만 대상이다. 발주에 있긴 하지만 이미 받은 품목은
+    # "발주에 없다"가 아니라 "이미 입고됐다"로 알려야 화면에서 헷갈리지 않는다.
+    known = {it["P_ID"] for it in po["items"]}
+    on_po = {r["P_ID"] for r in _rows(
+        conn, "SELECT P_ID FROM Purchase_Detail_tb WHERE H_ID = ?", (hid,))}
+    for pid in want:
+        if pid in known:
+            continue
+        return None, ["%s 는 이미 입고 처리된 품목입니다." % pid if pid in on_po
+                      else "%s 는 이 발주에 없는 품번입니다." % pid]
+
+    rows, total_qty, total_amt = [], 0, 0
+    for it in po["items"]:
+        n = want.get(it["P_ID"], 0)
+        if not n:
+            continue
+        if not it["Loc_ID"]:
+            return None, ["%s 의 보관 창고를 정할 수 없습니다 (대분류 미상)." % it["P_ID"]]
+        gap = n - it["ord_qty"]
+        r = dict(it)
+        r["in_qty"] = n
+        r["gap"] = gap
+        r["judge"] = "일치" if gap == 0 else ("부족" if gap < 0 else "초과")
+        # 부족분이 포장단위의 정확한 배수인지 — 상자 단위 출하라 낱개 부족은 없다
+        r["pkg_ok"] = bool(it["pkg"]) and gap < 0 and (-gap) % it["pkg"] == 0
+        r["amount"] = round(n * (it["price"] or 0))
+        rows.append(r)
+        total_qty += n
+        total_amt += r["amount"]
+
+    if not rows:
+        return None, ["입고할 품목이 없습니다. 수량을 1 이상으로 지정하세요."]
+
+    plan = {
+        "H_ID": hid, "P_Date": po["P_Date"], "date": date,
+        "supplier": po["supplier"], "is_foreign": po["is_foreign"],
+        "lead_days": _days_between(po["P_Date"], date),
+        "worker": {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]},
+        "items": rows, "line_cnt": len(rows),
+        "qty": total_qty, "amount": total_amt,
+        "ok_cnt": sum(1 for r in rows if r["judge"] == "일치"),
+        "short_cnt": sum(1 for r in rows if r["judge"] == "부족"),
+        "over_cnt": sum(1 for r in rows if r["judge"] == "초과"),
+        "rest_cnt": len(po["items"]) - len(rows),   # 이번에 안 받는 품목
+    }
+    return plan, []
+
+
+def _days_between(a, b):
+    import datetime
+    ay, am, ad = (int(x) for x in a.split("-"))
+    by, bm, bd = (int(x) for x in b.split("-"))
+    return (datetime.date(by, bm, bd) - datetime.date(ay, am, ad)).days
+
+
+def create_inbound(conn, date, hid, lines, ep_id):
+    """입고 등록. 품목마다 Lot_tb 1행 + Transaction_tb 입고 1행을 만든다.
+
+    LOT 만 만들고 거래를 못 남기면 이력에서 그 입고가 사라지고,
+    거래만 남으면 재고가 없는 유령 이력이 된다. 그래서 둘을 한 트랜잭션에 묶는다.
+    """
+    plan, errors = preview_inbound(conn, date, hid, lines, ep_id)
+    if errors:
+        return None, errors
+
+    ep = plan["worker"]["EP_ID"]
+    with conn:                                   # 커밋/롤백 자동
+        for it in plan["items"]:
+            lot = next_lot_id(conn, date)
+            conn.execute(
+                "INSERT INTO Lot_tb (Lot_ID, P_ID, Lot_Date, Loc_ID, P_Qty, EP_ID, H_ID)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (lot, it["P_ID"], date, it["Loc_ID"], it["in_qty"], ep, hid))
+            tid = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb"
+                " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (tid, lot, TX_RECEIPT, date, it["in_qty"], ep))
+            it["Lot_ID"] = lot
+            it["T_ID"] = tid
     return plan, []

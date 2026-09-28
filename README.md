@@ -20,7 +20,7 @@ python app.py
 | /bom | BOM 관리 |
 | /safety-stock | 안전재고 |
 | /abc | ABC 분석 |
-| /inbound | 입고 처리 |
+| /inbound | 입고 처리 ✎ |
 | /disburse | 불출 처리 ✎ |
 | /tx-history | 입출고 이력 |
 | /picking | 피킹리스트 ★ |
@@ -39,7 +39,7 @@ python app.py
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
-✎ = DB 쓰기 — 발주 등록(`Purchase_Header_tb`·`Purchase_Detail_tb`) · 불출 등록(`Transaction_tb`). 나머지는 조회 전용입니다.
+✎ = DB 쓰기 — 발주 등록(`Purchase_Header_tb`·`Purchase_Detail_tb`) · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
 
 ## 프로젝트 구조
 ```

@@ -540,6 +540,42 @@ def api_disburse_create():
     finally:
         conn.close()
 
+# ── 입고 등록 API ───────────────────────────────────────────
+# 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
+# Lot_tb 와 Transaction_tb 를 한 트랜잭션에 함께 쓴다.
+
+@app.route("/api/inbound/preview", methods=["POST"])
+def api_inbound_preview():
+    """등록 전 미리보기 — 발주 대비 일치/부족/초과와 배정 창고를 보여준다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_inbound(
+            conn, _entry_date(body), body.get("H_ID"),
+            body.get("lines") or {}, body.get("EP_ID"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/inbound", methods=["POST"])
+def api_inbound_create():
+    """입고 등록. 품목마다 LOT 을 만들고 입고 거래를 남긴다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_inbound(
+            conn, _entry_date(body), body.get("H_ID"),
+            body.get("lines") or {}, body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        # 배포 환경에서 DB 파일이 읽기 전용이면 여기로 온다
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
