@@ -110,6 +110,22 @@ tr.swap td{border-bottom-color:rgba(239,159,39,.35)}
 .schip.on:hover{background:#2168bd}
 b.up{color:var(--dn)}
 b.dn{color:var(--acc)}
+.rescard{display:flex;flex-direction:column}
+.resopt{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:0.5px solid var(--border)}
+.resopt:last-child{border-bottom:none}
+.reshd{display:flex;align-items:center;gap:5px;width:88px;flex-shrink:0;font-size:12px}
+.resdesc{flex:1;font-size:11px;line-height:1.6}
+.dn{color:var(--dn)}
+tr.bad{background:var(--bg-dn)}
+.bin{width:70px;font-family:inherit;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;text-align:right}
+.bin:focus{border-color:var(--dn)}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:19px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:3px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}.c-v.wn{color:var(--wn)}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .main{flex-direction:column}
@@ -126,12 +142,14 @@ b.dn{color:var(--acc)}
   <div class="ro">
     <i class="ti ti-info-circle"></i>
     <b>미입고</b> 탭에서 발주를 골라 실제 입고 수량을 넣으면 <b>LOT이 생성되고 재고가 늘어납니다.</b>
-    <b>입고 완료</b> 탭은 이미 처리된 발주가 어떻게 입고·LOT 생성으로 이어졌는지 보여줍니다.
+    검수에서 걸린 <b>불량 수량</b>도 같이 넣으면 그만큼 재고에서 빠지고 클레임이 열립니다.
+    <b>불량·반품</b> 탭에서 대체입고 / 환불 / 폐기 중 하나로 종결합니다.
   </div>
   <div class="main">
     <div class="left">
       <div class="tabs">
         <div class="tab" id="tab-pending" onclick="setMode('pending')">미입고<span class="n" id="n-pending"></span></div>
+        <div class="tab" id="tab-claim" onclick="setMode('claim')">불량·반품<span class="n" id="n-claim"></span></div>
         <div class="tab" id="tab-done" onclick="setMode('done')">입고 완료<span class="n" id="n-done"></span></div>
       </div>
       <div class="lh"><i class="ti ti-file-text"></i><span id="lh-t">최근 발주</span> <span id="cnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
@@ -146,6 +164,9 @@ const DET     = {{ po_detail|tojson }};
 const PENDING = {{ pending|tojson }};
 const WORKERS = {{ workers|tojson }};
 const SUBS    = {{ subs|tojson }};    // 대체 입고용 품목 목록
+const CLAIMS  = {{ claims|tojson }};  // 입고 클레임 (불량·반품·대체)
+const CSUM    = {{ claim_sum|tojson }};
+const LOTS    = {{ scan_lots|tojson }};
 let mode = 'pending';                 // 'pending' = 입고 등록 · 'done' = 대조 조회
 let sel  = null;
 let L    = {};                        // 발주 순번별 {pid, qty, reason}
@@ -161,8 +182,27 @@ const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(
 function drawList(){
   document.getElementById('n-pending').textContent = PENDING.length;
   document.getElementById('n-done').textContent    = PO.length;
-  document.getElementById('tab-pending').className  = 'tab' + (mode==='pending' ? ' on' : '');
-  document.getElementById('tab-done').className     = 'tab' + (mode==='done'    ? ' on' : '');
+  document.getElementById('n-claim').textContent   = CSUM.open ? CSUM.open : CLAIMS.length;
+  document.getElementById('tab-pending').className = 'tab' + (mode==='pending' ? ' on' : '');
+  document.getElementById('tab-claim').className   = 'tab' + (mode==='claim'   ? ' on' : '');
+  document.getElementById('tab-done').className    = 'tab' + (mode==='done'    ? ' on' : '');
+
+  if(mode === 'claim'){
+    document.getElementById('lh-t').textContent = '불량 · 반품';
+    document.getElementById('cnt').innerHTML =
+      '<button class="btn" style="padding:2px 8px;font-size:10px" onclick="openClaimForm()">'
+      + '<i class="ti ti-plus"></i>불량 접수</button>';
+    document.getElementById('list').innerHTML = CLAIMS.length ? CLAIMS.map(function(k){
+      return '<div class="it ' + (selClaim===k.Claim_ID?'on':'') + '" data-id="' + k.Claim_ID
+        + '" onclick="pickClaim(this.dataset.id)">'
+        + '<div class="po-h"><span class="hid">' + k.Claim_ID + '</span>' + resBadge(k) + '</div>'
+        + '<div class="po-s"><span class="pid">' + k.P_ID + '</span> ' + esc((k.P_N||'').slice(0,12))
+        +   ' · 불량 ' + nf(k.Claim_Qty) + '개<br>'
+        +   k.Claim_Date + ' · ' + k.Claim_Type + ' · ' + esc(k.supplier||'-') + '</div>'
+        + '</div>';
+    }).join('') : '<div class="empty">접수된 불량·반품이 없습니다.</div>';
+    return;
+  }
   document.getElementById('lh-t').textContent = mode==='pending' ? '미입고 발주' : '최근 발주';
 
   const rows = (mode==='pending') ? PENDING : PO;
@@ -268,6 +308,15 @@ SUBS.forEach(function(s){ SUBMAP[s.P_ID] = s; });
 
 function setMode(m){
   mode = m;
+  if(m === 'claim'){
+    selClaim = CLAIMS.length ? CLAIMS[0].Claim_ID : null;
+    drawList();
+    if(selClaim){ drawClaim(); return; }
+    document.getElementById('right').innerHTML =
+      '<div class="empty"><i class="ti ti-mood-check" style="font-size:22px;display:block;margin-bottom:8px"></i>'
+      + '접수된 불량·반품이 없습니다.<br>입고 검수에서 불량 수량을 넣거나 [불량 접수] 로 등록하세요.</div>';
+    return;
+  }
   const rows = (m === 'pending') ? PENDING : PO;
   sel = rows.length ? rows[0].H_ID : null;
   L = {}; settle = ''; settleNote = '';
@@ -288,10 +337,21 @@ function pick(hid){
 
 // 라인 상태 — 발주 순번마다 {pid, qty, reason}
 function lineOf(it){
-  if(!L[it.Purchase_num]) L[it.Purchase_num] = {pid: it.P_ID, qty: it.ord_qty, reason: ''};
+  if(!L[it.Purchase_num])
+    L[it.Purchase_num] = {pid: it.P_ID, qty: it.ord_qty, reason: '', defect: 0, dnote: ''};
   return L[it.Purchase_num];
 }
-function setQ(num, v){ const n = parseInt(v,10); L[num].qty = isNaN(n) ? 0 : Math.max(0,n); pickPending(sel); }
+function setQ(num, v){
+  const n = parseInt(v,10); L[num].qty = isNaN(n) ? 0 : Math.max(0,n);
+  if(L[num].defect > L[num].qty) L[num].defect = L[num].qty;   // 불량이 입고를 넘을 수 없다
+  pickPending(sel);
+}
+function setDefect(num, v){
+  const n = parseInt(v,10);
+  L[num].defect = isNaN(n) ? 0 : Math.max(0, Math.min(n, L[num].qty));
+  pickPending(sel);
+}
+function setDefectNote(num, v){ L[num].dnote = v; syncIn(); }
 function setPid(num, v){
   v = (v||'').trim().toUpperCase();
   L[num].pid = SUBMAP[v] ? v : L[num].pid;
@@ -322,6 +382,8 @@ function pickPending(hid){
   const diff = inAmt - ordAmt;
   const eff  = settle || autoSettle(diff);
   const rest = o.items.length - act.length;
+  const nBad = act.filter(function(it){ return L[it.Purchase_num].defect > 0; }).length;
+  const badQty = act.reduce(function(a,it){ return a + L[it.Purchase_num].defect; }, 0);
 
   document.getElementById('right').innerHTML =
     '<div class="alert a-ac"><i class="ti ti-info-circle"></i> '
@@ -338,9 +400,10 @@ function pickPending(hid){
   +   '<div class="card"><div class="c-l"><i class="ti ti-check"></i>발주대로</div>'
   +     '<div class="c-v ok">' + nOk + '<small>/' + act.length + '</small></div>'
   +     '<div class="c-s">' + (nSh?'부족 '+nSh+' ':'') + (nOv?'초과 '+nOv:'') + (nSh||nOv?'':'수량 전부 일치') + '</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-exchange"></i>대체 입고</div>'
-  +     '<div class="c-v ' + (nSw?'wn':'') + '">' + nSw + '<small>종</small></div>'
-  +     '<div class="c-s">' + (nSw ? '협의 내용 필수' : '없음') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-octagon"></i>검수 불량</div>'
+  +     '<div class="c-v ' + (nBad?'dn':'ok') + '">' + nf(badQty) + '<small>개</small></div>'
+  +     '<div class="c-s">' + (nBad ? nBad + '종 · 클레임 접수됨' : '없음')
+  +       (nSw ? ' · 대체 ' + nSw : '') + '</div></div>'
   + '</div>'
 
   + '<div class="actbar"><label>담당자</label>'
@@ -358,8 +421,8 @@ function pickPending(hid){
   +   '<span class="sech-t">품목별 입고 내역</span>'
   +   '<span class="sech-m">수량 0 = 이번에 안 받음 · 품번을 바꾸면 대체 입고</span></div>'
   +   '<table><thead><tr><th style="width:26px">#</th><th>발주 품목</th><th class="num">발주</th>'
-  +     '<th>실제 입고 품번</th><th class="num">실입고</th><th class="num">차이</th>'
-  +     '<th>판정</th><th>창고</th></tr></thead><tbody>'
+  +     '<th>실제 입고 품번</th><th class="num">실입고</th><th class="num">불량</th>'
+  +     '<th class="num">차이</th><th>판정</th><th>창고</th></tr></thead><tbody>'
   +   o.items.map(function(it){
         const st = L[it.Purchase_num];
         const p  = SUBMAP[st.pid] || {};
@@ -379,10 +442,22 @@ function pickPending(hid){
           +   '<div class="sub">' + esc((p.P_N||'').slice(0,14)) + ' · ' + nf(p.P_Price) + '원</div></td>'
           + '<td class="num"><input class="qin" type="number" min="0" value="' + st.qty
           +   '" data-num="' + it.Purchase_num + '" onchange="setQ(this.dataset.num, this.value)"></td>'
+          + '<td class="num"><input class="bin" type="number" min="0" max="' + st.qty + '" value="' + st.defect
+          +   '" data-num="' + it.Purchase_num + '" onchange="setDefect(this.dataset.num, this.value)"'
+          +   (st.qty > 0 ? '' : ' disabled') + '>'
+          +   (st.defect > 0 ? '<div class="sub dn">가용 ' + nf(st.qty - st.defect) + '개</div>' : '') + '</td>'
           + '<td class="num">' + (st.qty > 0 && gap ? nf(gap) + pkgNote : (st.qty > 0 ? '0' : '-')) + '</td>'
           + '<td><span class="bg ' + j.c + '">' + j.t + '</span>'
           +   (sw ? '<div><span class="bg bwn">대체</span></div>' : '') + '</td>'
           + '<td>' + esc(p.loc_name||'-') + '</td></tr>';
+        if(st.defect > 0){
+          row += '<tr class="bad"><td></td><td colspan="7">'
+            + '<div class="rrow"><i class="ti ti-alert-octagon" style="color:var(--dn)"></i>'
+            + '<span class="rlab" style="color:#9B1C1C">' + it.P_ID + ' 불량 ' + nf(st.defect) + '개 사유</span>'
+            + '<input class="rin" placeholder="예: 포장 파손으로 외관 불량 (입고 검수)" '
+            + 'value="' + esc(st.dnote) + '" data-num="' + it.Purchase_num
+            + '" oninput="setDefectNote(this.dataset.num, this.value)"></div></td></tr>';
+        }
         if(sw && st.qty > 0){
           row += '<tr class="swap"><td></td><td colspan="7">'
             + '<div class="rrow"><i class="ti ti-message-2" style="color:var(--wn)"></i>'
@@ -470,6 +545,10 @@ function inBody(p, note){
   + '</dl>'
   + (p.rest_cnt ? '<div class="alert a-wn"><i class="ti ti-alert-triangle"></i> '
       + p.rest_cnt + '개 품목은 이번에 받지 않아 미입고로 남습니다.</div>' : '')
+  + (p.defect_qty ? '<div class="alert a-dn"><i class="ti ti-alert-octagon"></i> '
+      + '검수 불량 ' + p.defect_cnt + '종 ' + nf(p.defect_qty) + '개는 입고와 동시에 재고에서 빠지고 '
+      + '<b>클레임이 접수</b>됩니다. 가용 입고는 ' + nf(p.good_qty) + '개입니다. '
+      + '처리(대체입고·환불·폐기)는 <b>불량·반품</b> 탭에서 고릅니다.</div>' : '')
   + '<div class="sec"><div class="sech"><i class="ti ti-box"></i>'
   +   '<span class="sech-t">' + (hasLot ? '생성된 LOT' : '생성될 LOT') + '</span>'
   +   '<span class="sech-m">' + p.line_cnt + '건</span></div>'
@@ -484,7 +563,8 @@ function inBody(p, note){
             ? '<span class="pid">' + it.P_ID + '</span> <span class="bg bwn">대체</span>'
             : '<span class="sub">동일</span>') + '</td>'
         + '<td class="num">' + nf(it.ord_qty) + '</td>'
-        + '<td class="num"><b style="color:var(--acc)">' + nf(it.in_qty) + '</b></td>'
+        + '<td class="num"><b style="color:var(--acc)">' + nf(it.in_qty) + '</b>'
+        +   (it.defect_qty ? '<div class="sub dn">불량 ' + nf(it.defect_qty) + '</div>' : '') + '</td>'
         + '<td><span class="bg ' + c + '">' + it.judge + '</span></td>'
         + '<td>' + esc(it.loc_name||'-') + '</td>'
         + (hasLot ? '<td><span class="lotid">' + it.Lot_ID + '</span></td>' : '') + '</tr>'
@@ -505,7 +585,8 @@ function payload(){
   o.items.forEach(function(it){
     const st = L[it.Purchase_num];
     if(st.qty > 0) lines.push({Purchase_num: it.Purchase_num, P_ID: st.pid,
-                               qty: st.qty, reason: st.reason});
+                               qty: st.qty, reason: st.reason,
+                               defect: st.defect, defect_note: st.dnote});
   });
   return {H_ID: sel, lines: lines, EP_ID: who,
           settle: settle, settle_note: settleNote};
@@ -559,8 +640,171 @@ async function doInSubmit(){
   busy = false; syncIn();
 }
 
+
+// ── 불량 · 반품 ──────────────────────────────────────────────
+// 물건이 실제로 왔으면 일단 입고한다. 불량이라고 LOT 을 안 만들면
+// 물리적으로 있는 물건이 시스템에 없어지고 반품 이력도 남길 데가 없다.
+//   입고 검수 불량 → 미입고 탭의 '불량' 칸 (입고와 한 트랜잭션)
+//   사용 중 발견   → 이 탭의 [불량 접수]
+// 접수된 클레임은 대체입고 / 환불 / 폐기 중 하나로 닫는다.
+
+let selClaim = null;
+
+function claimOf(id){ return CLAIMS.filter(function(k){ return k.Claim_ID===id; })[0]; }
+
+function pickClaim(id){ selClaim = id; drawList(); drawClaim(); }
+
+function resBadge(k){
+  if(k.Status !== '완료') return '<span class="bg bwn">접수</span>';
+  const c = k.Resolution==='대체입고' ? 'bok' : (k.Resolution==='환불' ? 'bac' : 'bmu');
+  return '<span class="bg ' + c + '">' + k.Resolution + '</span>';
+}
+
+function drawClaim(){
+  const k = claimOf(selClaim);
+  if(!k) return;
+  const done = k.Status === '완료';
+  document.getElementById('right').innerHTML =
+    '<div class="alert ' + (done ? 'a-ok' : 'a-wn') + '"><i class="ti ti-alert-octagon"></i> '
+  +   '<b>' + k.Claim_ID + '</b> · <span class="pid">' + k.P_ID + '</span> ' + esc(k.P_N)
+  +   ' · 불량 <b>' + nf(k.Claim_Qty) + '개</b> (' + nf(k.Amount) + '원)'
+  +   ' · ' + k.Claim_Type + ' · ' + k.Claim_Date + ' · ' + esc(k.worker||'-')
+  +   ' · ' + (done ? '<b>' + k.Resolution + ' 완료</b>' : '<b>처리 대기</b>')
+  +   (k.Reason ? '<br>사유: ' + esc(k.Reason) : '')
+  + '</div>'
+
+  + '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-box"></i>불량 LOT</div>'
+  +     '<div class="c-v" style="font-size:13px">' + k.Lot_ID + '</div>'
+  +     '<div class="c-s">' + (k.Lot_Date||'-') + ' · ' + esc(k.loc_name||'-') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-building-store"></i>협력사</div>'
+  +     '<div class="c-v" style="font-size:15px">' + esc(k.supplier||'-') + '</div>'
+  +     '<div class="c-s">' + (k.H_ID ? '발주 ' + k.H_ID : '발주 연결 없음') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>불량 수량</div>'
+  +     '<div class="c-v dn">' + nf(k.Claim_Qty) + '<small>개</small></div>'
+  +     '<div class="c-s">재고에서 차감됨 (거래 ' + (k.T_ID||'-') + ')</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>처리</div>'
+  +     '<div class="c-v" style="font-size:15px">' + (done ? k.Resolution : '미정') + '</div>'
+  +     '<div class="c-s">' + (k.New_Lot_ID ? '대체 LOT ' + k.New_Lot_ID : (done ? (k.Done_Date||'') : '선택 필요')) + '</div></div>'
+  + '</div>'
+
+  + (done
+      ? '<div class="sec"><div class="sech"><i class="ti ti-circle-check"></i>'
+        + '<span class="sech-t">처리 완료</span><span class="sech-m">' + (k.Done_Date||'') + '</span></div>'
+        + '<div class="note">' + k.Resolution + ' 으로 종결됐습니다.'
+        + (k.New_Lot_ID ? ' 대체품 <b>' + k.New_Lot_ID + '</b> (' + nf(k.new_lot_qty) + '개) 이 '
+            + k.new_lot_date + ' 에 입고되어 재고가 회복됐습니다.' : '')
+        + (k.Resolution==='환불' ? ' 물건은 돌려보내고 ' + nf(k.Amount) + '원을 정산합니다. 재고는 회복되지 않습니다.' : '')
+        + (k.Resolution==='폐기' ? ' 반품이 불가해 폐기했습니다. 이미 불량으로 재고에서 빠졌으므로 추가 차감은 없습니다.' : '')
+        + '</div></div>'
+      : '<div class="actbar"><label>담당자</label>'
+        + '<select class="wsel" onchange="setWho(this.value)">'
+        +   WORKERS.map(function(w){
+              return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID?' selected':'') + '>'
+                + esc(w.Name) + ' ' + esc(w.Position||'') + '</option>'; }).join('')
+        + '</select>'
+        + '<input class="rin" id="cres" placeholder="협의 내용 (선택) — 예: 거래처 확인 후 대체품 발송 합의" style="flex:1">'
+        + '</div>'
+        + '<div class="sec"><div class="sech"><i class="ti ti-arrows-exchange"></i>'
+        +   '<span class="sech-t">처리 방법 선택</span>'
+        +   '<span class="sech-m">불량 ' + nf(k.Claim_Qty) + '개 · ' + nf(k.Amount) + '원</span></div>'
+        +   '<div class="rescard">'
+        +     resOpt('대체입고', 'ti-package-import', '협력사가 같은 자재를 다시 보내옵니다.',
+                '새 LOT ' + nf(k.Claim_Qty) + '개가 생성되고 원 발주에 연결됩니다. 재고 순증감은 0 입니다.')
+        +     resOpt('환불', 'ti-cash', '물건은 돌려보내고 돈으로 받습니다.',
+                nf(k.Amount) + '원을 정산합니다. 재고는 회복되지 않습니다.')
+        +     resOpt('폐기', 'ti-trash', '반품이 불가해 버립니다.',
+                '이미 불량으로 재고에서 빠졌으므로 추가 차감은 없습니다. 상태만 남습니다.')
+        +   '</div></div>');
+}
+
+function resOpt(name, icon, head, desc){
+  return '<div class="resopt"><div class="reshd"><i class="ti ' + icon + '"></i>'
+    + '<b>' + name + '</b></div>'
+    + '<div class="resdesc">' + head + '<br><span class="sub">' + desc + '</span></div>'
+    + '<button class="btn btnp" data-r="' + name + '" onclick="doResolve(this.dataset.r)">선택</button></div>';
+}
+
+async function doResolve(res){
+  if(busy) return;
+  busy = true;
+  const note = (document.getElementById('cres')||{}).value || '';
+  ovl('클레임 처리', 'ti-loader', '<div class="note">처리 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/claim/resolve', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({Claim_ID: selClaim, resolution: res, EP_ID: who, reason: note})});
+    const d = await r.json();
+    if(d.ok){
+      const t = d.result;
+      ovl('처리 완료', 'ti-circle-check',
+        '<div class="alert a-ok"><i class="ti ti-check"></i> ' + t.Claim_ID + ' 를 <b>' + t.resolution + '</b> 로 종결했습니다.</div>'
+        + '<dl class="dl">'
+        +   '<dt>자재</dt><dd><span class="pid">' + t.P_ID + '</span> · ' + nf(t.qty) + '개</dd>'
+        +   '<dt>담당자</dt><dd>' + esc(t.worker.Name) + ' ' + esc(t.worker.Position||'') + ' · ' + t.date + '</dd>'
+        +   (t.New_Lot_ID
+              ? '<dt>대체 LOT</dt><dd><span class="lotid">' + t.New_Lot_ID + '</span> · '
+                + nf(t.qty) + '개 입고 · 거래 ' + t.T_ID + '</dd>'
+              : '<dt>정산</dt><dd>' + nf(t.amount) + '원</dd>')
+        + '</dl>',
+        '<button class="btn btnp" style="margin-left:0" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('처리할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['알 수 없는 오류입니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false;
+}
+
+// 사용 중 발견한 불량 접수
+function openClaimForm(){
+  ovl('불량 접수', 'ti-alert-octagon',
+    '<div class="alert a-ac"><i class="ti ti-info-circle"></i> 이미 입고된 LOT 에서 뒤늦게 불량을 발견했을 때 접수합니다. '
+    + '접수하면 그 수량이 <b>재고에서 바로 차감</b>되고, 처리 방법은 나중에 고릅니다.</div>'
+    + '<dl class="dl">'
+    +   '<dt>LOT</dt><dd><input class="rin" id="nlot" list="lotlist" placeholder="LOT 번호" style="width:220px"></dd>'
+    +   '<dt>불량 수량</dt><dd><input class="qin" id="nqty" type="number" min="1" value="1"></dd>'
+    +   '<dt>사유</dt><dd><input class="rin" id="nreason" placeholder="예: 입고 후 검사에서 치수 불량 발견" style="width:100%"></dd>'
+    + '</dl>'
+    + '<datalist id="lotlist">'
+    +   LOTS.filter(function(l){ return l.remain > 0; }).slice(0, 400).map(function(l){
+          return '<option value="' + l.Lot_ID + '">' + esc(l.P_N) + ' · 잔여 ' + nf(l.remain) + '개</option>'; }).join('')
+    + '</datalist>'
+    + '<div class="note">잔여 수량을 넘는 불량은 접수되지 않습니다.</div>',
+    '<button class="btn" onclick="ovlClose()">취소</button>'
+    + '<button class="btn btnp" style="margin-left:0" onclick="doClaim()">접수</button>');
+}
+
+async function doClaim(){
+  if(busy) return;
+  const lot = (document.getElementById('nlot')||{}).value || '';
+  const qty = +((document.getElementById('nqty')||{}).value || 0);
+  const rs  = (document.getElementById('nreason')||{}).value || '';
+  busy = true;
+  ovl('불량 접수', 'ti-loader', '<div class="note">접수 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/claim', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({Lot_ID: lot, qty: qty, EP_ID: who, reason: rs})});
+    const d = await r.json();
+    if(d.ok){
+      ovl('접수 완료', 'ti-circle-check',
+        '<div class="alert a-ok"><i class="ti ti-check"></i> ' + d.claim.Claim_ID + ' 로 접수했습니다. '
+        + d.claim.P_ID + ' ' + nf(d.claim.qty) + '개가 재고에서 차감됐습니다.</div>'
+        + '<div class="note">불량·반품 탭에서 대체입고 / 환불 / 폐기 중 하나를 고르면 종결됩니다.</div>',
+        '<button class="btn btnp" style="margin-left:0" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('접수할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['알 수 없는 오류입니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false;
+}
+
 // 받을 발주가 있으면 등록 탭부터, 없으면 대조 탭부터 연다
-setMode(PENDING.length ? 'pending' : 'done');
+setMode(CSUM.open ? 'claim' : (PENDING.length ? 'pending' : 'done'));
 </script>
 </body>
 </html>

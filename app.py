@@ -589,6 +589,47 @@ def api_disburse_batch_create():
         conn.close()
 
 
+# ── 입고 클레임 API (불량 · 반품 · 대체) ────────────────────
+# 입고 검수에서 나온 불량은 입고 등록이 한 트랜잭션으로 함께 남긴다.
+# 여기 두 엔드포인트는 (1) 이미 입고된 LOT 에서 뒤늦게 발견한 불량 접수와
+# (2) 접수된 클레임의 처리(대체입고·환불·폐기)를 맡는다.
+
+@app.route("/api/claim", methods=["POST"])
+def api_claim_create():
+    """사용 중 발견한 불량 접수 — LOT 에서 차감하고 클레임을 연다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        out, errors = db.create_claim(
+            conn, _entry_date(body), body.get("Lot_ID"), body.get("qty"),
+            body.get("EP_ID"), body.get("resolution"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "claim": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/claim/resolve", methods=["POST"])
+def api_claim_resolve():
+    """클레임 처리 — 대체입고(새 LOT 생성) / 환불 / 폐기."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        out, errors = db.resolve_claim(
+            conn, _entry_date(body), body.get("Claim_ID"),
+            body.get("resolution"), body.get("EP_ID"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 # ── 불출 요청 API ───────────────────────────────────────────
 # 생산 계획(목표 대수)으로 BOM 소요량을 뽑아 요청서를 만든다.
 # 요청 근거(소요량·현재고)는 화면이 보낸 값을 쓰지 않고 서버가 다시 계산한다.

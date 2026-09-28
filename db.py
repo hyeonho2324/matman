@@ -2499,6 +2499,9 @@ def workbench(conn):
     subs = sub_products(conn) if pending else []
     # 생산에서 올라온 불출 요청 — 불출 처리 화면이 골라 소비한다
     open_reqs = open_requests(conn)
+    # 입고 클레임 (불량·반품·대체) — 입고 화면의 '불량·반품' 탭이 쓴다
+    claims = claim_list(conn)
+    claim_sum = claim_summary(conn)
 
     # 불출·입고 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
     workers = _rows(conn, """
@@ -2515,6 +2518,8 @@ def workbench(conn):
         "pending": pending,
         "subs": subs,
         "open_reqs": open_reqs,
+        "claims": claims,
+        "claim_sum": claim_sum,
     }
 
 # ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
@@ -3167,6 +3172,17 @@ def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
         if not in_p["Loc_ID"]:
             return None, ["%s 의 보관 창고를 정할 수 없습니다 (대분류 미상)." % in_pid]
 
+        # 검수 불량 — 받긴 받았지만 쓸 수 없는 수량
+        try:
+            bad = int(ln.get("defect") or 0)
+        except (TypeError, ValueError):
+            return None, ["%s 불량 수량이 숫자가 아닙니다." % in_pid]
+        if bad < 0:
+            return None, ["%s 불량 수량은 0 이상이어야 합니다." % in_pid]
+        if bad > qty:
+            return None, ["%s 불량 수량(%s)이 입고 수량(%s)을 넘습니다."
+                          % (in_pid, format(bad, ","), format(qty, ","))]
+
         reason = (ln.get("reason") or "").strip()
         swapped = in_pid != ord_it["P_ID"]
         if swapped and not reason:
@@ -3182,6 +3198,8 @@ def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
                "수량변경" if gap else "없음")
         rows.append({
             "Purchase_num": num,
+            "defect_qty": bad, "good_qty": qty - bad,
+            "defect_note": (ln.get("defect_note") or "").strip(),
             "ord_P_ID": ord_it["P_ID"], "ord_P_N": ord_it["P_N"],
             "ord_qty": ord_it["ord_qty"], "ord_price": ord_it["price"],
             "ord_amt": ord_amt,
@@ -3220,6 +3238,9 @@ def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
         "short_cnt": sum(1 for r in rows if r["judge"] == "부족"),
         "over_cnt": sum(1 for r in rows if r["judge"] == "초과"),
         "swap_cnt": sum(1 for r in rows if r["swapped"]),
+        "defect_cnt": sum(1 for r in rows if r["defect_qty"] > 0),
+        "defect_qty": sum(r["defect_qty"] for r in rows),
+        "good_qty": sum(r["good_qty"] for r in rows),
         "chg_cnt": sum(1 for r in rows if r["chg_type"] != "없음"),
         "rest_cnt": len(po["items"]) - len(rows),
     }
@@ -3261,6 +3282,13 @@ def create_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
                 (tid, lot, TX_RECEIPT, date, it["in_qty"], ep))
             it["Lot_ID"] = lot
             it["T_ID"] = tid
+
+            # 검수 불량은 입고와 같은 트랜잭션에서 차감하고 클레임을 접수한다.
+            # 따로 처리하면 "입고는 됐는데 불량은 안 잡힌" 중간 상태가 생긴다.
+            if it["defect_qty"] > 0:
+                it["claim"] = _write_claim(
+                    conn, date, lot, it["defect_qty"], ep, "입고검수", "미정",
+                    it["defect_note"] or None, it["price"])
 
             if it["chg_type"] != "없음":
                 cid = next_chg_id(conn, date)
@@ -3608,3 +3636,223 @@ def cancel_request(conn, rid, ep_id=None):
     with conn:
         conn.execute("UPDATE Disburse_Req_tb SET Status = '취소' WHERE Req_ID = ?", (rid,))
     return {"Req_ID": rid, "Status": "취소"}, []
+# ── 입고 클레임 (불량 · 반품 · 대체) ─────────────────────────
+#
+# 물건이 실제로 창고에 왔으면 일단 입고한다. 불량이라고 LOT 을 안 만들면
+# 물리적으로 존재하는 물건이 시스템에 없어지고 반품 이력도 남길 데가 없다.
+#
+#   ① 입고 검수  실입고 100 → LOT 생성(물리적 사실)
+#                그중 불량 20 → '불량' 거래로 차감 → 가용재고 80
+#                동시에 클레임 접수
+#   ② 처리 결정  대체입고 / 환불 / 폐기
+#   ③ 대체품 입고 새 LOT 생성 + 원 발주에 연결 + 클레임 종결
+#
+# ⚠️ 반품 거래 유형을 따로 만들지 않는다.
+#    반품은 이미 '불량' 으로 재고에서 빠진 물건을 물리적으로 내보내는 것이라
+#    거래를 또 남기면 출고가 이중 집계된다. 반품·대체·환불은 클레임의 '상태'다.
+#    덕분에 9차 회의에서 확정한 T_Type 7종을 건드리지 않아도 된다.
+
+CLAIM_TYPES = ("입고검수", "사용중발견")
+CLAIM_RESOLUTIONS = ("대체입고", "환불", "폐기", "미정")
+CLAIM_STATUS = ("접수", "완료")
+
+# 불량 판정 유형 — 유형명을 코드에 박지 않고 TX_TYPES 에서 끌어온다
+TX_DEFECT = next((t for t, sg, _, _, k in TX_TYPES if k == "bad" and sg < 0), "불량")
+
+
+def next_claim_id(conn, date):
+    """Claim_ID 채번 — RMA + YYYYMMDD + 4자리."""
+    pre = "RMA" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Claim_ID) FROM Inbound_Claim_tb WHERE Claim_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def _lot_remain(conn, lot_id):
+    """LOT 하나의 잔량. 클레임 수량이 잔량을 넘지 못하게 막는 데 쓴다."""
+    row = conn.execute("""
+        SELECT l.P_Qty - COALESCE(x.out_qty, 0) AS remain, l.P_ID, l.H_ID, l.Lot_Date
+          FROM Lot_tb l
+          LEFT JOIN (SELECT Lot_ID, %s AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x
+                 ON x.Lot_ID = l.Lot_ID
+         WHERE l.Lot_ID = ?
+    """ % LOT_DELTA, (lot_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def _write_claim(conn, date, lot_id, qty, ep_id, ctype, resolution, reason, price):
+    """불량 판정 거래 + 클레임 1건을 남긴다 (트랜잭션은 호출자가 연다)."""
+    tid = next_tx_id(conn, date)
+    conn.execute(
+        "INSERT INTO Transaction_tb (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (tid, lot_id, TX_DEFECT, date, qty, ep_id))
+    lot = _lot_remain(conn, lot_id)
+    cid = next_claim_id(conn, date)
+    conn.execute(
+        "INSERT INTO Inbound_Claim_tb"
+        " (Claim_ID, Lot_ID, H_ID, P_ID, Claim_Qty, Claim_Type, Resolution,"
+        "  Status, Claim_Date, EP_ID, Reason, T_ID, Amount)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, '접수', ?, ?, ?, ?, ?)",
+        (cid, lot_id, lot["H_ID"], lot["P_ID"], qty, ctype, resolution,
+         date, ep_id, reason or None, tid, int(round(qty * (price or 0)))))
+    return {"Claim_ID": cid, "T_ID": tid, "Lot_ID": lot_id,
+            "P_ID": lot["P_ID"], "qty": qty, "resolution": resolution}
+
+
+def create_claim(conn, date, lot_id, qty, ep_id, resolution="미정", reason=None):
+    """이미 입고된 LOT 에서 불량을 발견했을 때 접수한다 (사용 중 발견).
+
+    입고 검수에서 나온 불량은 create_inbound 가 입고와 한 트랜잭션으로 함께 남긴다.
+    """
+    lot_id = str(lot_id or "").strip()
+    lot = _lot_remain(conn, lot_id)
+    if lot is None:
+        return None, ["등록되지 않은 LOT 입니다: %s" % (lot_id or "(빈값)")]
+    try:
+        qty = int(qty or 0)
+    except (TypeError, ValueError):
+        return None, ["불량 수량이 숫자가 아닙니다."]
+    if qty <= 0:
+        return None, ["불량 수량은 1 이상이어야 합니다."]
+    if qty > lot["remain"]:
+        return None, ["LOT 잔량을 넘습니다. 잔량 {:,}개 / 불량 {:,}개".format(lot["remain"], qty)]
+
+    ep_id = str(ep_id or "").strip()
+    w = conn.execute("SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+                     (ep_id,)).fetchone()
+    if w is None:
+        return None, ["불량 처리 담당자를 선택하세요." if not ep_id
+                      else "등록되지 않은 사원번호입니다: %s" % ep_id]
+    resolution = (resolution or "미정").strip()
+    if resolution not in CLAIM_RESOLUTIONS:
+        return None, ["처리 방법이 잘못되었습니다: %s" % resolution]
+
+    price = conn.execute("SELECT P_Price FROM Product_tb WHERE P_ID = ?",
+                         (lot["P_ID"],)).fetchone()[0]
+    with conn:
+        out = _write_claim(conn, date, lot_id, qty, ep_id,
+                           "사용중발견", resolution, reason, price)
+    out["date"] = date
+    out["worker"] = {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}
+    return out, []
+
+
+def claim_list(conn, limit=80):
+    """클레임 목록 + 자재·발주·처리 상태."""
+    rows = _rows(conn, """
+        SELECT k.*, p.P_N, p.Spec, p.P_Price, p.MainCat,
+               s.Sf_Lv AS grade,
+               u.Name AS worker, u.Position AS pos,
+               h.P_Date AS order_date, c.CP_N AS supplier, c.BRN,
+               l.Lot_Date, lo.Loc_N AS loc_name,
+               nl.Lot_Date AS new_lot_date, nl.P_Qty AS new_lot_qty
+          FROM Inbound_Claim_tb k
+          JOIN Product_tb p        ON k.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s      ON k.P_ID = s.P_ID
+          LEFT JOIN User_tb u      ON k.EP_ID = u.EP_ID
+          LEFT JOIN Lot_tb l       ON k.Lot_ID = l.Lot_ID
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN Lot_tb nl      ON k.New_Lot_ID = nl.Lot_ID
+          LEFT JOIN Purchase_Header_tb h ON k.H_ID = h.H_ID
+          LEFT JOIN Company_tb c   ON h.BRN = c.BRN
+         ORDER BY k.Claim_Date DESC, k.Claim_ID DESC
+         LIMIT ?
+    """, (limit,))
+    for r in rows:
+        r["open"] = r["Status"] == "접수"
+    return rows
+
+
+def open_claims(conn):
+    """아직 처리되지 않은 클레임."""
+    return [k for k in claim_list(conn) if k["open"]]
+
+
+def resolve_claim(conn, date, claim_id, resolution, ep_id, reason=None):
+    """클레임을 처리한다.
+
+    대체입고 — 협력사가 같은 자재를 다시 보내온 경우. 새 LOT 을 만들고 원 발주에 건다.
+               불량으로 빠진 수량이 대체품으로 회복되므로 재고 순증감은 0 이다.
+    환불     — 물건은 돌려보내고 돈으로 받는다. 재고는 회복되지 않는다.
+    폐기     — 반품이 불가해 버린다. 이미 불량으로 재고에서 빠졌으므로
+               추가 차감은 하지 않는다(이중 차감 방지). 상태만 남는다.
+    """
+    claim_id = str(claim_id or "").strip()
+    row = conn.execute("SELECT * FROM Inbound_Claim_tb WHERE Claim_ID = ?",
+                       (claim_id,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 클레임번호입니다: %s" % (claim_id or "(빈값)")]
+    k = dict(row)
+    if k["Status"] == "완료":
+        return None, ["이미 처리된 클레임입니다: %s (%s)" % (claim_id, k["Resolution"])]
+
+    resolution = (resolution or "").strip()
+    if resolution not in ("대체입고", "환불", "폐기"):
+        return None, ["처리 방법이 잘못되었습니다: %s" % (resolution or "(빈값)")]
+
+    ep_id = str(ep_id or "").strip()
+    w = conn.execute("SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+                     (ep_id,)).fetchone()
+    if w is None:
+        return None, ["처리 담당자를 선택하세요." if not ep_id
+                      else "등록되지 않은 사원번호입니다: %s" % ep_id]
+
+    out = {"Claim_ID": claim_id, "P_ID": k["P_ID"], "qty": k["Claim_Qty"],
+           "resolution": resolution, "date": date, "amount": k["Amount"],
+           "worker": {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}}
+
+    if resolution == "대체입고":
+        loc = LOC_BY_MAINCAT.get(
+            conn.execute("SELECT MainCat FROM Product_tb WHERE P_ID = ?",
+                         (k["P_ID"],)).fetchone()[0])
+        if not loc:
+            return None, ["%s 의 보관 창고를 정할 수 없습니다 (대분류 미상)." % k["P_ID"]]
+        with conn:
+            lot = next_lot_id(conn, date)
+            conn.execute(
+                "INSERT INTO Lot_tb (Lot_ID, P_ID, Lot_Date, Loc_ID, P_Qty, EP_ID, H_ID)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (lot, k["P_ID"], date, loc, k["Claim_Qty"], ep_id, k["H_ID"]))
+            tid = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (tid, lot, TX_RECEIPT, date, k["Claim_Qty"], ep_id))
+            conn.execute(
+                "UPDATE Inbound_Claim_tb SET Status='완료', Resolution=?, New_Lot_ID=?,"
+                " Done_Date=?, Reason=COALESCE(?, Reason) WHERE Claim_ID=?",
+                (resolution, lot, date, reason, claim_id))
+        out["New_Lot_ID"] = lot
+        out["T_ID"] = tid
+        out["Loc_ID"] = loc
+    else:
+        with conn:
+            conn.execute(
+                "UPDATE Inbound_Claim_tb SET Status='완료', Resolution=?, Done_Date=?,"
+                " Reason=COALESCE(?, Reason) WHERE Claim_ID=?",
+                (resolution, date, reason, claim_id))
+    return out, []
+
+
+def claim_summary(conn):
+    """클레임 요약 + 협력사별 불량률(품질 지표)."""
+    ks = claim_list(conn, limit=10000)
+    by_sup = {}
+    for k in ks:
+        b = k["supplier"] or "-"
+        g = by_sup.setdefault(b, {"supplier": b, "cnt": 0, "qty": 0, "amount": 0})
+        g["cnt"] += 1
+        g["qty"] += k["Claim_Qty"] or 0
+        g["amount"] += k["Amount"] or 0
+    return {
+        "total": len(ks),
+        "open": len([k for k in ks if k["open"]]),
+        "qty": sum(k["Claim_Qty"] or 0 for k in ks),
+        "amount": sum(k["Amount"] or 0 for k in ks),
+        "by_resolution": {r: len([k for k in ks if k["Resolution"] == r])
+                          for r in CLAIM_RESOLUTIONS},
+        "by_supplier": sorted(by_sup.values(), key=lambda x: -x["qty"])[:10],
+    }

@@ -189,6 +189,25 @@ CREATE TABLE Purchase_Detail_tb (
     PRIMARY KEY (H_ID, Purchase_num)
 );
 
+DROP TABLE IF EXISTS Inbound_Claim_tb;
+CREATE TABLE Inbound_Claim_tb (
+    Claim_ID   TEXT PRIMARY KEY,     -- 클레임번호 RMA+YYYYMMDD+4자리
+    Lot_ID     TEXT NOT NULL,        -- 불량이 난 LOT
+    H_ID       TEXT,                 -- 원 발주 (있으면)
+    P_ID       TEXT NOT NULL,
+    Claim_Qty  INTEGER NOT NULL,     -- 불량 수량
+    Claim_Type TEXT NOT NULL,        -- 입고검수 / 사용중발견
+    Resolution TEXT NOT NULL,        -- 대체입고 / 환불 / 폐기 / 미정
+    Status     TEXT NOT NULL,        -- 접수 / 완료
+    Claim_Date TEXT NOT NULL,
+    EP_ID      TEXT NOT NULL,
+    Reason     TEXT,
+    T_ID       TEXT,                 -- 불량 판정 거래
+    New_Lot_ID TEXT,                 -- 대체품으로 생성된 LOT
+    Done_Date  TEXT,
+    Amount     INTEGER NOT NULL DEFAULT 0   -- 클레임 금액 (환불·청구 근거)
+);
+
 DROP TABLE IF EXISTS Disburse_Req_tb;
 CREATE TABLE Disburse_Req_tb (
     Req_ID     TEXT PRIMARY KEY,     -- 요청번호 REQ+YYYYMMDD+4자리
@@ -320,6 +339,8 @@ CREATE INDEX idx_tx_type        ON Transaction_tb(T_Type);
 CREATE INDEX idx_pd_hid         ON Purchase_Detail_tb(H_ID);
 CREATE INDEX idx_chg_hid        ON Purchase_Change_tb(H_ID);
 CREATE INDEX idx_req_status     ON Disburse_Req_tb(Status);
+CREATE INDEX idx_claim_status   ON Inbound_Claim_tb(Status);
+CREATE INDEX idx_claim_lot      ON Inbound_Claim_tb(Lot_ID);
 CREATE INDEX idx_reqitem_req    ON Disburse_Req_Item_tb(Req_ID);
 CREATE UNIQUE INDEX idx_chg_line ON Purchase_Change_tb(H_ID, Purchase_num);
 CREATE INDEX idx_pd_pid         ON Purchase_Detail_tb(P_ID);
