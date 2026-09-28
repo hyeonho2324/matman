@@ -81,6 +81,30 @@ tr.use{background:var(--bg-ac)}
 .dl dt{color:var(--txt3)}
 .dl dd{font-weight:500}
 .tid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc)}
+.tabs{display:flex;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.tab{flex:1;padding:7px 8px;font-size:11px;text-align:center;cursor:pointer;color:var(--txt3);border-bottom:2px solid transparent}
+.tab:hover{background:var(--s2)}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500;background:var(--s0)}
+.tab .n{font-size:9px;opacity:.75;margin-left:3px}
+.empty{padding:26px 16px;text-align:center;color:var(--txt3);font-size:11px;line-height:1.8}
+.ck{width:15px;height:15px;accent-color:var(--acc);cursor:pointer}
+.ck:disabled{cursor:not-allowed;opacity:.45}
+.qin{width:84px;font-family:inherit;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;text-align:right}
+.qin:focus{border-color:var(--acc)}
+.qin:disabled{opacity:.45;background:var(--s2)}
+tr.off{opacity:.55}
+.sub{font-size:9px;color:var(--txt3);margin-top:1px}
+.bar{height:5px;background:var(--s2);border-radius:99px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--ok)}
+.rid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:19px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:3px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}.c-v.wn{color:var(--wn)}
+.a-ac{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:#185FA5}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .main{flex-direction:column}
@@ -97,16 +121,20 @@ tr.use{background:var(--bg-ac)}
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>불출 요청</b>을 고르면 그 자재와 잔여 수량이 자동으로 채워집니다(요청 없이 직접 불출도 됩니다).
-    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산하고,
-    <b>[불출 등록]</b>을 누르면 LOT별로 거래 이력이 남고 재고가 실제로 줄어듭니다.
+    <b>요청 불출</b> 탭에서 요청서를 고르면 <b>품목 전체를 체크박스로 골라 한 번에</b> 내보냅니다.
+    재고가 모자란 품목은 가능한 만큼만, 재고가 0인 품목은 체크가 막힙니다.
+    요청 없이 낼 때는 <b>직접 불출</b> 탭을 쓰세요. 배분은 언제나 <b>FIFO</b>로 계산됩니다.
   </div>
   <div class="main">
     <div class="left">
-      <div class="lh"><i class="ti ti-package"></i>불출 가능 자재
+      <div class="tabs">
+        <div class="tab" id="tab-req" onclick="setMode('req')">요청 불출<span class="n" id="n-req"></span></div>
+        <div class="tab" id="tab-direct" onclick="setMode('direct')">직접 불출<span class="n" id="n-direct"></span></div>
+      </div>
+      <div class="lh"><i class="ti" id="lh-i"></i><span id="lh-t"></span>
         <span id="cnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
       <div class="srch"><i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
-        <input id="q" placeholder="품번 · 품명" oninput="drawList()"></div>
+        <input id="q" placeholder="검색" oninput="drawList()"></div>
       <div class="llist" id="list"></div>
     </div>
     <div class="right" id="right"></div>
@@ -118,17 +146,9 @@ const LOTS  = {{ scan_lots|tojson }};
 const WORKERS = {{ workers|tojson }};
 // 생산에서 올라온 불출 요청 (미완료분). 고르면 그 자재·잔여수량이 채워진다.
 const OPEN_REQS = {{ open_reqs|tojson }};
-const REQ_LINES = [];
-OPEN_REQS.forEach(function(r){
-  (r.items||[]).forEach(function(i){
-    if(i.left_qty > 0) REQ_LINES.push({
-      key: r.Req_ID + '|' + i.Req_num, Req_ID: r.Req_ID, Req_num: i.Req_num,
-      P_ID: i.P_ID, P_N: i.P_N, left: i.left_qty, stock: i.stock,
-      FG_N: r.FG_N, wo: r.Work_Order, date: r.Req_Date});
-  });
-});
-let reqRef = null;          // 선택된 요청 라인 (없으면 직접 불출)
-let wantQty = null;         // 요청에서 넘어온 기본 수량
+let mode = 'req';           // 'req' = 요청 일괄 불출 · 'direct' = 요청 없는 단건 불출
+let selReq = null;          // 선택된 요청서
+let B = {};                 // 요청 라인별 {on, qty}
 let sel = ITEMS.length ? ITEMS[0].P_ID : null;
 // 로그인이 없으므로 불출 담당자를 화면에서 고른다
 let who = WORKERS.length ? WORKERS[0].EP_ID : '';
@@ -145,15 +165,60 @@ Object.keys(byPid).forEach(function(k){
   byPid[k].sort(function(a,b){ return a.Lot_Date < b.Lot_Date ? -1 : 1; });
 });
 
+function setMode(m){
+  mode = m;
+  document.getElementById('q').value = '';
+  if(m === 'req'){
+    selReq = OPEN_REQS.length ? OPEN_REQS[0].Req_ID : null;
+    drawList();
+    if(selReq) pickReq(selReq);
+    else document.getElementById('right').innerHTML =
+      '<div class="empty"><i class="ti ti-clipboard-off" style="font-size:22px;display:block;margin-bottom:8px"></i>'
+      + '처리할 불출 요청이 없습니다.<br>불출 요청 화면에서 요청을 등록하면 여기에 나타납니다.<br>'
+      + '요청 없이 내보내려면 <b>직접 불출</b> 탭을 쓰세요.</div>';
+  }else{
+    drawList();
+    if(sel) pick(sel);
+  }
+}
+
 function drawList(){
-  const q=(document.getElementById('q').value||'').trim().toLowerCase();
-  const r=ITEMS.filter(function(x){
+  const nReq = OPEN_REQS.length;
+  document.getElementById('n-req').textContent    = nReq;
+  document.getElementById('n-direct').textContent = ITEMS.length;
+  document.getElementById('tab-req').className    = 'tab' + (mode==='req'    ? ' on' : '');
+  document.getElementById('tab-direct').className = 'tab' + (mode==='direct' ? ' on' : '');
+  document.getElementById('lh-i').className = 'ti ' + (mode==='req' ? 'ti-clipboard-list' : 'ti-package');
+  document.getElementById('lh-t').textContent = mode==='req' ? '불출 요청' : '불출 가능 자재';
+  document.getElementById('q').placeholder = mode==='req' ? '요청번호 · 작업지시 · 완제품' : '품번 · 품명';
+
+  const q = (document.getElementById('q').value||'').trim().toLowerCase();
+  if(mode === 'req'){
+    const rows = OPEN_REQS.filter(function(r){
+      return !q || (r.Req_ID+' '+(r.Work_Order||'')+' '+(r.FG_N||'')).toLowerCase().indexOf(q)>=0; });
+    document.getElementById('cnt').textContent = rows.length + '건';
+    document.getElementById('list').innerHTML = rows.length ? rows.map(function(r){
+      const cls = r.Status==='일부불출' ? 'bwn' : 'bac';
+      return '<div class="it ' + (selReq===r.Req_ID?'on':'') + '" data-id="' + r.Req_ID
+        + '" onclick="pickReq(this.dataset.id)">'
+        + '<div class="it-h"><span class="rid">' + r.Req_ID + '</span>'
+        +   '<span class="bg ' + cls + '">' + r.Status + '</span></div>'
+        + '<div class="it-n">' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대</div>'
+        + '<div class="it-s">' + r.Req_Date + ' · ' + r.line_cnt + '품목 · 잔여 ' + nf(r.left_qty) + '개'
+        +   (r.short_cnt ? ' · <span style="color:#9B1C1C">부족 ' + r.short_cnt + '</span>' : '') + '</div>'
+        + '<div class="bar"><i style="width:' + (r.pct||0) + '%"></i></div>'
+        + '</div>';
+    }).join('') : '<div class="empty">해당 요청이 없습니다.</div>';
+    return;
+  }
+  const r = ITEMS.filter(function(x){
     if(!q) return true;
     return (x.P_ID+' '+(x.P_N||'')+' '+(x.Spec||'')).toLowerCase().indexOf(q)>=0;
   });
   document.getElementById('cnt').textContent = r.length + '종';
   document.getElementById('list').innerHTML = r.map(function(x){
-    return '<div class="it ' + (sel===x.P_ID?'on':'') + '" onclick="pick(\'' + x.P_ID + '\')">'
+    return '<div class="it ' + (sel===x.P_ID?'on':'') + '" data-id="' + x.P_ID
+      + '" onclick="pick(this.dataset.id)">'
       + '<div class="it-h"><span class="pid">' + x.P_ID + '</span>'
       +   (x.grade ? '<span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '') + '</div>'
       + '<div class="it-n">' + esc(x.P_N) + '</div>'
@@ -162,11 +227,7 @@ function drawList(){
   }).join('');
 }
 
-function pick(pid){
-  // 요청에 걸린 자재가 아니면 연결을 끊는다 (엉뚱한 요청에 실적이 붙는 것을 막는다)
-  if(reqRef && reqRef.P_ID !== pid){ reqRef = null; wantQty = null; }
-  sel = pid; drawList(); draw(true);
-}
+function pick(pid){ sel = pid; drawList(); draw(true); }
 
 function draw(resetQty){
   const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
@@ -177,20 +238,11 @@ function draw(resetQty){
   if(resetQty){
     r.innerHTML = '<div class="qtybar"><label>불출 수량</label>'
       + '<input type="range" id="qty" min="0" max="' + it.stock + '" value="'
-      + (wantQty!=null ? Math.min(wantQty, it.stock)
-           : Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock)) + '" oninput="draw(false)">'
+      + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="draw(false)">'
       + '<span class="qv" id="qv">0</span><span style="font-size:11px;color:var(--txt3)">개</span>'
       + '<span style="font-size:10px;color:var(--txt3);margin-left:auto">보유 ' + nf(it.stock)
       + '개 · LOT ' + lots.length + '개</span>'
-      + '<div class="actbar"><label>요청</label>'
-      +   '<select class="sel" style="max-width:290px" onchange="setReq(this.value)">'
-      +     '<option value="">직접 불출 (요청 없음)</option>'
-      +     REQ_LINES.map(function(q){
-            return '<option value="' + q.key + '"' + (reqRef && reqRef.key===q.key ? ' selected' : '') + '>'
-              + q.Req_ID + ' · ' + q.P_ID + ' 잔여 ' + nf(q.left) + '개'
-              + (q.FG_N ? ' (' + esc(q.FG_N) + ')' : '') + '</option>'; }).join('')
-      +   '</select>'
-      +   '<label style="margin-left:6px">담당자</label>'
+      + '<div class="actbar"><label>담당자</label>'
       +   '<select class="sel" onchange="setWho(this.value)">'
       +     WORKERS.map(function(w){
               return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID ? ' selected' : '') + '>'
@@ -265,29 +317,20 @@ function draw(resetQty){
 // FIFO 배분은 위에서 화면이 계산해 보여주지만, 등록할 때는 그 값을
 // 서버로 보내지 않는다. 서버가 잔여 LOT 을 다시 읽어 처음부터 배분한다.
 // 화면 계산을 그대로 믿으면 잔여보다 많이 꺼내는 요청을 막을 수 없다.
-function disPayload(qty){
-  const b = {P_ID: sel, qty: qty, EP_ID: who};
-  if(reqRef) b.req = {Req_ID: reqRef.Req_ID, Req_num: reqRef.Req_num};
-  return b;
-}
+function disPayload(qty){ return {P_ID: sel, qty: qty, EP_ID: who}; }
 
-function setWho(v){ who = v; sync(); }
-
-function setReq(key){
-  reqRef = REQ_LINES.filter(function(q){ return q.key === key; })[0] || null;
-  if(reqRef){
-    // 요청 잔여와 창고 재고 중 작은 쪽이 이번에 낼 수 있는 최대치다
-    wantQty = Math.min(reqRef.left, reqRef.stock);
-    pick(reqRef.P_ID);
-  }else{
-    wantQty = null;
-    draw(true);
-  }
-}
+function setWho(v){ who = v; if(mode==='req') drawReq(); else sync(); }
 
 function sync(){
   const go = document.getElementById('go');
   if(!go) return;
+  if(mode === 'req'){
+    const r = reqOf(selReq);
+    const on = r ? (r.items||[]).filter(function(i){
+      return B[i.Req_num] && B[i.Req_num].on && B[i.Req_num].qty > 0; }) : [];
+    go.disabled = busy || !who || !on.length;
+    return;
+  }
   const qe = document.getElementById('qty');
   const q  = qe ? +qe.value : 0;
   const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
@@ -404,8 +447,239 @@ async function doSubmit(){
   busy = false; sync();
 }
 
-drawList();
-if(sel) pick(sel);
+
+// ── 요청 불출 (일괄) ─────────────────────────────────────────
+// 요청 한 건은 보통 자재 10~15종이다. 한 품목씩 열다섯 번 등록하게 하면
+// 현장에서 쓸 수 없다. 요청서를 통째로 골라 체크한 것만 한 번에 내보낸다.
+//
+// 자재마다 사정이 다르다.
+//   전량가능 — 요청 잔여만큼 재고가 있다 (기본 체크)
+//   부분가능 — 재고가 모자라 있는 만큼만 (기본 체크, 수량은 재고까지)
+//   불가     — 재고 0. 체크 자체가 막힌다. 발주가 먼저다
+//   완료     — 이미 다 나갔다
+
+function canOf(i){ return Math.min(i.left_qty, i.stock); }   // 이번에 낼 수 있는 최대치
+
+function lineState(i){
+  if(i.left_qty <= 0)           return {t:'완료',   c:'bok', pick:false};
+  if(canOf(i) <= 0)             return {t:'불가',   c:'bdn', pick:false};
+  if(canOf(i) < i.left_qty)     return {t:'부분가능', c:'bwn', pick:true};
+  return {t:'전량가능', c:'bac', pick:true};
+}
+
+function reqOf(id){ return OPEN_REQS.filter(function(r){ return r.Req_ID===id; })[0]; }
+
+function resetBatch(r){
+  B = {};
+  (r.items||[]).forEach(function(i){
+    const st = lineState(i);
+    B[i.Req_num] = {on: st.pick, qty: canOf(i)};      // 낼 수 있는 건 기본으로 체크
+  });
+}
+
+function pickReq(id){
+  selReq = id;
+  const r = reqOf(id);
+  if(r) resetBatch(r);
+  drawList(); drawReq();
+}
+
+function toggleLine(num, on){ B[num].on = !!on; drawReq(); }
+function setLineQty(num, v){
+  const r = reqOf(selReq);
+  const i = r.items.filter(function(x){ return x.Req_num == num; })[0];
+  const n = parseInt(v, 10);
+  B[num].qty = isNaN(n) ? 0 : Math.max(0, Math.min(n, canOf(i)));   // 낼 수 있는 한도를 넘기지 않는다
+  drawReq();
+}
+function toggleAll(on){
+  const r = reqOf(selReq);
+  (r.items||[]).forEach(function(i){
+    if(lineState(i).pick) B[i.Req_num].on = !!on;
+  });
+  drawReq();
+}
+
+function drawReq(){
+  const r = reqOf(selReq);
+  if(!r) return;
+  const items = r.items || [];
+  const pickable = items.filter(function(i){ return lineState(i).pick; });
+  const on = items.filter(function(i){ return B[i.Req_num] && B[i.Req_num].on && B[i.Req_num].qty > 0; });
+  const totQty = on.reduce(function(a,i){ return a + B[i.Req_num].qty; }, 0);
+  const totAmt = on.reduce(function(a,i){ return a + B[i.Req_num].qty * (i.P_Price||0); }, 0);
+  const blocked = items.filter(function(i){ return i.left_qty > 0 && canOf(i) <= 0; }).length;
+  const partial = on.filter(function(i){ return B[i.Req_num].qty < i.left_qty; }).length;
+
+  document.getElementById('right').innerHTML =
+    '<div class="alert a-ac"><i class="ti ti-clipboard-list"></i> '
+  +   '<b>' + r.Req_ID + '</b> · ' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대 · '
+  +   '작업지시 ' + esc(r.Work_Order||'-') + ' · ' + r.Req_Date + ' · '
+  +   esc(r.worker||'-') + ' 요청 · 진행률 <b>' + (r.pct||0) + '%</b>'
+  +   (r.Note ? '<br>메모: ' + esc(r.Note) : '')
+  + '</div>'
+
+  + '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-checkbox"></i>선택</div>'
+  +     '<div class="c-v">' + on.length + '<small>/' + items.length + '</small></div>'
+  +     '<div class="c-s">' + (partial ? '부분 ' + partial + '종 포함' : '선택분 전량') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>불출 수량</div>'
+  +     '<div class="c-v">' + nf(totQty) + '<small>개</small></div>'
+  +     '<div class="c-s">' + nf(totAmt) + '원</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-ban"></i>불출 불가</div>'
+  +     '<div class="c-v ' + (blocked?'dn':'ok') + '">' + blocked + '<small>종</small></div>'
+  +     '<div class="c-s">' + (blocked ? '재고 0 · 발주 필요' : '없음') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-progress"></i>요청 잔여</div>'
+  +     '<div class="c-v">' + nf(r.left_qty) + '<small>개</small></div>'
+  +     '<div class="c-s">요청 ' + nf(r.req_qty) + ' · 불출 ' + nf(r.done_qty) + '</div></div>'
+  + '</div>'
+
+  + '<div class="actbar"><label>담당자</label>'
+  +   '<select class="sel" onchange="setWho(this.value)">'
+  +     WORKERS.map(function(w){
+        return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID?' selected':'') + '>'
+          + esc(w.Name) + ' ' + esc(w.Position||'') + '</option>'; }).join('')
+  +   '</select>'
+  +   '<button class="btn" onclick="toggleAll(true)"><i class="ti ti-checks"></i>가능한 것 전체</button>'
+  +   '<button class="btn" onclick="toggleAll(false)">전체 해제</button>'
+  +   '<button class="btn btnp" id="go" onclick="openBatchConfirm()">'
+  +     '<i class="ti ti-arrow-bar-up"></i>선택 ' + on.length + '건 불출</button>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-list-check"></i>'
+  +   '<span class="sech-t">요청 품목</span>'
+  +   '<span class="sech-m">체크한 품목만 불출됩니다 · 수량은 재고 한도까지 조절할 수 있습니다</span></div>'
+  +   '<table><thead><tr><th style="width:30px"></th><th>자재</th><th class="num">요청</th>'
+  +     '<th class="num">불출</th><th class="num">잔여</th><th class="num">현재고</th>'
+  +     '<th class="num">이번 불출</th><th>상태</th></tr></thead><tbody>'
+  +   items.map(function(i){
+      const st = lineState(i);
+      const b  = B[i.Req_num] || {on:false, qty:0};
+      const can = canOf(i);
+      return '<tr class="' + (st.pick && b.on ? 'use' : (st.pick ? '' : 'off')) + '">'
+        + '<td><input class="ck" type="checkbox"' + (b.on?' checked':'') + (st.pick?'':' disabled')
+        +   ' data-num="' + i.Req_num + '" onchange="toggleLine(this.dataset.num, this.checked)"></td>'
+        + '<td><span class="pid">' + i.P_ID + '</span>'
+        +   (i.grade ? ' <span class="gr gr' + i.grade + '">' + i.grade + '</span>' : '')
+        +   '<div class="sub">' + esc((i.P_N||'').slice(0,16)) + '</div></td>'
+        + '<td class="num">' + nf(i.Req_Qty) + '</td>'
+        + '<td class="num">' + nf(i.Done_Qty) + '</td>'
+        + '<td class="num"><b>' + nf(i.left_qty) + '</b></td>'
+        + '<td class="num">' + nf(i.stock) + '</td>'
+        + '<td class="num">'
+        +   (st.pick
+              ? '<input class="qin" type="number" min="0" max="' + can + '" value="' + b.qty
+                + '" data-num="' + i.Req_num + '" onchange="setLineQty(this.dataset.num, this.value)"'
+                + (b.on ? '' : ' disabled') + '>'
+              : '-')
+        +   '</td>'
+        + '<td><span class="bg ' + st.c + '">' + st.t + '</span>'
+        +   (st.t === '부분가능' ? '<div class="sub">재고까지만 · 잔여 ' + nf(i.left_qty - can) + '개 남음</div>' : '')
+        +   '</td>'
+        + '</tr>';
+    }).join('')
+  +   '</tbody></table>'
+  +   '<div class="note">체크한 품목은 <b>FIFO 로 각각 배분</b>되어 한 번에 기록됩니다. '
+  +     '한 건이라도 실패하면 전부 취소되므로, 화면에 보인 것과 실제 결과가 달라지지 않습니다. '
+  +     '재고가 0인 품목은 체크할 수 없습니다 — 발주가 먼저입니다.</div>'
+  + '</div>';
+
+  sync();
+}
+
+function batchPayload(){
+  const r = reqOf(selReq);
+  const lines = [];
+  (r.items||[]).forEach(function(i){
+    const b = B[i.Req_num];
+    if(b && b.on && b.qty > 0)
+      lines.push({P_ID: i.P_ID, qty: b.qty,
+                  req: {Req_ID: r.Req_ID, Req_num: i.Req_num}});
+  });
+  return {lines: lines, EP_ID: who};
+}
+
+function batchBody(p, note){
+  const hasTid = !!(p.items[0] && p.items[0].alloc[0] && p.items[0].alloc[0].T_ID);
+  return (note||'')
+  + '<dl class="dl">'
+  +   '<dt>요청</dt><dd>' + p.req_ids.map(function(x){ return '<span class="lotid">'+x+'</span>'; }).join(' ') + '</dd>'
+  +   '<dt>담당자</dt><dd>' + esc(p.worker.Name) + ' ' + esc(p.worker.Position||'') + '</dd>'
+  +   '<dt>불출</dt><dd>' + p.line_cnt + '품목 · ' + nf(p.qty) + '개 · ' + nf(p.amount) + '원 · LOT ' + p.lot_cnt + '개</dd>'
+  + '</dl>'
+  + (p.below_safe_cnt ? '<div class="alert a-wn"><i class="ti ti-alert-triangle"></i> '
+      + p.below_safe_cnt + '종은 불출 후 안전재고 아래로 내려갑니다. 발주를 검토하세요.</div>' : '')
+  + ((p.reqs||[]).length ? '<div class="alert a-ok"><i class="ti ti-clipboard-check"></i> '
+      + p.reqs.map(function(r){ return r.Req_ID + ' → <b>' + r.Status + '</b> (' + r.pct + '%)'; }).join(' · ')
+      + '</div>' : '')
+  + '<div class="sec"><div class="sech"><i class="ti ti-arrows-sort"></i>'
+  +   '<span class="sech-t">품목별 FIFO 배분 (서버 재계산)</span>'
+  +   '<span class="sech-m">' + p.line_cnt + '품목 / LOT ' + p.lot_cnt + '개</span></div>'
+  +   '<table><thead><tr><th>자재</th><th class="num">불출</th><th>LOT 배분</th>'
+  +     (hasTid ? '<th>거래번호</th>' : '') + '</tr></thead><tbody>'
+  +   p.items.map(function(it){
+      return '<tr><td><span class="pid">' + it.P_ID + '</span>'
+        + '<div class="sub">' + esc((it.P_N||'').slice(0,14)) + '</div></td>'
+        + '<td class="num"><b style="color:var(--acc)">' + nf(it.qty) + '</b>'
+        +   '<div class="sub">잔여 ' + nf(it.after) + '</div></td>'
+        + '<td>' + it.alloc.map(function(a){
+              return '<div class="sub"><span class="lotid">' + a.Lot_ID + '</span> ' + nf(a.take) + '개</div>';
+            }).join('') + '</td>'
+        + (hasTid ? '<td>' + it.alloc.map(function(a){
+              return '<div class="sub"><span class="tid">' + (a.T_ID||'') + '</span></div>'; }).join('') + '</td>' : '')
+        + '</tr>';
+    }).join('')
+  +   '</tbody></table></div>';
+}
+
+async function openBatchConfirm(){
+  if(busy) return;
+  busy = true; sync();
+  ovl('일괄 불출', 'ti-loader', '<div class="note">확인 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/disburse/batch/preview', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(batchPayload())});
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('일괄 불출 확인', 'ti-arrow-bar-up', batchBody(d.plan),
+          '<button class="btn" onclick="ovlClose()">취소</button>'
+        + '<button class="btn btnp" style="margin-left:0" onclick="doBatchSubmit()">확정 등록</button>');
+    }else{
+      ovl('등록할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['알 수 없는 오류입니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
+}
+
+async function doBatchSubmit(){
+  if(busy) return;
+  busy = true;
+  ovl('일괄 불출', 'ti-loader', '<div class="note">등록 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/disburse/batch', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(batchPayload())});
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('일괄 불출 완료', 'ti-circle-check',
+          batchBody(d.plan, '<div class="alert a-ok"><i class="ti ti-check"></i> '
+            + d.plan.line_cnt + '품목 ' + nf(d.plan.qty) + '개를 불출했습니다. '
+            + '불출일 ' + d.plan.date + ' · LOT ' + d.plan.lot_cnt + '개에서 나갔습니다.</div>'),
+          '<button class="btn btnp" style="margin-left:0" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('등록 실패', 'ti-alert-circle', errBody(d.errors || ['일괄 불출에 실패했습니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
+}
+
+// 처리할 요청이 있으면 요청 탭부터, 없으면 직접 불출 탭부터 연다
+setMode(OPEN_REQS.length ? 'req' : 'direct');
 </script>
 </body>
 </html>

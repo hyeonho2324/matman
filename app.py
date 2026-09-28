@@ -559,6 +559,36 @@ def api_disburse_create():
     finally:
         conn.close()
 
+@app.route("/api/disburse/batch/preview", methods=["POST"])
+def api_disburse_batch_preview():
+    """일괄 불출 미리보기 — 자재마다 FIFO 배분을 계산한다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_disburse_batch(
+            conn, body.get("lines") or [], body.get("EP_ID"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/disburse/batch", methods=["POST"])
+def api_disburse_batch_create():
+    """일괄 불출 등록. 한 줄이라도 걸리면 전체를 반려한다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_disburse_batch(
+            conn, _entry_date(body), body.get("lines") or [], body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 # ── 불출 요청 API ───────────────────────────────────────────
 # 생산 계획(목표 대수)으로 BOM 소요량을 뽑아 요청서를 만든다.
 # 요청 근거(소요량·현재고)는 화면이 보낸 값을 쓰지 않고 서버가 다시 계산한다.

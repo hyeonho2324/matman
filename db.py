@@ -2763,6 +2763,34 @@ def preview_disburse(conn, pid, qty, ep_id, req=None):
     return plan, []
 
 
+def _write_disburse(conn, date, plan):
+    """검증이 끝난 불출 계획 하나를 실제로 기록한다 (트랜잭션은 호출자가 연다).
+
+    단건 불출과 일괄 불출이 같은 코드를 쓰도록 떼어냈다. 여기서 `with conn:` 을
+    열면 일괄 처리 중간에 커밋이 끼어들어 원자성이 깨진다.
+    """
+    for a in plan["alloc"]:
+        tid = next_tx_id(conn, date)
+        conn.execute(
+            "INSERT INTO Transaction_tb"
+            " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (tid, a["Lot_ID"], TX_DISBURSE, date,
+             a["take"], plan["worker"]["EP_ID"]))
+        a["T_ID"] = tid
+    if plan["req"]:
+        # 요청 잔여를 깎고 요청서 상태를 다시 매긴다
+        conn.execute(
+            "UPDATE Disburse_Req_Item_tb SET Done_Qty = Done_Qty + ?"
+            " WHERE Req_ID = ? AND Req_num = ?",
+            (plan["qty"], plan["req"]["Req_ID"], plan["req"]["Req_num"]))
+        plan["req"]["status"] = _refresh_req_status(conn, plan["req"]["Req_ID"])
+        plan["req"]["done_qty"] = plan["req"]["done_qty"] + plan["qty"]
+        plan["req"]["left_qty"] = plan["req"]["left_qty"] - plan["qty"]
+    plan["date"] = date
+    return plan
+
+
 def create_disburse(conn, date, pid, qty, ep_id, req=None):
     """불출 등록. FIFO 로 나눈 LOT 마다 Transaction_tb 에 불출 행을 남긴다.
 
@@ -2772,27 +2800,82 @@ def create_disburse(conn, date, pid, qty, ep_id, req=None):
     plan, errors = preview_disburse(conn, pid, qty, ep_id, req)
     if errors:
         return None, errors
-
     with conn:                                   # 커밋/롤백 자동
-        for a in plan["alloc"]:
-            tid = next_tx_id(conn, date)
-            conn.execute(
-                "INSERT INTO Transaction_tb"
-                " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (tid, a["Lot_ID"], TX_DISBURSE, date,
-                 a["take"], plan["worker"]["EP_ID"]))
-            a["T_ID"] = tid
-        if plan["req"]:
-            # 요청 잔여를 깎고 요청서 상태를 다시 매긴다
-            conn.execute(
-                "UPDATE Disburse_Req_Item_tb SET Done_Qty = Done_Qty + ?"
-                " WHERE Req_ID = ? AND Req_num = ?",
-                (qty, plan["req"]["Req_ID"], plan["req"]["Req_num"]))
-            plan["req"]["status"] = _refresh_req_status(conn, plan["req"]["Req_ID"])
-            plan["req"]["done_qty"] = plan["req"]["done_qty"] + qty
-            plan["req"]["left_qty"] = plan["req"]["left_qty"] - qty
+        _write_disburse(conn, date, plan)
+    return plan, []
+
+
+# ── 일괄 불출 ───────────────────────────────────────────────
+#
+# 불출 요청 한 건은 보통 자재 10~15종이다. 한 품목씩 열다섯 번 등록하게 하면
+# 현장에서 쓸 수 없다. 요청서를 통째로 골라 한 번에 내보낸다.
+#
+# 자재마다 사정이 다르므로 전부 다 나가지는 않는다.
+#   전량가능 — 요청 잔여만큼 재고가 있다
+#   부분가능 — 재고가 모자라 있는 만큼만 (나머지는 요청에 잔여로 남는다)
+#   불가     — 재고 0. 발주가 먼저다
+# 무엇을 얼마나 낼지는 화면에서 고르고, 서버는 받은 것만 검증해 기록한다.
+
+def preview_disburse_batch(conn, lines, ep_id):
+    """여러 자재를 한 번에 불출하기 전 검증·FIFO 배분.
+
+    lines: [{"P_ID": ..., "qty": ..., "req": {"Req_ID": ..., "Req_num": ...}}, ...]
+    한 줄이라도 걸리면 전체를 반려한다. 일부만 나가면 화면에 보인 것과
+    실제 결과가 달라져 현장에서 무엇이 나갔는지 알 수 없다.
+    """
+    if not lines:
+        return None, ["불출할 자재를 선택하세요."]
+
+    seen, plans = set(), []
+    for ln in lines:
+        pid = str((ln or {}).get("P_ID") or "").strip()
+        if pid in seen:
+            # 같은 자재를 두 줄로 보내면 재고를 두 번 쓴 것으로 계산된다
+            return None, ["같은 자재가 두 번 들어왔습니다: %s" % pid]
+        seen.add(pid)
+        p, e = preview_disburse(conn, pid, (ln or {}).get("qty"),
+                                ep_id, (ln or {}).get("req"))
+        if e:
+            return None, ["%s — %s" % (pid or "(빈값)", e[0])]
+        plans.append(p)
+
+    plans.sort(key=lambda p: p["P_ID"])
+    reqs = {p["req"]["Req_ID"] for p in plans if p["req"]}
+    return {
+        "items": plans,
+        "line_cnt": len(plans),
+        "qty": sum(p["qty"] for p in plans),
+        "amount": sum(p["amount"] for p in plans),
+        "lot_cnt": sum(p["lot_cnt"] for p in plans),
+        "below_safe_cnt": sum(1 for p in plans if p["below_safe"]),
+        "worker": plans[0]["worker"],
+        "req_ids": sorted(reqs),
+        "req_cnt": len(reqs),
+    }, []
+
+
+def create_disburse_batch(conn, date, lines, ep_id):
+    """일괄 불출 등록. 전부 성공하거나 전부 실패한다."""
+    plan, errors = preview_disburse_batch(conn, lines, ep_id)
+    if errors:
+        return None, errors
+    with conn:                                   # 커밋/롤백 자동
+        for p in plan["items"]:
+            _write_disburse(conn, date, p)
     plan["date"] = date
+    # 요청서별 최종 상태를 담아 화면이 그대로 보여줄 수 있게 한다
+    plan["reqs"] = [dict(r) for r in _rows(conn, """
+        SELECT r.Req_ID, r.Status, f.FG_N, r.Work_Order,
+               SUM(i.Req_Qty) AS req_qty, SUM(i.Done_Qty) AS done_qty
+          FROM Disburse_Req_tb r
+          LEFT JOIN FG_tb f ON r.FG_ID = f.FG_ID
+          LEFT JOIN Disburse_Req_Item_tb i ON i.Req_ID = r.Req_ID
+         WHERE r.Req_ID IN (%s)
+         GROUP BY r.Req_ID
+    """ % ",".join("?" * len(plan["req_ids"])), tuple(plan["req_ids"]))] \
+        if plan["req_ids"] else []
+    for r in plan["reqs"]:
+        r["pct"] = _pct(r["done_qty"] or 0, r["req_qty"] or 0)
     return plan, []
 # ── 입고 등록 (세 번째 쓰기 기능) ────────────────────────────
 #
