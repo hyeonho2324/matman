@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>불출 요청</title>
+<link rel="stylesheet" href="/static/vendor/tabler-icons.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.left{width:290px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.tabs{display:flex;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.tab{flex:1;padding:7px 8px;font-size:11px;text-align:center;cursor:pointer;color:var(--txt3);border-bottom:2px solid transparent}
+.tab:hover{background:var(--s2)}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500;background:var(--s0)}
+.tab .n{font-size:9px;opacity:.75;margin-left:3px}
+.lh{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500}
+.srch{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s0)}
+.srch input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;flex:1;color:var(--txt)}
+.llist{flex:1;overflow-y:auto}
+.it{padding:8px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.it:hover{background:var(--s2)}
+.it.on{background:var(--bg-ac);border-left:3px solid var(--acc);padding-left:9px}
+.it-h{display:flex;align-items:center;gap:5px}
+.it-n{font-size:11px;margin-top:2px;font-weight:500}
+.it-s{font-size:10px;color:var(--txt3);margin-top:1px}
+.fid,.pid,.rid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.right{flex:1;overflow-y:auto;padding:14px;min-width:0}
+.empty{padding:26px 16px;text-align:center;color:var(--txt3);font-size:11px;line-height:1.8}
+.planbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--s1);border:0.5px solid var(--border);border-radius:8px;margin-bottom:14px;flex-wrap:wrap}
+.planbar label{font-size:11px;font-weight:500}
+.nin{width:92px;font-family:inherit;font-size:12px;padding:4px 7px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;text-align:right}
+.tin{width:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:4px 7px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none}
+.wsel{font-family:inherit;font-size:11px;padding:4px 7px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none}
+.nin:focus,.tin:focus{border-color:var(--acc)}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.c-v{font-size:19px;font-weight:600;line-height:1.1}
+.c-v small{font-size:11px;font-weight:400;color:var(--txt3)}
+.c-s{font-size:10px;color:var(--txt3);margin-top:3px}
+.c-v.ok{color:var(--ok)}.c-v.dn{color:var(--dn)}.c-v.wn{color:var(--wn)}
+.sec{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.sech{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;background:var(--s1)}
+.sech-t{font-size:12px;font-weight:500;flex:1}
+.sech-m{font-size:10px;color:var(--txt3)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.short{background:var(--bg-dn)}
+tr.manual{background:var(--bg-wn)}
+.num{text-align:right}
+.sub{font-size:9px;color:var(--txt3);margin-top:1px}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bac{background:var(--bg-ac);color:#185FA5}.bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
+.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}
+.bwn{background:var(--bg-wn);color:#854F0B}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+.qsel{font-family:inherit;font-size:11px;padding:3px 5px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;width:118px}
+.qin{width:86px;font-family:inherit;font-size:11px;padding:3px 6px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;text-align:right}
+.qsel:focus,.qin:focus{border-color:var(--acc)}
+.note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
+.alert{padding:9px 12px;border-radius:8px;font-size:11px;line-height:1.7;margin-bottom:14px;border:0.5px solid}
+.a-ok{background:var(--bg-ok);border-color:rgba(29,158,117,.3);color:#1D6E52}
+.a-wn{background:var(--bg-wn);border-color:rgba(239,159,39,.3);color:#854F0B}
+.a-dn{background:var(--bg-dn);border-color:rgba(224,75,74,.3);color:#9B1C1C}
+.a-ac{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:#185FA5}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.btnp:hover{background:#2168bd}
+.btnd{border-color:var(--dn);color:#9B1C1C}
+.btnd:hover{background:var(--bg-dn)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{background:transparent}
+.btnp:disabled:hover{background:var(--acc)}
+.bar{height:6px;background:var(--s2);border-radius:99px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--ok)}
+.ovl{position:fixed;inset:0;background:rgba(26,25,23,.42);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.mdl{background:var(--s0);border:0.5px solid var(--border-s);border-radius:10px;width:100%;max-width:620px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.mdh{padding:11px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;flex-shrink:0}
+.mdb{padding:14px;overflow-y:auto}
+.mdf{padding:10px 14px;border-top:0.5px solid var(--border);background:var(--s1);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.dl{display:grid;grid-template-columns:84px 1fr;gap:5px 10px;font-size:11px;margin-bottom:12px}
+.dl dt{color:var(--txt3)}
+.dl dd{font-weight:500}
+@media(max-width:900px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .main{flex-direction:column}
+  .left{width:100%;max-height:34%;border-right:none;border-bottom:0.5px solid var(--border-s)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-clipboard-list" style="color:var(--acc)"></i>불출 요청
+      <span class="tag">실제 DB · 생산 계획 기준 BOM 산출 · 포장단위 준수</span></div>
+  </div>
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    생산 목표 대수를 넣으면 <b>BOM으로 자재 소요량을 자동 산출</b>합니다. 작업자가 현장 사정을 반영해 수량을 확정하면
+    자재팀이 <b>FIFO로 불출</b>합니다. 요청 수량은 <b>입고 포장단위의 배수</b>가 기본이고, 필요하면 직접 입력할 수 있습니다.
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="tabs">
+        <div class="tab" id="tab-new" onclick="setMode('new')">새 요청<span class="n" id="n-new"></span></div>
+        <div class="tab" id="tab-list" onclick="setMode('list')">요청 현황<span class="n" id="n-list"></span></div>
+      </div>
+      <div class="lh"><i class="ti ti-box" id="lh-i"></i><span id="lh-t">완제품</span>
+        <span id="cnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
+      <div class="srch"><i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
+        <input id="q" placeholder="검색" oninput="drawList()"></div>
+      <div class="llist" id="list"></div>
+    </div>
+    <div class="right" id="right"></div>
+  </div>
+</div>
+<script>
+const FGS      = {{ fgs|tojson }};
+const BOM      = {{ bom|tojson }};
+const WORKERS  = {{ workers|tojson }};
+const REQUESTS = {{ requests|tojson }};
+const BASE     = {{ base|tojson }};
+const NEXT_WO  = {{ next_wo|tojson }};
+
+let mode = 'new';                     // 'new' = 요청 작성 · 'list' = 요청 현황
+let sel  = null;                      // 선택된 FG_ID 또는 Req_ID
+let planQty = 100;                    // 생산 목표 대수
+let Q    = {};                        // 품번별 {qty, manual}
+let wo   = NEXT_WO;
+let who  = WORKERS.length ? WORKERS[0].EP_ID : '';
+let note = '';
+let busy = false;
+
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+
+// 완제품별 표준 BOM
+const BY_FG = {};
+BOM.forEach(function(b){ (BY_FG[b.FG_ID] = BY_FG[b.FG_ID] || []).push(b); });
+
+// 소요량을 포장단위로 올린 기본값과 후보 (서버 pkg_options 와 같은 규칙)
+function pkgOptions(need, pkg){
+  need = Math.max(need||0, 0);
+  if(!pkg || pkg <= 0) return {opts: need ? [need] : [], base: need};
+  const base = need ? Math.ceil(need/pkg)*pkg : pkg;
+  const b = base/pkg, set = [];
+  for(let k = Math.max(1, b-1); k < b+3; k++) set.push(k*pkg);
+  return {opts: set, base: base};
+}
+
+function rowsOf(fgId){
+  return (BY_FG[fgId] || []).slice().sort(function(a,b){ return a.P_ID < b.P_ID ? -1 : 1; })
+    .map(function(b){
+      const need = (b.BOM_Qty||0) * planQty;
+      const po = pkgOptions(need, b.PkgUnit);
+      return Object.assign({}, b, {need: need, opts: po.opts, base: po.base});
+    });
+}
+
+function setMode(m){
+  mode = m;
+  sel = null;
+  document.getElementById('q').value = '';
+  const rows = (m === 'new') ? FGS : REQUESTS;
+  if(rows.length) sel = (m === 'new') ? rows[0].FG_ID : rows[0].Req_ID;
+  if(m === 'new') resetQ();
+  drawList();
+  if(sel) pick(sel); else document.getElementById('right').innerHTML =
+    '<div class="empty"><i class="ti ti-clipboard-off" style="font-size:22px;display:block;margin-bottom:8px"></i>'
+    + (m === 'new' ? '완제품이 없습니다.' : '등록된 불출 요청이 없습니다.<br>새 요청 탭에서 만들어 보세요.') + '</div>';
+}
+
+function resetQ(){ Q = {}; }
+
+function pick(id){
+  sel = id;
+  if(mode === 'new') resetQ();
+  drawList();
+  if(mode === 'new') drawNew(); else drawReq();
+}
+
+function drawList(){
+  document.getElementById('n-new').textContent  = FGS.length;
+  document.getElementById('n-list').textContent = REQUESTS.length;
+  document.getElementById('tab-new').className  = 'tab' + (mode==='new'  ? ' on' : '');
+  document.getElementById('tab-list').className = 'tab' + (mode==='list' ? ' on' : '');
+  document.getElementById('lh-t').textContent = mode==='new' ? '완제품' : '요청서';
+  document.getElementById('lh-i').className = 'ti ' + (mode==='new' ? 'ti-box' : 'ti-clipboard-list');
+  document.getElementById('q').placeholder = mode==='new' ? '완제품명 · 코드' : '요청번호 · 작업지시 · 완제품';
+
+  const qs = (document.getElementById('q').value||'').trim().toLowerCase();
+  let rows;
+  if(mode === 'new'){
+    rows = FGS.filter(function(f){
+      return !qs || (f.FG_ID + ' ' + (f.FG_N||'')).toLowerCase().indexOf(qs) >= 0; });
+  }else{
+    rows = REQUESTS.filter(function(r){
+      return !qs || (r.Req_ID + ' ' + (r.Work_Order||'') + ' ' + (r.FG_N||'')).toLowerCase().indexOf(qs) >= 0; });
+  }
+  document.getElementById('cnt').textContent = rows.length + (mode==='new' ? '종' : '건');
+
+  if(!rows.length){
+    document.getElementById('list').innerHTML = '<div class="empty">해당 항목이 없습니다.</div>';
+    return;
+  }
+  document.getElementById('list').innerHTML = rows.map(function(r){
+    if(mode === 'new'){
+      return '<div class="it ' + (sel===r.FG_ID?'on':'') + '" data-id="' + r.FG_ID + '" onclick="pick(this.dataset.id)">'
+        + '<div class="it-h"><span class="fid">' + r.FG_ID + '</span>'
+        +   (r.zero_parts ? '<span class="bg bdn">결품 ' + r.zero_parts + '</span>' : '') + '</div>'
+        + '<div class="it-n">' + esc(r.FG_N) + '</div>'
+        + '<div class="it-s">부품 ' + r.part_cnt + '종 · 대당 ' + won(r.unit_cost) + '원 · 생산가능 ' + nf(r.can_make) + '대</div>'
+        + '</div>';
+    }
+    const cls = r.Status==='불출완료' ? 'bok' : (r.Status==='취소' ? 'bmu' : (r.Status==='일부불출' ? 'bwn' : 'bac'));
+    return '<div class="it ' + (sel===r.Req_ID?'on':'') + '" data-id="' + r.Req_ID + '" onclick="pick(this.dataset.id)">'
+      + '<div class="it-h"><span class="rid">' + r.Req_ID + '</span>'
+      +   '<span class="bg ' + cls + '">' + r.Status + '</span></div>'
+      + '<div class="it-n">' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대</div>'
+      + '<div class="it-s">' + r.Req_Date + ' · ' + esc(r.worker||'-') + ' · ' + r.line_cnt + '품목</div>'
+      + '<div class="bar"><i style="width:' + (r.pct||0) + '%"></i></div>'
+      + '</div>';
+  }).join('');
+}
+
+// ── 새 요청 ──────────────────────────────────────────────────
+function setPlanQty(v){
+  const n = parseInt(v, 10);
+  planQty = isNaN(n) ? 0 : Math.max(0, n);
+  resetQ();                       // 대수가 바뀌면 소요량이 바뀌므로 수량을 다시 산출한다
+  drawNew();
+}
+function setWO(v){ wo = (v||'').trim(); }
+function setWho(v){ who = v; sync(); }
+function setNote(v){ note = v; }
+
+function qOf(r){
+  if(!Q[r.P_ID]) Q[r.P_ID] = {qty: r.base, manual: false};
+  return Q[r.P_ID];
+}
+function setQSel(pid, v){
+  if(v === '__manual'){ Q[pid].manual = true; }
+  else { Q[pid] = {qty: parseInt(v,10)||0, manual: false}; }
+  drawNew();
+}
+function setQIn(pid, v){
+  const n = parseInt(v, 10);
+  Q[pid].qty = isNaN(n) ? 0 : Math.max(0, n);
+  sync();
+}
+function setQZero(pid){ Q[pid] = {qty: 0, manual: false}; drawNew(); }
+
+function drawNew(){
+  const fg = FGS.filter(function(f){ return f.FG_ID === sel; })[0];
+  if(!fg) return;
+  const rows = rowsOf(fg.FG_ID);
+  rows.forEach(qOf);
+
+  const act = rows.filter(function(r){ return Q[r.P_ID].qty > 0; });
+  const totQty = act.reduce(function(a,r){ return a + Q[r.P_ID].qty; }, 0);
+  const amt    = act.reduce(function(a,r){ return a + Q[r.P_ID].qty * (r.price||0); }, 0);
+  const nShort = act.filter(function(r){ return Q[r.P_ID].qty > r.stock; }).length;
+  const nMan   = act.filter(function(r){ return Q[r.P_ID].manual && r.PkgUnit && Q[r.P_ID].qty % r.PkgUnit !== 0; }).length;
+  const nOver  = act.filter(function(r){ return r.need > 0 && Q[r.P_ID].qty >= r.need * 2; }).length;
+
+  document.getElementById('right').innerHTML =
+    '<div class="planbar">'
+  +   '<label>생산 목표</label>'
+  +   '<input class="nin" type="number" min="1" value="' + planQty + '" onchange="setPlanQty(this.value)">'
+  +   '<span style="font-size:11px;color:var(--txt3)">대</span>'
+  +   '<label style="margin-left:8px">작업지시</label>'
+  +   '<input class="tin" value="' + esc(wo) + '" onchange="setWO(this.value)">'
+  +   '<label style="margin-left:8px">요청자</label>'
+  +   '<select class="wsel" onchange="setWho(this.value)">'
+  +     WORKERS.map(function(w){
+        return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID?' selected':'') + '>'
+          + esc(w.Name) + ' ' + esc(w.Position||'') + '</option>'; }).join('')
+  +   '</select>'
+  +   '<button class="btn btnp" id="go" style="margin-left:auto" onclick="openConfirm()">'
+  +     '<i class="ti ti-send"></i>불출 요청</button>'
+  + '</div>'
+
+  + '<div class="alert a-ac"><i class="ti ti-info-circle"></i> '
+  +   '<b>' + fg.FG_ID + '</b> ' + esc(fg.FG_N) + ' · 표준 부품 ' + fg.part_cnt + '종 · '
+  +   '현재 자재로 만들 수 있는 수량 <b>' + nf(fg.can_make) + '대</b>'
+  +   (fg.can_make < planQty ? ' — 목표 ' + nf(planQty) + '대에 <b>미달</b>합니다. 부족 자재는 발주가 필요합니다.' : '')
+  + '</div>'
+
+  + '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-list"></i>요청 품목</div>'
+  +     '<div class="c-v">' + act.length + '<small>/' + rows.length + '</small></div>'
+  +     '<div class="c-s">' + (rows.length - act.length ? (rows.length-act.length) + '종 제외' : '전 품목 요청') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>요청 수량</div>'
+  +     '<div class="c-v">' + nf(totQty) + '<small>개</small></div>'
+  +     '<div class="c-s">' + won(amt) + '원</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
+  +     '<div class="c-v ' + (nShort?'dn':'ok') + '">' + nShort + '<small>종</small></div>'
+  +     '<div class="c-s">' + (nShort ? '자재창고 재고 미달' : '전량 불출 가능') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-square"></i>과다 요청</div>'
+  +     '<div class="c-v ' + (nOver?'wn':'ok') + '">' + nOver + '<small>종</small></div>'
+  +     '<div class="c-s">' + (nOver ? '소요량의 2배 이상' : '적정 범위')
+  +       (nMan ? ' · 직접입력 ' + nMan : '') + '</div></div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-sitemap"></i>'
+  +   '<span class="sech-t">자재 소요량 (BOM 자동 산출)</span>'
+  +   '<span class="sech-m">소요량 = BOM 소요 × ' + nf(planQty) + '대</span></div>'
+  +   '<table><thead><tr><th>자재</th><th class="num">대당</th><th class="num">소요량</th>'
+  +     '<th class="num">현재고</th><th class="num">포장</th><th>요청 수량</th>'
+  +     '<th class="num">부족</th></tr></thead><tbody>'
+  +   rows.map(function(r){
+      const st = Q[r.P_ID];
+      const offPkg = r.PkgUnit && st.qty % r.PkgUnit !== 0;
+      const shortQty = Math.max(st.qty - r.stock, 0);
+      const boxes = (r.PkgUnit && !offPkg) ? (st.qty / r.PkgUnit) : null;
+      // 포장단위가 크면 소요량보다 훨씬 많이 나갈 수 있다. 2배 넘으면 눈에 띄게 알린다.
+      const over = (r.need > 0 && st.qty >= r.need * 2) ? (st.qty / r.need).toFixed(1) : null;
+      let ctl;
+      if(st.manual){
+        ctl = '<input class="qin" type="number" min="0" value="' + st.qty + '" data-pid="' + r.P_ID
+            + '" onchange="setQIn(this.dataset.pid, this.value)">'
+            + '<button class="btn" style="padding:2px 6px;font-size:10px;margin-left:4px" data-pid="' + r.P_ID
+            + '" onclick="setQSel(this.dataset.pid, String(' + r.base + '))">포장단위로</button>';
+      }else{
+        ctl = '<select class="qsel" data-pid="' + r.P_ID + '" onchange="setQSel(this.dataset.pid, this.value)">'
+            + '<option value="0"' + (st.qty===0?' selected':'') + '>요청 안 함</option>'
+            + r.opts.map(function(o){
+                return '<option value="' + o + '"' + (st.qty===o?' selected':'') + '>'
+                  + nf(o) + '개 (' + (o/r.PkgUnit) + '박스)</option>'; }).join('')
+            + '<option value="__manual">직접 입력…</option>'
+            + '</select>';
+      }
+      return '<tr class="' + (shortQty ? 'short' : (st.manual && offPkg ? 'manual' : '')) + '">'
+        + '<td><span class="pid">' + r.P_ID + '</span>'
+        +   (r.grade ? ' <span class="gr gr' + r.grade + '">' + r.grade + '</span>' : '')
+        +   '<div class="sub">' + esc((r.P_N||'').slice(0,16)) + '</div></td>'
+        + '<td class="num">' + nf(r.BOM_Qty) + '<div class="sub">' + esc(r.Unit||'') + '</div></td>'
+        + '<td class="num"><b>' + nf(r.need) + '</b></td>'
+        + '<td class="num">' + nf(r.stock) + '</td>'
+        + '<td class="num">' + nf(r.PkgUnit) + '</td>'
+        + '<td>' + ctl + (boxes ? '<div class="sub">' + boxes + '박스</div>' : '')
+        +   (st.manual && offPkg ? '<div class="sub" style="color:#854F0B">포장단위 예외</div>' : '')
+        +   (over ? '<div class="sub" style="color:#9B1C1C">소요 대비 ' + over + '배 · +'
+              + nf(st.qty - r.need) + '개</div>' : '') + '</td>'
+        + '<td class="num">' + (shortQty ? '<b style="color:var(--dn)">' + nf(shortQty) + '</b>' : '-') + '</td>'
+        + '</tr>';
+    }).join('')
+  +   '</tbody></table>'
+  +   '<div class="note">입고가 상자 단위로 들어오므로 불출도 <b>포장단위 배수</b>가 기본입니다. '
+  +     '낱개로 뜯으면 남은 수량의 관리 주체가 애매해집니다. '
+  +     '다만 포장단위가 크면 소요량보다 훨씬 많이 나갈 수 있습니다 — '
+  +     '<b style="color:#9B1C1C">소요 대비 배수</b>가 표시된 자재는 <b>직접 입력</b>으로 조정하세요. '
+  +     '예외로 넣은 수량은 요청서에 표시됩니다.</div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-message-2"></i>'
+  +   '<span class="sech-t">메모</span><span class="sech-m">선택</span></div>'
+  +   '<div style="padding:9px 12px"><input class="tin" style="width:100%" '
+  +     'placeholder="예: 불량 여유분 포함, 3라인 투입분" value="' + esc(note) + '" oninput="setNote(this.value)"></div>'
+  + '</div>';
+
+  sync();
+}
+
+function sync(){
+  const go = document.getElementById('go');
+  if(!go) return;
+  const rows = rowsOf(sel);
+  const any = rows.some(function(r){ return Q[r.P_ID] && Q[r.P_ID].qty > 0; });
+  go.disabled = busy || !who || !planQty || !any;
+}
+
+// ── 요청 현황 ────────────────────────────────────────────────
+function drawReq(){
+  const r = REQUESTS.filter(function(x){ return x.Req_ID === sel; })[0];
+  if(!r) return;
+  const cls = r.Status==='불출완료' ? 'a-ok' : (r.Status==='취소' ? 'a-wn' : 'a-ac');
+  document.getElementById('right').innerHTML =
+    '<div class="alert ' + cls + '"><i class="ti ti-clipboard-list"></i> '
+  +   '<b>' + r.Req_ID + '</b> · ' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대 · '
+  +   '작업지시 ' + esc(r.Work_Order||'-') + ' · ' + r.Req_Date + ' · '
+  +   esc(r.worker||'-') + ' ' + esc(r.pos||'') + ' · <b>' + r.Status + '</b>'
+  +   (r.Note ? '<br>메모: ' + esc(r.Note) : '')
+  + '</div>'
+
+  + '<div class="kpi-row">'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-list"></i>요청 품목</div>'
+  +     '<div class="c-v">' + r.line_cnt + '<small>종</small></div>'
+  +     '<div class="c-s">' + won(r.amount) + '원</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>요청 수량</div>'
+  +     '<div class="c-v">' + nf(r.req_qty) + '<small>개</small></div>'
+  +     '<div class="c-s">불출 ' + nf(r.done_qty) + '개</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-progress"></i>진행률</div>'
+  +     '<div class="c-v ' + (r.pct>=100?'ok':'') + '">' + (r.pct||0) + '<small>%</small></div>'
+  +     '<div class="c-s">잔여 ' + nf(r.left_qty) + '개</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
+  +     '<div class="c-v ' + (r.short_cnt?'dn':'ok') + '">' + r.short_cnt + '<small>종</small></div>'
+  +     '<div class="c-s">' + (r.short_cnt ? '잔여분 불출 불가' : '잔여분 불출 가능') + '</div></div>'
+  + '</div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-package"></i>'
+  +   '<span class="sech-t">요청 품목</span>'
+  +   '<span class="sech-m">' + (r.manual_cnt ? '포장단위 예외 ' + r.manual_cnt + '종' : '전부 포장단위 배수') + '</span></div>'
+  +   '<table><thead><tr><th>자재</th><th class="num">BOM 소요</th><th class="num">요청</th>'
+  +     '<th class="num">불출</th><th class="num">잔여</th><th class="num">현재고</th>'
+  +     '<th>비고</th></tr></thead><tbody>'
+  +   (r.items||[]).map(function(i){
+      return '<tr class="' + (i.short ? 'short' : '') + '">'
+        + '<td><span class="pid">' + i.P_ID + '</span>'
+        +   (i.grade ? ' <span class="gr gr' + i.grade + '">' + i.grade + '</span>' : '')
+        +   '<div class="sub">' + esc((i.P_N||'').slice(0,16)) + '</div></td>'
+        + '<td class="num">' + nf(i.Need_Qty) + '</td>'
+        + '<td class="num"><b>' + nf(i.Req_Qty) + '</b>'
+        +   (i.Pkg_Unit && i.Req_Qty % i.Pkg_Unit === 0
+              ? '<div class="sub">' + (i.Req_Qty/i.Pkg_Unit) + '박스</div>' : '') + '</td>'
+        + '<td class="num">' + nf(i.Done_Qty) + '</td>'
+        + '<td class="num">' + nf(i.left_qty) + '</td>'
+        + '<td class="num">' + nf(i.stock) + '</td>'
+        + '<td>' + (i.Is_Manual === 'Y' ? '<span class="bg bwn">직접 입력</span>' : '')
+        +   (i.short ? ' <span class="bg bdn">부족 ' + nf(i.short) + '</span>' : '') + '</td>'
+        + '</tr>';
+    }).join('')
+  +   '</tbody></table></div>'
+
+  + (r.Status === '요청'
+      ? '<button class="btn btnd" data-id="' + r.Req_ID + '" onclick="doCancel(this.dataset.id)">'
+        + '<i class="ti ti-x"></i>요청 취소</button>'
+        + '<span class="note">아직 불출이 시작되지 않은 요청만 취소할 수 있습니다.</span>'
+      : '');
+}
+
+// ── 모달 ─────────────────────────────────────────────────────
+function ovlClose(){ const o = document.getElementById('ovl'); if(o) o.remove(); }
+function ovl(title, icon, body, foot){
+  ovlClose();
+  const d = document.createElement('div');
+  d.id = 'ovl'; d.className = 'ovl';
+  d.innerHTML = '<div class="mdl"><div class="mdh"><i class="ti ' + icon + '"></i>' + title + '</div>'
+    + '<div class="mdb">' + body + '</div><div class="mdf">' + foot + '</div></div>';
+  document.body.appendChild(d);
+}
+function errBody(e){
+  return '<div class="alert a-dn"><i class="ti ti-alert-circle"></i> ' + e.map(esc).join('<br>') + '</div>';
+}
+const CLOSE_BTN = '<button class="btn" onclick="ovlClose()">닫기</button>';
+
+function planBody(p, note2){
+  return (note2||'')
+  + '<dl class="dl">'
+  +   (p.Req_ID ? '<dt>요청번호</dt><dd><span class="rid">' + p.Req_ID + '</span></dd>' : '')
+  +   '<dt>완제품</dt><dd><span class="fid">' + p.FG_ID + '</span> ' + esc(p.FG_N)
+  +     ' · 목표 ' + nf(p.plan_qty) + '대</dd>'
+  +   '<dt>작업지시</dt><dd>' + esc(p.Work_Order) + '</dd>'
+  +   '<dt>요청자</dt><dd>' + esc(p.worker.Name) + ' ' + esc(p.worker.Position||'') + ' · ' + p.date + '</dd>'
+  +   '<dt>요청</dt><dd>' + p.line_cnt + '품목 · ' + nf(p.req_qty) + '개 · ' + nf(p.amount) + '원</dd>'
+  + '</dl>'
+  + (p.short_cnt ? '<div class="alert a-dn"><i class="ti ti-alert-triangle"></i> '
+      + p.short_cnt + '종은 자재창고 재고가 모자랍니다. 부족분은 발주 후에나 불출됩니다.</div>' : '')
+  + (p.manual_cnt ? '<div class="alert a-wn"><i class="ti ti-pencil"></i> '
+      + p.manual_cnt + '종은 포장단위를 벗어난 직접 입력입니다.</div>' : '')
+  + '<div class="sec"><div class="sech"><i class="ti ti-package"></i>'
+  +   '<span class="sech-t">요청 품목</span><span class="sech-m">' + p.line_cnt + '종</span></div>'
+  +   '<table><thead><tr><th>자재</th><th class="num">소요량</th><th class="num">요청</th>'
+  +     '<th class="num">현재고</th><th>비고</th></tr></thead><tbody>'
+  +   p.items.map(function(i){
+      return '<tr class="' + (i.short ? 'short' : '') + '">'
+        + '<td><span class="pid">' + i.P_ID + '</span><div class="sub">' + esc((i.P_N||'').slice(0,14)) + '</div></td>'
+        + '<td class="num">' + nf(i.need_qty) + '</td>'
+        + '<td class="num"><b style="color:var(--acc)">' + nf(i.req_qty) + '</b>'
+        +   (i.boxes ? '<div class="sub">' + i.boxes + '박스</div>' : '') + '</td>'
+        + '<td class="num">' + nf(i.stock) + '</td>'
+        + '<td>' + (i.manual ? '<span class="bg bwn">직접 입력</span>' : '')
+        +   (i.short ? ' <span class="bg bdn">부족 ' + nf(i.short) + '</span>' : '') + '</td></tr>';
+    }).join('')
+  +   '</tbody></table></div>';
+}
+
+function payload(){
+  const rows = rowsOf(sel);
+  const items = [];
+  rows.forEach(function(r){
+    const st = Q[r.P_ID];
+    if(st && st.qty > 0) items.push({P_ID: r.P_ID, qty: st.qty, manual: !!st.manual});
+  });
+  return {FG_ID: sel, plan_qty: planQty, items: items, EP_ID: who,
+          Work_Order: wo, note: note};
+}
+
+async function openConfirm(){
+  if(busy) return;
+  busy = true; sync();
+  ovl('불출 요청', 'ti-loader', '<div class="note">확인 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/request/preview', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload())});
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('불출 요청 확인', 'ti-clipboard-check', planBody(d.plan),
+          '<button class="btn" onclick="ovlClose()">취소</button>'
+        + '<button class="btn btnp" onclick="doSubmit()">요청 등록</button>');
+    }else{
+      ovl('요청할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['알 수 없는 오류입니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
+}
+
+async function doSubmit(){
+  if(busy) return;
+  busy = true;
+  ovl('불출 요청', 'ti-loader', '<div class="note">등록 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/request', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload())});
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('불출 요청 완료', 'ti-circle-check',
+          planBody(d.plan, '<div class="alert a-ok"><i class="ti ti-check"></i> 요청 '
+            + d.plan.line_cnt + '품목을 등록했습니다. 자재팀이 불출 처리 화면에서 FIFO로 준비합니다.</div>'),
+          '<button class="btn btnp" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('등록 실패', 'ti-alert-circle', errBody(d.errors || ['요청 등록에 실패했습니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
+}
+
+async function doCancel(rid){
+  if(busy) return;
+  busy = true;
+  try{
+    const r = await fetch('/api/request/cancel', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({Req_ID: rid, EP_ID: who})});
+    const d = await r.json();
+    if(d.ok){
+      ovl('요청 취소됨', 'ti-circle-check',
+          '<div class="alert a-ok"><i class="ti ti-check"></i> ' + rid + ' 요청을 취소했습니다.</div>',
+          '<button class="btn btnp" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('취소할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['취소에 실패했습니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false;
+}
+
+// 요청이 있으면 현황부터, 없으면 새 요청부터 연다
+setMode(REQUESTS.length ? 'list' : 'new');
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@ MENUS = [
         "group": "입출고",
         "menu_items": [
             {"id": "inbound",      "label": "입고 처리",          "icon": "ti-arrow-bar-to-down", "url": "/inbound"},
+            {"id": "disburse_request", "label": "불출 요청",      "icon": "ti-clipboard-list",    "url": "/disburse-request"},
             {"id": "disburse",     "label": "불출 처리",          "icon": "ti-arrow-bar-up",      "url": "/disburse"},
             {"id": "tx_history",   "label": "입출고 이력",        "icon": "ti-history",           "url": "/tx-history"},
             {"id": "picking",      "label": "피킹리스트",         "icon": "ti-list-check",        "url": "/picking"},
@@ -113,6 +114,12 @@ def abc():
 @app.route("/inbound")
 def inbound():
     return render_template("inbound.html", **get_menu_context("inbound"), page_title="입고 처리")
+
+@app.route("/disburse-request")
+def disburse_request():
+    return render_template("disburse_request.html",
+                           **get_menu_context("disburse_request"), page_title="불출 요청")
+
 
 @app.route("/disburse")
 def disburse():
@@ -443,6 +450,17 @@ def _ctx_picking():
 _WB_CACHE = {}
 
 
+def _ctx_disburse_request():
+    """불출 요청 화면 — 완제품·BOM·요청 현황."""
+    conn = db.connect()
+    try:
+        ctx = db.request_source(conn)
+        ctx["requests"] = db.request_list(conn)
+        return ctx
+    finally:
+        conn.close()
+
+
 def _ctx_workbench():
     """입고/불출/승인/스캐너 공용 참조 데이터.
     네 화면이 같은 조회를 하므로 한 번만 읽어 재사용한다."""
@@ -516,7 +534,8 @@ def api_disburse_preview():
     conn = db.connect()
     try:
         plan, errors = db.preview_disburse(
-            conn, body.get("P_ID"), body.get("qty"), body.get("EP_ID"))
+            conn, body.get("P_ID"), body.get("qty"), body.get("EP_ID"),
+            body.get("req"))
         return jsonify({"ok": not errors, "plan": plan, "errors": errors})
     finally:
         conn.close()
@@ -530,7 +549,7 @@ def api_disburse_create():
     try:
         plan, errors = db.create_disburse(
             conn, _entry_date(body), body.get("P_ID"),
-            body.get("qty"), body.get("EP_ID"))
+            body.get("qty"), body.get("EP_ID"), body.get("req"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "plan": plan})
@@ -539,6 +558,72 @@ def api_disburse_create():
         return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
     finally:
         conn.close()
+
+# ── 불출 요청 API ───────────────────────────────────────────
+# 생산 계획(목표 대수)으로 BOM 소요량을 뽑아 요청서를 만든다.
+# 요청 근거(소요량·현재고)는 화면이 보낸 값을 쓰지 않고 서버가 다시 계산한다.
+
+@app.route("/api/request/plan", methods=["POST"])
+def api_request_plan():
+    """완제품 + 목표 대수 → 자재 소요량 초안."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.request_plan(conn, body.get("FG_ID"), body.get("plan_qty"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/request/preview", methods=["POST"])
+def api_request_preview():
+    """등록 전 미리보기 — 포장단위 검증과 합계."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_request(
+            conn, _entry_date(body), body.get("FG_ID"), body.get("plan_qty"),
+            body.get("items") or [], body.get("EP_ID"),
+            body.get("Work_Order"), body.get("note"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/request", methods=["POST"])
+def api_request_create():
+    """불출 요청 등록."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_request(
+            conn, _entry_date(body), body.get("FG_ID"), body.get("plan_qty"),
+            body.get("items") or [], body.get("EP_ID"),
+            body.get("Work_Order"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/request/cancel", methods=["POST"])
+def api_request_cancel():
+    """요청 취소. 한 건이라도 불출됐으면 취소하지 않는다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        res, errors = db.cancel_request(conn, body.get("Req_ID"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": res})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 # ── 입고 등록 API ───────────────────────────────────────────
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
@@ -598,6 +683,7 @@ EMBED_CONTEXT = {
     "wizard":       _ctx_wizard,
     "simulator":    _ctx_simulator,
     "picking":      _ctx_picking,
+    "disburse_request": _ctx_disburse_request,
     # 입출고 작업 화면 4종은 같은 참조 데이터를 공유한다
     "inbound":      _ctx_workbench,
     "disburse":     _ctx_workbench,

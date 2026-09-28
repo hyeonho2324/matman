@@ -2407,6 +2407,8 @@ def workbench(conn):
     pending = pending_po(conn)
     # 대체 입고용 품목 목록 (발주와 다른 품번이 왔을 때 고른다)
     subs = sub_products(conn) if pending else []
+    # 생산에서 올라온 불출 요청 — 불출 처리 화면이 골라 소비한다
+    open_reqs = open_requests(conn)
 
     # 불출·입고 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
     workers = _rows(conn, """
@@ -2422,6 +2424,7 @@ def workbench(conn):
         "workers": workers,
         "pending": pending,
         "subs": subs,
+        "open_reqs": open_reqs,
     }
 
 # ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
@@ -2647,7 +2650,37 @@ def live_lots(conn, pid):
     """ % LOT_DELTA, (pid,))
 
 
-def preview_disburse(conn, pid, qty, ep_id):
+def _req_line(conn, req):
+    """불출이 소비할 요청 라인을 찾아 검증한다.
+
+    요청 없이 불출하는 것도 허용한다(긴급 불출·재고 조정). 요청을 지목했을 때만
+    그 라인이 실재하고 잔여가 있는지 확인한다.
+    """
+    if not req:
+        return None, []
+    rid = str(req.get("Req_ID") or "").strip()
+    try:
+        num = int(req.get("Req_num"))
+    except (TypeError, ValueError):
+        return None, ["요청 라인 번호가 잘못되었습니다."]
+    row = conn.execute("""
+        SELECT i.*, r.Status, r.FG_ID, r.Work_Order
+          FROM Disburse_Req_Item_tb i
+          JOIN Disburse_Req_tb r ON r.Req_ID = i.Req_ID
+         WHERE i.Req_ID = ? AND i.Req_num = ?
+    """, (rid, num)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 요청 라인입니다: %s #%d" % (rid or "(빈값)", num)]
+    d = dict(row)
+    if d["Status"] == "취소":
+        return None, ["취소된 요청입니다: %s" % rid]
+    d["left_qty"] = max((d["Req_Qty"] or 0) - (d["Done_Qty"] or 0), 0)
+    if d["left_qty"] <= 0:
+        return None, ["이미 전량 불출된 요청 라인입니다: %s #%d" % (rid, num)]
+    return d, []
+
+
+def preview_disburse(conn, pid, qty, ep_id, req=None):
     """불출 미리보기 — FIFO 배분과 불출 후 재고를 계산한다.
 
     검증에 걸리면 (None, [사유]) 를 돌려주고 아무것도 계산하지 않는다.
@@ -2681,6 +2714,17 @@ def preview_disburse(conn, pid, qty, ep_id):
     if w is None:
         return None, ["등록되지 않은 사원번호입니다: %s" % ep_id]
 
+    rq, errors = _req_line(conn, req)
+    if errors:
+        return None, errors
+    if rq:
+        if rq["P_ID"] != pid:
+            return None, ["요청 라인의 품번(%s)과 불출 품번(%s)이 다릅니다."
+                          % (rq["P_ID"], pid)]
+        if qty > rq["left_qty"]:
+            return None, ["요청 잔여 수량을 넘습니다. 잔여 {:,}개 / 불출 {:,}개".format(
+                rq["left_qty"], qty)]
+
     lots = live_lots(conn, pid)
     stock = sum(l["remain"] for l in lots)
     if qty > stock:
@@ -2711,17 +2755,21 @@ def preview_disburse(conn, pid, qty, ep_id):
         "worker": {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]},
         "alloc": alloc, "lot_cnt": len(alloc),
         "T_Type": TX_DISBURSE,
+        "req": ({"Req_ID": rq["Req_ID"], "Req_num": rq["Req_num"],
+                 "FG_ID": rq["FG_ID"], "Work_Order": rq["Work_Order"],
+                 "req_qty": rq["Req_Qty"], "done_qty": rq["Done_Qty"],
+                 "left_qty": rq["left_qty"]} if rq else None),
     }
     return plan, []
 
 
-def create_disburse(conn, date, pid, qty, ep_id):
+def create_disburse(conn, date, pid, qty, ep_id, req=None):
     """불출 등록. FIFO 로 나눈 LOT 마다 Transaction_tb 에 불출 행을 남긴다.
 
     한 번의 불출이 LOT 여러 개로 쪼개져도 전부 성공하거나 전부 실패한다.
     절반만 저장되면 재고가 실제와 어긋난 채로 굳어 되돌리기 어렵다.
     """
-    plan, errors = preview_disburse(conn, pid, qty, ep_id)
+    plan, errors = preview_disburse(conn, pid, qty, ep_id, req)
     if errors:
         return None, errors
 
@@ -2735,6 +2783,15 @@ def create_disburse(conn, date, pid, qty, ep_id):
                 (tid, a["Lot_ID"], TX_DISBURSE, date,
                  a["take"], plan["worker"]["EP_ID"]))
             a["T_ID"] = tid
+        if plan["req"]:
+            # 요청 잔여를 깎고 요청서 상태를 다시 매긴다
+            conn.execute(
+                "UPDATE Disburse_Req_Item_tb SET Done_Qty = Done_Qty + ?"
+                " WHERE Req_ID = ? AND Req_num = ?",
+                (qty, plan["req"]["Req_ID"], plan["req"]["Req_num"]))
+            plan["req"]["status"] = _refresh_req_status(conn, plan["req"]["Req_ID"])
+            plan["req"]["done_qty"] = plan["req"]["done_qty"] + qty
+            plan["req"]["left_qty"] = plan["req"]["left_qty"] - qty
     plan["date"] = date
     return plan, []
 # ── 입고 등록 (세 번째 쓰기 기능) ────────────────────────────
@@ -3047,3 +3104,288 @@ def create_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
                      date, ep, lot))
                 it["Chg_ID"] = cid
     return plan, []
+# ── 불출 요청 (생산 → 자재) ──────────────────────────────────
+#
+# 실제 흐름은 이렇다.
+#   고객 주문 → 생산 일정 수립 → 작업지시 → [자재 불출 요청] → 자재팀이 FIFO 로
+#   준비해 현장 전달 → 생산 → 생산 실적
+#
+# ⚠️ 요청 근거는 '생산 실적'이 아니라 '생산 계획(목표 대수)'이다.
+#    실적은 생산이 끝나야 쌓인다. 실적 기준으로 자재를 요청하면 이미 써버린
+#    자재를 나중에 요청하는 시간 역전이 생긴다. 자재는 생산 전에 현장에 가 있어야 한다.
+#
+# 시스템이 BOM 으로 초안을 만들고 작업자가 확정한다(반자동).
+#   완전 수동 — 작업자가 BOM 을 외워 입력해야 해서 누락·오입력이 잦다.
+#   완전 자동 — 불량 여유분·현장 잔여 자재 같은 변수를 못 담고,
+#              잘못된 요청이 검토 없이 그대로 창고를 비운다.
+#   반자동   — 산출 근거(BOM 소요량·현재고)가 요청에 남아 자재팀이 검증할 수 있다.
+
+REQ_STATUS = ("요청", "일부불출", "불출완료", "취소")
+
+
+def next_req_id(conn, date):
+    """Req_ID 채번 — REQ + YYYYMMDD + 4자리."""
+    pre = "REQ" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Req_ID) FROM Disburse_Req_tb WHERE Req_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def next_wo_id(conn, date):
+    """작업지시번호 채번 — WO + YYYYMMDD + 4자리.
+
+    생산 실적(Production_tb)과 요청(Disburse_Req_tb) 양쪽을 봐야 한다.
+    실적이 아직 없는 작업지시라도 번호는 이미 나가 있기 때문이다.
+    """
+    pre = "WO" + date.replace("-", "")
+    a = conn.execute("SELECT MAX(Work_Order) FROM Production_tb WHERE Work_Order LIKE ?",
+                     (pre + "%",)).fetchone()[0]
+    b = conn.execute("SELECT MAX(Work_Order) FROM Disburse_Req_tb WHERE Work_Order LIKE ?",
+                     (pre + "%",)).fetchone()[0]
+    last = max(x for x in (a, b, "") if x is not None)
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def pkg_options(need, pkg, span=3):
+    """요청 가능한 포장단위 배수 후보와 기본값.
+
+    입고가 상자 단위로 들어오므로 불출도 상자 단위로 맞추는 것이 기본이다.
+    낱개로 뜯으면 남은 수량의 관리 주체가 애매해진다.
+    기본값은 소요량을 올린 배수이고, 앞뒤 몇 개를 더 골라 쓸 수 있게 한다.
+    """
+    need = max(int(need or 0), 0)
+    if not pkg or pkg <= 0:
+        return ([need] if need else []), need
+    base = -(-need // pkg) * pkg if need else pkg     # 올림
+    b = base // pkg
+    opts = sorted({k * pkg for k in range(max(1, b - 1), b + span)})
+    return opts, base
+
+
+def request_source(conn):
+    """불출 요청 화면의 기준 데이터 — 완제품·담당자·기준일."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    brows = bom_rows(conn)
+    fgs = fg_list(conn, brows)
+    # 화면이 자체 계산할 수 있도록 표준 BOM 만 내려보낸다 (대체품은 자재팀 판단)
+    bom = [{"FG_ID": b["FG_ID"], "P_ID": b["P_ID"], "P_N": b["P_N"], "Spec": b["Spec"],
+            "BOM_Qty": b["BOM_Qty"], "Unit": b["Unit"], "stock": b["stock"],
+            "PkgUnit": b["PkgUnit"], "grade": b["grade"], "price": b["P_Price"],
+            "lead_time": b["lead_time"]}
+           for b in brows if not b["is_alt"]]
+    workers = _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")
+    return {"base": base, "fgs": fgs, "bom": bom, "workers": workers,
+            "next_wo": next_wo_id(conn, _add_days(base, 1))}
+
+
+def request_plan(conn, fg_id, plan_qty):
+    """생산 목표 대수로 자재 소요량을 산출한다 (요청 초안).
+
+    소요량 = 표준 BOM 소요량 × 목표 대수.
+    현장에 남아 있는 자재는 빼지 않는다 — 자재창고 시스템은 현장 재고를 모른다.
+    """
+    fg = conn.execute("SELECT FG_ID, FG_N FROM FG_tb WHERE FG_ID = ?", (fg_id,)).fetchone()
+    if fg is None:
+        return None, ["등록되지 않은 완제품입니다: %s" % (fg_id or "(빈값)")]
+    try:
+        plan_qty = int(plan_qty or 0)
+    except (TypeError, ValueError):
+        return None, ["생산 목표 수량이 숫자가 아닙니다."]
+    if plan_qty <= 0:
+        return None, ["생산 목표 수량은 1 이상이어야 합니다."]
+
+    rows = []
+    for b in bom_rows(conn):
+        if b["FG_ID"] != fg_id or b["is_alt"]:
+            continue
+        need = (b["BOM_Qty"] or 0) * plan_qty
+        opts, base = pkg_options(need, b["PkgUnit"])
+        rows.append({
+            "P_ID": b["P_ID"], "P_N": b["P_N"], "Spec": b["Spec"],
+            "grade": b["grade"], "unit": b["Unit"],
+            "bom_qty": b["BOM_Qty"], "need_qty": need,
+            "stock": b["stock"], "pkg": b["PkgUnit"],
+            "options": opts, "req_qty": base,
+            "short": max(need - b["stock"], 0),
+            "price": b["P_Price"], "lead_time": b["lead_time"],
+        })
+    rows.sort(key=lambda r: r["P_ID"])
+    return {"FG_ID": fg["FG_ID"], "FG_N": fg["FG_N"], "plan_qty": plan_qty,
+            "items": rows, "line_cnt": len(rows),
+            "short_cnt": sum(1 for r in rows if r["short"] > 0)}, []
+
+
+def preview_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=None):
+    """요청 등록 전 검증 + 합계 산출.
+
+    화면이 보낸 수량만 받고 소요량·현재고는 서버가 다시 계산한다.
+    근거 숫자를 화면에서 받으면 요청서에 사실과 다른 근거가 박힐 수 있다.
+    """
+    plan, errors = request_plan(conn, fg_id, plan_qty)
+    if errors:
+        return None, errors
+
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["요청자를 선택하세요."]
+    w = conn.execute("SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+                     (ep_id,)).fetchone()
+    if w is None:
+        return None, ["등록되지 않은 사원번호입니다: %s" % ep_id]
+
+    by_pid = {r["P_ID"]: r for r in plan["items"]}
+    want, seen = {}, set()
+    for it in (items or []):
+        pid = str(it.get("P_ID") or "").strip()
+        if pid not in by_pid:
+            return None, ["이 완제품의 BOM 에 없는 품번입니다: %s" % (pid or "(빈값)")]
+        if pid in seen:
+            return None, ["같은 품번이 두 번 들어왔습니다: %s" % pid]
+        seen.add(pid)
+        try:
+            q = int(it.get("qty") or 0)
+        except (TypeError, ValueError):
+            return None, ["%s 요청 수량이 숫자가 아닙니다." % pid]
+        if q < 0:
+            return None, ["%s 요청 수량은 0 이상이어야 합니다." % pid]
+        if q:
+            want[pid] = (q, bool(it.get("manual")))
+
+    rows = []
+    for r in plan["items"]:
+        if r["P_ID"] not in want:
+            continue
+        q, manual = want[r["P_ID"]]
+        pkg = r["pkg"] or 0
+        off_pkg = bool(pkg) and q % pkg != 0
+        if off_pkg and not manual:
+            # 포장단위를 벗어나려면 '직접 입력'을 켜야 한다. 실수로 낱개가 나가는 걸 막는다.
+            return None, ["%s 요청 수량 %s개는 포장단위 %d의 배수가 아닙니다. "
+                          "직접 입력으로 전환하세요." % (r["P_ID"], format(q, ","), pkg)]
+        d = dict(r)
+        d["req_qty"] = q
+        d["manual"] = bool(manual and off_pkg)
+        d["boxes"] = (q // pkg) if pkg and not off_pkg else None
+        d["short"] = max(q - r["stock"], 0)
+        d["amount"] = int(round(q * (r["price"] or 0)))
+        rows.append(d)
+
+    if not rows:
+        return None, ["요청할 자재가 없습니다. 수량을 1 이상으로 지정하세요."]
+
+    plan["items"] = rows
+    plan["line_cnt"] = len(rows)
+    plan["req_qty"] = sum(r["req_qty"] for r in rows)
+    plan["amount"] = sum(r["amount"] for r in rows)
+    plan["short_cnt"] = sum(1 for r in rows if r["short"] > 0)
+    plan["manual_cnt"] = sum(1 for r in rows if r["manual"])
+    plan["date"] = date
+    plan["Work_Order"] = (wo or "").strip() or next_wo_id(conn, date)
+    plan["worker"] = {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}
+    plan["note"] = (note or "").strip()
+    return plan, []
+
+
+def create_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=None):
+    """불출 요청 등록. 요청서 1건 + 품목 N행."""
+    plan, errors = preview_request(conn, date, fg_id, plan_qty, items, ep_id, wo, note)
+    if errors:
+        return None, errors
+
+    with conn:
+        rid = next_req_id(conn, date)
+        conn.execute(
+            "INSERT INTO Disburse_Req_tb"
+            " (Req_ID, Req_Date, FG_ID, Plan_Qty, Work_Order, EP_ID, Status, Note)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (rid, date, plan["FG_ID"], plan["plan_qty"], plan["Work_Order"],
+             plan["worker"]["EP_ID"], "요청", plan["note"] or None))
+        for n, it in enumerate(plan["items"], 1):
+            conn.execute(
+                "INSERT INTO Disburse_Req_Item_tb"
+                " (Req_ID, Req_num, P_ID, Need_Qty, Stock_Qty, Req_Qty,"
+                "  Pkg_Unit, Is_Manual, Done_Qty)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (rid, n, it["P_ID"], it["need_qty"], it["stock"], it["req_qty"],
+                 it["pkg"], "Y" if it["manual"] else "N"))
+            it["Req_num"] = n
+        plan["Req_ID"] = rid
+    return plan, []
+
+
+def request_list(conn, limit=60):
+    """요청 현황 — 최근 요청서와 진행률."""
+    reqs = _rows(conn, """
+        SELECT r.Req_ID, r.Req_Date, r.FG_ID, f.FG_N, r.Plan_Qty, r.Work_Order,
+               r.EP_ID, u.Name AS worker, u.Position AS pos, r.Status, r.Note,
+               COUNT(i.Req_num)        AS line_cnt,
+               SUM(i.Req_Qty)          AS req_qty,
+               SUM(i.Done_Qty)         AS done_qty,
+               SUM(CASE WHEN i.Is_Manual = 'Y' THEN 1 ELSE 0 END) AS manual_cnt
+          FROM Disburse_Req_tb r
+          LEFT JOIN FG_tb f   ON r.FG_ID = f.FG_ID
+          LEFT JOIN User_tb u ON r.EP_ID = u.EP_ID
+          LEFT JOIN Disburse_Req_Item_tb i ON i.Req_ID = r.Req_ID
+         GROUP BY r.Req_ID
+         ORDER BY r.Req_Date DESC, r.Req_ID DESC
+         LIMIT ?
+    """, (limit,))
+    items = {}
+    for r in _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL})
+        SELECT i.*, p.P_N, p.Spec, p.P_Price,
+               COALESCE(st.stock, 0) AS stock, s.Sf_Lv AS grade
+          FROM Disburse_Req_Item_tb i
+          JOIN Product_tb p    ON i.P_ID = p.P_ID
+          LEFT JOIN stock st   ON i.P_ID = st.P_ID
+          LEFT JOIN Safe_tb s  ON i.P_ID = s.P_ID
+         ORDER BY i.Req_ID, i.Req_num
+    """):
+        r["left_qty"] = max((r["Req_Qty"] or 0) - (r["Done_Qty"] or 0), 0)
+        r["short"] = max(r["left_qty"] - r["stock"], 0)
+        r["amount"] = int(round((r["Req_Qty"] or 0) * (r["P_Price"] or 0)))
+        items.setdefault(r["Req_ID"], []).append(r)
+    for r in reqs:
+        r["items"] = items.get(r["Req_ID"], [])
+        r["left_qty"] = sum(x["left_qty"] for x in r["items"])
+        r["amount"] = sum(x["amount"] for x in r["items"])
+        r["short_cnt"] = sum(1 for x in r["items"] if x["short"] > 0)
+        r["pct"] = _pct(r["done_qty"] or 0, r["req_qty"] or 0)
+    return reqs
+
+
+def open_requests(conn):
+    """아직 다 불출되지 않은 요청. 불출 처리 화면이 쓴다."""
+    return [r for r in request_list(conn)
+            if r["Status"] in ("요청", "일부불출") and r["left_qty"] > 0]
+
+
+def _refresh_req_status(conn, rid):
+    """요청 품목의 불출 누계로 요청서 상태를 다시 매긴다."""
+    row = conn.execute(
+        "SELECT SUM(Req_Qty), SUM(Done_Qty) FROM Disburse_Req_Item_tb WHERE Req_ID = ?",
+        (rid,)).fetchone()
+    req, done = (row[0] or 0), (row[1] or 0)
+    st = "불출완료" if done >= req else ("일부불출" if done > 0 else "요청")
+    conn.execute("UPDATE Disburse_Req_tb SET Status = ? WHERE Req_ID = ?", (st, rid))
+    return st
+
+
+def cancel_request(conn, rid, ep_id=None):
+    """요청 취소. 이미 일부라도 불출됐으면 취소하지 않는다."""
+    r = conn.execute("SELECT Status FROM Disburse_Req_tb WHERE Req_ID = ?", (rid,)).fetchone()
+    if r is None:
+        return None, ["등록되지 않은 요청번호입니다: %s" % (rid or "(빈값)")]
+    if r["Status"] == "취소":
+        return None, ["이미 취소된 요청입니다."]
+    done = conn.execute(
+        "SELECT COALESCE(SUM(Done_Qty),0) FROM Disburse_Req_Item_tb WHERE Req_ID = ?",
+        (rid,)).fetchone()[0]
+    if done:
+        return None, ["이미 %s개가 불출된 요청이라 취소할 수 없습니다." % format(done, ",")]
+    with conn:
+        conn.execute("UPDATE Disburse_Req_tb SET Status = '취소' WHERE Req_ID = ?", (rid,))
+    return {"Req_ID": rid, "Status": "취소"}, []

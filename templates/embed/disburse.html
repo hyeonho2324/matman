@@ -97,8 +97,9 @@ tr.use{background:var(--bg-ac)}
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    자재와 수량을 고르면 <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를
-    계산합니다. <b>[불출 등록]</b>을 누르면 LOT별로 거래 이력이 남고 재고가 실제로 줄어듭니다.
+    <b>불출 요청</b>을 고르면 그 자재와 잔여 수량이 자동으로 채워집니다(요청 없이 직접 불출도 됩니다).
+    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산하고,
+    <b>[불출 등록]</b>을 누르면 LOT별로 거래 이력이 남고 재고가 실제로 줄어듭니다.
   </div>
   <div class="main">
     <div class="left">
@@ -115,6 +116,19 @@ tr.use{background:var(--bg-ac)}
 const ITEMS = {{ disburse|tojson }};
 const LOTS  = {{ scan_lots|tojson }};
 const WORKERS = {{ workers|tojson }};
+// 생산에서 올라온 불출 요청 (미완료분). 고르면 그 자재·잔여수량이 채워진다.
+const OPEN_REQS = {{ open_reqs|tojson }};
+const REQ_LINES = [];
+OPEN_REQS.forEach(function(r){
+  (r.items||[]).forEach(function(i){
+    if(i.left_qty > 0) REQ_LINES.push({
+      key: r.Req_ID + '|' + i.Req_num, Req_ID: r.Req_ID, Req_num: i.Req_num,
+      P_ID: i.P_ID, P_N: i.P_N, left: i.left_qty, stock: i.stock,
+      FG_N: r.FG_N, wo: r.Work_Order, date: r.Req_Date});
+  });
+});
+let reqRef = null;          // 선택된 요청 라인 (없으면 직접 불출)
+let wantQty = null;         // 요청에서 넘어온 기본 수량
 let sel = ITEMS.length ? ITEMS[0].P_ID : null;
 // 로그인이 없으므로 불출 담당자를 화면에서 고른다
 let who = WORKERS.length ? WORKERS[0].EP_ID : '';
@@ -148,7 +162,11 @@ function drawList(){
   }).join('');
 }
 
-function pick(pid){ sel=pid; drawList(); draw(true); }
+function pick(pid){
+  // 요청에 걸린 자재가 아니면 연결을 끊는다 (엉뚱한 요청에 실적이 붙는 것을 막는다)
+  if(reqRef && reqRef.P_ID !== pid){ reqRef = null; wantQty = null; }
+  sel = pid; drawList(); draw(true);
+}
 
 function draw(resetQty){
   const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
@@ -159,11 +177,20 @@ function draw(resetQty){
   if(resetQty){
     r.innerHTML = '<div class="qtybar"><label>불출 수량</label>'
       + '<input type="range" id="qty" min="0" max="' + it.stock + '" value="'
-      + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="draw(false)">'
+      + (wantQty!=null ? Math.min(wantQty, it.stock)
+           : Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock)) + '" oninput="draw(false)">'
       + '<span class="qv" id="qv">0</span><span style="font-size:11px;color:var(--txt3)">개</span>'
       + '<span style="font-size:10px;color:var(--txt3);margin-left:auto">보유 ' + nf(it.stock)
       + '개 · LOT ' + lots.length + '개</span>'
-      + '<div class="actbar"><label>담당자</label>'
+      + '<div class="actbar"><label>요청</label>'
+      +   '<select class="sel" style="max-width:290px" onchange="setReq(this.value)">'
+      +     '<option value="">직접 불출 (요청 없음)</option>'
+      +     REQ_LINES.map(function(q){
+            return '<option value="' + q.key + '"' + (reqRef && reqRef.key===q.key ? ' selected' : '') + '>'
+              + q.Req_ID + ' · ' + q.P_ID + ' 잔여 ' + nf(q.left) + '개'
+              + (q.FG_N ? ' (' + esc(q.FG_N) + ')' : '') + '</option>'; }).join('')
+      +   '</select>'
+      +   '<label style="margin-left:6px">담당자</label>'
       +   '<select class="sel" onchange="setWho(this.value)">'
       +     WORKERS.map(function(w){
               return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID ? ' selected' : '') + '>'
@@ -238,7 +265,25 @@ function draw(resetQty){
 // FIFO 배분은 위에서 화면이 계산해 보여주지만, 등록할 때는 그 값을
 // 서버로 보내지 않는다. 서버가 잔여 LOT 을 다시 읽어 처음부터 배분한다.
 // 화면 계산을 그대로 믿으면 잔여보다 많이 꺼내는 요청을 막을 수 없다.
+function disPayload(qty){
+  const b = {P_ID: sel, qty: qty, EP_ID: who};
+  if(reqRef) b.req = {Req_ID: reqRef.Req_ID, Req_num: reqRef.Req_num};
+  return b;
+}
+
 function setWho(v){ who = v; sync(); }
+
+function setReq(key){
+  reqRef = REQ_LINES.filter(function(q){ return q.key === key; })[0] || null;
+  if(reqRef){
+    // 요청 잔여와 창고 재고 중 작은 쪽이 이번에 낼 수 있는 최대치다
+    wantQty = Math.min(reqRef.left, reqRef.stock);
+    pick(reqRef.P_ID);
+  }else{
+    wantQty = null;
+    draw(true);
+  }
+}
 
 function sync(){
   const go = document.getElementById('go');
@@ -271,6 +316,10 @@ function planBody(p, note){
   +   '<dt>자재</dt><dd><span class="pid">' + p.P_ID + '</span> ' + esc(p.P_N)
   +     (p.Spec ? ' <span style="color:var(--txt3);font-weight:400">' + esc(p.Spec) + '</span>' : '') + '</dd>'
   +   '<dt>담당자</dt><dd>' + esc(p.worker.Name) + ' ' + esc(p.worker.Position||'') + '</dd>'
+  +   (p.req ? '<dt>요청</dt><dd><span class="lotid">' + p.req.Req_ID + '</span> #' + p.req.Req_num
+        + ' · 작업지시 ' + esc(p.req.Work_Order||'-')
+        + ' · 잔여 ' + nf(p.req.left_qty) + '개'
+        + (p.req.status ? ' → <b>' + p.req.status + '</b>' : '') + '</dd>' : '')
   +   '<dt>불출 수량</dt><dd>' + nf(p.qty) + '개 · ' + nf(p.amount) + '원</dd>'
   +   '<dt>불출 후</dt><dd>' + nf(p.after) + '개'
   +     (p.safe_qty ? ' <span style="color:var(--txt3);font-weight:400">/ 안전재고 ' + nf(p.safe_qty) + '개</span>' : '')
@@ -312,7 +361,7 @@ async function openConfirm(){
   try{
     const r = await fetch('/api/disburse/preview', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({P_ID:sel, qty:qty, EP_ID:who})
+      body: JSON.stringify(disPayload(qty))
     });
     const d = await r.json();
     if(d.ok && d.plan){
@@ -337,7 +386,7 @@ async function doSubmit(){
   try{
     const r = await fetch('/api/disburse', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({P_ID:sel, qty:qty, EP_ID:who})
+      body: JSON.stringify(disPayload(qty))
     });
     const d = await r.json();
     if(d.ok && d.plan){

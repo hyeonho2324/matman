@@ -189,6 +189,32 @@ CREATE TABLE Purchase_Detail_tb (
     PRIMARY KEY (H_ID, Purchase_num)
 );
 
+DROP TABLE IF EXISTS Disburse_Req_tb;
+CREATE TABLE Disburse_Req_tb (
+    Req_ID     TEXT PRIMARY KEY,     -- 요청번호 REQ+YYYYMMDD+4자리
+    Req_Date   TEXT NOT NULL,        -- 요청일 (= 불출 희망일)
+    FG_ID      TEXT,                 -- 생산할 완제품
+    Plan_Qty   INTEGER,              -- 생산 목표 대수 (실적이 아니라 계획이다)
+    Work_Order TEXT,                 -- 작업지시번호 WO+YYYYMMDD+4자리
+    EP_ID      TEXT NOT NULL,        -- 요청자 (생산 작업자)
+    Status     TEXT NOT NULL,        -- 요청 / 일부불출 / 불출완료 / 취소
+    Note       TEXT
+);
+
+DROP TABLE IF EXISTS Disburse_Req_Item_tb;
+CREATE TABLE Disburse_Req_Item_tb (
+    Req_ID    TEXT NOT NULL,
+    Req_num   INTEGER NOT NULL,      -- 요청서 내 순번
+    P_ID      TEXT NOT NULL,
+    Need_Qty  INTEGER NOT NULL,      -- BOM 산출 소요량 (요청 근거)
+    Stock_Qty INTEGER NOT NULL,      -- 요청 시점 현재고 (요청 근거)
+    Req_Qty   INTEGER NOT NULL,      -- 실제 요청 수량
+    Pkg_Unit  INTEGER,               -- 요청 시점 포장단위
+    Is_Manual TEXT NOT NULL,         -- Y = 포장단위 배수가 아닌 직접 입력
+    Done_Qty  INTEGER NOT NULL DEFAULT 0,   -- 실제 불출된 누계
+    PRIMARY KEY (Req_ID, Req_num)
+);
+
 DROP TABLE IF EXISTS Purchase_Change_tb;
 CREATE TABLE Purchase_Change_tb (
     Chg_ID       TEXT PRIMARY KEY,     -- 변경번호 CHG+YYYYMMDD+4자리
@@ -292,6 +318,8 @@ CREATE INDEX idx_tx_date        ON Transaction_tb(T_Date);
 CREATE INDEX idx_tx_type        ON Transaction_tb(T_Type);
 CREATE INDEX idx_pd_hid         ON Purchase_Detail_tb(H_ID);
 CREATE INDEX idx_chg_hid        ON Purchase_Change_tb(H_ID);
+CREATE INDEX idx_req_status     ON Disburse_Req_tb(Status);
+CREATE INDEX idx_reqitem_req    ON Disburse_Req_Item_tb(Req_ID);
 CREATE UNIQUE INDEX idx_chg_line ON Purchase_Change_tb(H_ID, Purchase_num);
 CREATE INDEX idx_pd_pid         ON Purchase_Detail_tb(P_ID);
 CREATE INDEX idx_prod_wo        ON Production_tb(Work_Order);

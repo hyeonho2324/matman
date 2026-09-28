@@ -14,7 +14,7 @@ python app.py
 > `requirements.txt` 의 waitress 가 로컬 서버로 쓰입니다 — 개발 서버는 큰 응답을
 > 간헐적으로 멈춰서 화면이 빈 채로 굳습니다.
 
-## 화면 목록 (23개)
+## 화면 목록 (24개)
 
 | 경로 | 화면 |
 |------|------|
@@ -25,6 +25,7 @@ python app.py
 | /safety-stock | 안전재고 |
 | /abc | ABC 분석 |
 | /inbound | 입고 처리 ✎ |
+| /disburse-request | 불출 요청 ✎ |
 | /disburse | 불출 처리 ✎ |
 | /tx-history | 입출고 이력 |
 | /picking | 피킹리스트 ★ |
@@ -43,7 +44,7 @@ python app.py
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
-✎ = DB 쓰기 — 발주 등록(`Purchase_Header_tb`·`Purchase_Detail_tb`) · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
+✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 요청 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
 
 ## 프로젝트 구조
 ```
