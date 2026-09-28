@@ -50,6 +50,10 @@ TX_LABELS = [t for t, _, _, _, _ in TX_TYPES]
 TX_DEMAND = [t for t, _, d, _, _ in TX_TYPES if d]
 TX_MINUS  = [t for t, sg, _, _, _ in TX_TYPES if sg < 0]
 TX_PLUS   = [t for t, sg, _, _, _ in TX_TYPES if sg > 0]
+# 자재창고에서 현장으로 나가는 유일한 실소비 유형.
+# 불출 등록이 Transaction_tb 에 남기는 T_Type 이 이 값이다.
+# TX_TYPES 에서 끌어오므로 유형명이 바뀌어도 여기만 따라간다.
+TX_DISBURSE = TX_DEMAND[0] if TX_DEMAND else "불출"
 
 
 def _inlist(vals):
@@ -2377,12 +2381,18 @@ def workbench(conn):
          ORDER BY l.Lot_Date DESC
     """)
 
+    # 불출 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
+    workers = _rows(conn, """
+        SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name
+    """)
+
     return {
         "base": base,
         "recent_po": recent_po, "po_detail": po_detail,
         "disburse": disburse,
         "approvals": approvals,
         "scan_lots": scan_lots,
+        "workers": workers,
     }
 
 # ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
@@ -2554,3 +2564,139 @@ def create_purchase(conn, date, items):
             g["H_ID"] = hid
             created.append(g)
     return created, []
+
+
+# ── 불출 등록 (두 번째 쓰기 기능) ────────────────────────────
+#
+# 발주가 "부족 → 발주 → 입고" 의 입구라면 불출은 출구다.
+# 자재창고에서 현장으로 나가는 유일한 실소비(TX_TYPES 의 demand 유형)라,
+# 이것까지 저장돼야 재고가 실제로 줄어드는 흐름이 닫힌다.
+#
+# ⚠️ FIFO 배분을 화면에서 받지 않는다.
+#    화면도 같은 계산을 해서 보여주지만, 저장할 때는 서버가 잔여 LOT 을
+#    다시 읽어 처음부터 배분한다. 화면이 보낸 배분을 그대로 믿으면
+#    FIFO 를 건너뛰거나 잔여보다 많이 꺼내는 요청을 막을 방법이 없다.
+
+def next_tx_id(conn, date):
+    """T_ID 채번 — T + YYYYMMDD + 4자리 순번 (그날 기준).
+
+    H_ID(next_po_id) 와 같은 규칙이다. 한 번의 불출이 여러 LOT 으로
+    쪼개지면 LOT 마다 거래 행이 생기므로 순번이 하나씩 올라간다.
+    """
+    pre = "T" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(T_ID) FROM Transaction_tb WHERE T_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def live_lots(conn, pid):
+    """자재 하나의 잔여 LOT 을 FIFO 순(입고일 오름차순)으로 돌려준다.
+
+    잔여 계산은 다른 화면과 같은 LOT_DELTA 를 쓴다.
+    여기서만 따로 계산하면 화면마다 재고가 달라진다.
+    """
+    return _rows(conn, """
+        SELECT l.Lot_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS remain
+          FROM Lot_tb l
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN (SELECT Lot_ID, %s AS out_qty
+                       FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+         WHERE l.P_ID = ?
+           AND l.P_Qty - COALESCE(x.out_qty, 0) > 0
+         ORDER BY l.Lot_Date, l.Lot_ID
+    """ % LOT_DELTA, (pid,))
+
+
+def preview_disburse(conn, pid, qty, ep_id):
+    """불출 미리보기 — FIFO 배분과 불출 후 재고를 계산한다.
+
+    검증에 걸리면 (None, [사유]) 를 돌려주고 아무것도 계산하지 않는다.
+    create_disburse 가 이 함수를 그대로 다시 불러 저장 직전에 재검증한다.
+    """
+    pid = str(pid or "").strip()
+    row = conn.execute("""
+        SELECT p.P_ID, p.P_N, p.Spec, p.P_Price,
+               s.Sf_Lv AS grade, s.Sf_Num AS safe_qty
+          FROM Product_tb p
+          LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+         WHERE p.P_ID = ?
+    """, (pid,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+    info = dict(row)
+
+    try:
+        qty = int(qty or 0)
+    except (TypeError, ValueError):
+        return None, ["불출 수량이 숫자가 아닙니다."]
+    if qty <= 0:
+        return None, ["불출 수량은 1 이상이어야 합니다."]
+
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["불출 담당자를 선택하세요."]
+    w = conn.execute(
+        "SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+        (ep_id,)).fetchone()
+    if w is None:
+        return None, ["등록되지 않은 사원번호입니다: %s" % ep_id]
+
+    lots = live_lots(conn, pid)
+    stock = sum(l["remain"] for l in lots)
+    if qty > stock:
+        return None, ["재고가 부족합니다. 보유 {:,}개 / 요청 {:,}개".format(stock, qty)]
+
+    # FIFO 배분 — 오래된 LOT 부터 채우고, 모자라면 다음 LOT 으로 넘어간다
+    left, alloc = qty, []
+    for l in lots:
+        if left <= 0:
+            break
+        take = min(left, l["remain"])
+        alloc.append({
+            "seq": len(alloc) + 1, "Lot_ID": l["Lot_ID"],
+            "Lot_Date": l["Lot_Date"], "loc_name": l["loc_name"],
+            "remain": l["remain"], "take": take, "after": l["remain"] - take,
+        })
+        left -= take
+
+    after = stock - qty
+    safe = info["safe_qty"]
+    plan = {
+        "P_ID": pid, "P_N": info["P_N"], "Spec": info["Spec"],
+        "grade": info["grade"], "price": info["P_Price"],
+        "qty": qty, "stock": stock, "after": after,
+        "safe_qty": safe,
+        "below_safe": bool(safe and after < safe),
+        "amount": round(qty * (info["P_Price"] or 0)),
+        "worker": {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]},
+        "alloc": alloc, "lot_cnt": len(alloc),
+        "T_Type": TX_DISBURSE,
+    }
+    return plan, []
+
+
+def create_disburse(conn, date, pid, qty, ep_id):
+    """불출 등록. FIFO 로 나눈 LOT 마다 Transaction_tb 에 불출 행을 남긴다.
+
+    한 번의 불출이 LOT 여러 개로 쪼개져도 전부 성공하거나 전부 실패한다.
+    절반만 저장되면 재고가 실제와 어긋난 채로 굳어 되돌리기 어렵다.
+    """
+    plan, errors = preview_disburse(conn, pid, qty, ep_id)
+    if errors:
+        return None, errors
+
+    with conn:                                   # 커밋/롤백 자동
+        for a in plan["alloc"]:
+            tid = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb"
+                " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (tid, a["Lot_ID"], TX_DISBURSE, date,
+                 a["take"], plan["worker"]["EP_ID"]))
+            a["T_ID"] = tid
+    plan["date"] = date
+    return plan, []

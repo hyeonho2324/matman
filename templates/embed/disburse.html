@@ -62,6 +62,25 @@ tr.use{background:var(--bg-ac)}
 .a-ok{background:var(--bg-ok);border-color:rgba(29,158,117,.3);color:#1D6E52}
 .a-wn{background:var(--bg-wn);border-color:rgba(239,159,39,.3);color:#854F0B}
 .a-dn{background:var(--bg-dn);border-color:rgba(224,75,74,.3);color:#9B1C1C}
+.actbar{display:flex;align-items:center;gap:7px;width:100%;margin-top:9px;padding-top:9px;border-top:0.5px solid var(--border);flex-wrap:wrap}
+.actbar label{font-size:11px;font-weight:500}
+.sel{font-family:inherit;font-size:11px;padding:4px 7px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500;margin-left:auto}
+.btnp:hover{background:#2168bd}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{background:transparent}
+.btnp:disabled:hover{background:var(--acc)}
+.ovl{position:fixed;inset:0;background:rgba(26,25,23,.42);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.mdl{background:var(--s0);border:0.5px solid var(--border-s);border-radius:10px;width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.mdh{padding:11px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;flex-shrink:0}
+.mdb{padding:14px;overflow-y:auto}
+.mdf{padding:10px 14px;border-top:0.5px solid var(--border);background:var(--s1);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.dl{display:grid;grid-template-columns:76px 1fr;gap:5px 10px;font-size:11px;margin-bottom:12px}
+.dl dt{color:var(--txt3)}
+.dl dd{font-weight:500}
+.tid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc)}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .main{flex-direction:column}
@@ -78,8 +97,8 @@ tr.use{background:var(--bg-ac)}
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>이 앱은 조회 전용입니다.</b> 실제 불출 등록 대신, 자재와 수량을 고르면
-    <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를 계산해 보여줍니다.
+    자재와 수량을 고르면 <b>FIFO 규칙상 어느 LOT에서 얼마씩 꺼내야 하는지</b>를
+    계산합니다. <b>[불출 등록]</b>을 누르면 LOT별로 거래 이력이 남고 재고가 실제로 줄어듭니다.
   </div>
   <div class="main">
     <div class="left">
@@ -95,7 +114,11 @@ tr.use{background:var(--bg-ac)}
 <script>
 const ITEMS = {{ disburse|tojson }};
 const LOTS  = {{ scan_lots|tojson }};
+const WORKERS = {{ workers|tojson }};
 let sel = ITEMS.length ? ITEMS[0].P_ID : null;
+// 로그인이 없으므로 불출 담당자를 화면에서 고른다
+let who = WORKERS.length ? WORKERS[0].EP_ID : '';
+let busy = false;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -139,7 +162,17 @@ function draw(resetQty){
       + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="draw(false)">'
       + '<span class="qv" id="qv">0</span><span style="font-size:11px;color:var(--txt3)">개</span>'
       + '<span style="font-size:10px;color:var(--txt3);margin-left:auto">보유 ' + nf(it.stock)
-      + '개 · LOT ' + lots.length + '개</span></div><div id="out"></div>';
+      + '개 · LOT ' + lots.length + '개</span>'
+      + '<div class="actbar"><label>담당자</label>'
+      +   '<select class="sel" onchange="setWho(this.value)">'
+      +     WORKERS.map(function(w){
+              return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID ? ' selected' : '') + '>'
+                + esc(w.Name) + ' ' + esc(w.Position||'') + '</option>';
+            }).join('')
+      +   '</select>'
+      +   '<button class="btn btnp" id="go" onclick="openConfirm()">'
+      +     '<i class="ti ti-arrow-bar-up"></i>불출 등록</button>'
+      + '</div></div><div id="out"></div>';
   }
   const qty = +document.getElementById('qty').value;
   document.getElementById('qv').textContent = nf(qty);
@@ -197,6 +230,129 @@ function draw(resetQty){
   +   '<div class="note">선입선출(FIFO) — 오래된 LOT을 먼저 소진해 재고 노후화를 막습니다. '
   +     '한 LOT으로 부족하면 다음 LOT에서 이어 꺼냅니다.</div>'
   + '</div>';
+
+  sync();
+}
+
+// ── 불출 등록 ────────────────────────────────────────────────
+// FIFO 배분은 위에서 화면이 계산해 보여주지만, 등록할 때는 그 값을
+// 서버로 보내지 않는다. 서버가 잔여 LOT 을 다시 읽어 처음부터 배분한다.
+// 화면 계산을 그대로 믿으면 잔여보다 많이 꺼내는 요청을 막을 수 없다.
+function setWho(v){ who = v; sync(); }
+
+function sync(){
+  const go = document.getElementById('go');
+  if(!go) return;
+  const qe = document.getElementById('qty');
+  const q  = qe ? +qe.value : 0;
+  const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
+  go.disabled = busy || !who || q <= 0 || !it || q > it.stock;
+}
+
+function ovlClose(){
+  const o = document.getElementById('ovl');
+  if(o) o.remove();
+}
+
+function ovl(title, icon, bodyHtml, footHtml){
+  ovlClose();
+  const d = document.createElement('div');
+  d.id = 'ovl'; d.className = 'ovl';
+  d.innerHTML = '<div class="mdl"><div class="mdh"><i class="ti ' + icon + '"></i>' + title + '</div>'
+    + '<div class="mdb">' + bodyHtml + '</div>'
+    + '<div class="mdf">' + footHtml + '</div></div>';
+  document.body.appendChild(d);
+}
+
+function planBody(p, note){
+  const hasTid = !!(p.alloc[0] && p.alloc[0].T_ID);
+  return (note || '')
+  + '<dl class="dl">'
+  +   '<dt>자재</dt><dd><span class="pid">' + p.P_ID + '</span> ' + esc(p.P_N)
+  +     (p.Spec ? ' <span style="color:var(--txt3);font-weight:400">' + esc(p.Spec) + '</span>' : '') + '</dd>'
+  +   '<dt>담당자</dt><dd>' + esc(p.worker.Name) + ' ' + esc(p.worker.Position||'') + '</dd>'
+  +   '<dt>불출 수량</dt><dd>' + nf(p.qty) + '개 · ' + nf(p.amount) + '원</dd>'
+  +   '<dt>불출 후</dt><dd>' + nf(p.after) + '개'
+  +     (p.safe_qty ? ' <span style="color:var(--txt3);font-weight:400">/ 안전재고 ' + nf(p.safe_qty) + '개</span>' : '')
+  +     '</dd>'
+  + '</dl>'
+  + (p.below_safe
+      ? '<div class="alert a-wn"><i class="ti ti-alert-triangle"></i> 불출 후 재고가 안전재고 아래로 내려갑니다. 발주를 함께 검토하세요.</div>'
+      : '')
+  + '<div class="sec"><div class="sech"><i class="ti ti-arrows-sort"></i>'
+  +   '<span class="sech-t">LOT 배분 (서버 재계산)</span>'
+  +   '<span class="sech-m">' + p.lot_cnt + '개 LOT</span></div>'
+  +   '<table><thead><tr><th style="width:30px">순</th><th>LOT</th><th>입고일</th>'
+  +     '<th class="num">불출</th><th class="num">남음</th>'
+  +     (hasTid ? '<th>거래번호</th>' : '') + '</tr></thead><tbody>'
+  +   p.alloc.map(function(a){
+        return '<tr><td><span class="fifo on">' + a.seq + '</span></td>'
+        + '<td><span class="lotid">' + a.Lot_ID + '</span></td>'
+        + '<td>' + a.Lot_Date + '</td>'
+        + '<td class="num"><b style="color:var(--acc)">' + nf(a.take) + '</b></td>'
+        + '<td class="num">' + nf(a.after) + '</td>'
+        + (hasTid ? '<td><span class="tid">' + (a.T_ID||'') + '</span></td>' : '') + '</tr>';
+      }).join('')
+  +   '</tbody></table></div>';
+}
+
+function errBody(errs){
+  return '<div class="alert a-dn"><i class="ti ti-alert-circle"></i> '
+       + errs.map(esc).join('<br>') + '</div>';
+}
+
+const CLOSE_BTN = '<button class="btn" onclick="ovlClose()">닫기</button>';
+
+// 1단계 — 서버에 미리보기를 요청해 배분을 확정한다
+async function openConfirm(){
+  if(busy) return;
+  busy = true; sync();
+  const qty = +document.getElementById('qty').value;
+  ovl('불출 등록', 'ti-loader', '<div class="note">확인 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/disburse/preview', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({P_ID:sel, qty:qty, EP_ID:who})
+    });
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('불출 등록 확인', 'ti-arrow-bar-up', planBody(d.plan),
+          '<button class="btn" onclick="ovlClose()">취소</button>'
+        + '<button class="btn btnp" style="margin-left:0" onclick="doSubmit()">확정 등록</button>');
+    }else{
+      ovl('등록할 수 없습니다', 'ti-alert-circle', errBody(d.errors || ['알 수 없는 오류입니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
+}
+
+// 2단계 — 실제 등록
+async function doSubmit(){
+  if(busy) return;
+  busy = true;
+  const qty = +document.getElementById('qty').value;
+  ovl('불출 등록', 'ti-loader', '<div class="note">등록 중입니다...</div>', '');
+  try{
+    const r = await fetch('/api/disburse', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({P_ID:sel, qty:qty, EP_ID:who})
+    });
+    const d = await r.json();
+    if(d.ok && d.plan){
+      ovl('불출 등록 완료', 'ti-circle-check',
+          planBody(d.plan, '<div class="alert a-ok"><i class="ti ti-check"></i> LOT '
+            + d.plan.lot_cnt + '개에서 ' + nf(d.plan.qty) + '개를 불출했습니다. '
+            + '불출일 ' + d.plan.date + ' · 거래 ' + d.plan.lot_cnt + '건이 기록됐습니다.</div>'),
+          '<button class="btn btnp" style="margin-left:0" onclick="location.reload()">확인</button>');
+    }else{
+      ovl('등록 실패', 'ti-alert-circle', errBody(d.errors || ['불출 등록에 실패했습니다.']), CLOSE_BTN);
+    }
+  }catch(e){
+    ovl('통신 실패', 'ti-alert-circle', errBody(['서버와 통신하지 못했습니다: ' + e.message]), CLOSE_BTN);
+  }
+  busy = false; sync();
 }
 
 drawList();

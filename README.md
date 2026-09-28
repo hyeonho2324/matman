@@ -21,12 +21,12 @@ python app.py
 | /safety-stock | 안전재고 |
 | /abc | ABC 분석 |
 | /inbound | 입고 처리 |
-| /disburse | 불출 처리 |
+| /disburse | 불출 처리 ✎ |
 | /tx-history | 입출고 이력 |
 | /picking | 피킹리스트 ★ |
 | /approval | 불출 승인 워크플로우 |
 | /scanner | 바코드/QR 스캐너 |
-| /purchase | 구매 발주 |
+| /purchase | 구매 발주 ✎ |
 | /suppliers | 협력사 |
 | /calendar | 발주 캘린더 |
 | /production | 생산 실적 |
@@ -39,6 +39,7 @@ python app.py
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
+✎ = DB 쓰기 — 발주 등록(`Purchase_Header_tb`·`Purchase_Detail_tb`) · 불출 등록(`Transaction_tb`). 나머지는 조회 전용입니다.
 
 ## 프로젝트 구조
 ```

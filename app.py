@@ -465,7 +465,7 @@ def api_purchase_preview():
     conn = db.connect()
     try:
         groups, errors = db.preview_purchase(
-            conn, _order_date(body), body.get("items") or [])
+            conn, _entry_date(body), body.get("items") or [])
         return jsonify({"ok": not errors, "groups": groups, "errors": errors})
     finally:
         conn.close()
@@ -478,7 +478,7 @@ def api_purchase_create():
     conn = db.connect()
     try:
         created, errors = db.create_purchase(
-            conn, _order_date(body), body.get("items") or [])
+            conn, _entry_date(body), body.get("items") or [])
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "orders": created})
@@ -489,11 +489,11 @@ def api_purchase_create():
         conn.close()
 
 
-def _order_date(body):
-    """발주일. 지정이 없으면 데이터의 마지막 거래일 다음 날을 쓴다.
+def _entry_date(body):
+    """등록일(발주일·불출일). 지정이 없으면 데이터의 마지막 거래일 다음 날.
 
     더미데이터의 시간축(2025-07 ~ 2026-02)과 실제 오늘이 다르므로
-    오늘 날짜를 그대로 쓰면 발주가 목록 맨 위에 동떨어져 붙는다.
+    오늘 날짜를 그대로 쓰면 등록분이 목록 맨 위에 동떨어져 붙는다.
     """
     d = (body.get("date") or "").strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
@@ -504,6 +504,42 @@ def _order_date(body):
     finally:
         conn.close()
     return db._add_days(base, 1)
+
+# ── 불출 등록 API ───────────────────────────────────────────
+# 발주에 이은 두 번째 쓰기 엔드포인트.
+# FIFO 배분은 화면이 보낸 값을 쓰지 않고 서버가 다시 계산한다.
+
+@app.route("/api/disburse/preview", methods=["POST"])
+def api_disburse_preview():
+    """등록 전 미리보기 — 어느 LOT 에서 얼마씩 나가는지 보여준다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_disburse(
+            conn, body.get("P_ID"), body.get("qty"), body.get("EP_ID"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/disburse", methods=["POST"])
+def api_disburse_create():
+    """불출 등록. FIFO 로 나눈 LOT 마다 거래 행을 남긴다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_disburse(
+            conn, _entry_date(body), body.get("P_ID"),
+            body.get("qty"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        # 배포 환경에서 DB 파일이 읽기 전용이면 여기로 온다
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 EMBED_CONTEXT = {
     "safety_stock": _ctx_safety_stock,
