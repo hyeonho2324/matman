@@ -163,6 +163,8 @@ tbody tr.on{background:var(--bg-ac)}
 .st-v-부족{background:var(--bg-dn);color:#9B1C1C}
 .st-v-초과{background:var(--bg-wn);color:#854F0B}
 .st-v-미입고{background:var(--s2);color:var(--txt3)}
+.st-v-대체{background:var(--bg-ac);color:#185FA5}
+.cmp tr.st-대체{background:var(--bg-ac)}
 
 /* 진행 흐름 */
 .flow{display:flex;align-items:center;gap:0;padding:9px 10px;background:var(--s1);border-bottom:0.5px solid var(--border)}
@@ -412,12 +414,15 @@ function pick(hid){
   const rows = o.items.map(function(i){
     return '<tr class="st-' + i.status + '">'
       + '<td>' + i.P_ID + (i.grade ? ' <span class="gr gr'+i.grade+'">'+i.grade+'</span>' : '') + '</td>'
-      + '<td>' + esc((P(i.P_ID).P_N||'').slice(0,10)) + '</td>'
+      + '<td>' + esc((P(i.P_ID).P_N||'').slice(0,10))
+      +   (i.swap_to ? '<div style="font-size:9px;color:#185FA5">\u2192 ' + i.swap_to
+            + ' ' + esc((P(i.swap_to).P_N||'').slice(0,10)) + '</div>' : '') + '</td>'
       + '<td class="num">' + nf(i.ord_qty) + '</td>'
       + '<td class="num">' + (i.in_qty==null ? '-' : nf(i.in_qty)) + '</td>'
       + '<td class="num">' + (i.gap ? '<b style="color:var(--dn)">'+nf(i.gap)+'</b>' : (i.gap===0?'0':'-')) + '</td>'
       + '<td><span class="st st-v-' + i.status + '">' + i.status + '</span>'
       +   (i.status==='부족' && i.pkg_multiple ? '<div style="font-size:9px;color:var(--txt3)">포장 '+i.pkg+'×'+Math.abs(i.gap/i.pkg)+'</div>' : '')
+      +   (i.swap_to ? '<div style="font-size:9px;color:var(--txt3)">' + (i.settle||'') + '</div>' : '')
       + '</td>'
       + '</tr>';
   }).join('');

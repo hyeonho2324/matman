@@ -971,24 +971,36 @@ def purchase_orders(conn):
     발주 수량과 실제 입고 수량을 비교해 부족 입고를 잡아낸다.
     (부족분은 예외 없이 포장단위 배수 — 상자 단위 출하라 반 상자는 없다)
     """
+    # LOT 을 찾을 때 변경 이력을 먼저 본다.
+    # 대체 입고는 발주 품번과 LOT 품번이 다르므로 H_ID+P_ID 로는 못 찾는다.
+    # 그대로 두면 대체로 받은 라인이 영원히 '미입고' 로 보인다.
     lines = _rows(conn, """
         SELECT h.H_ID, h.BRN, h.P_Date,
                c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
                d.Purchase_num, d.P_ID, d.P_Qty AS ord_qty,
                p.P_N, p.P_Price, p.PkgUnit, p.MinOrderQty,
                s.Sf_Lv AS grade,
-               l.Lot_ID, l.P_Qty AS in_qty, l.Lot_Date,
+               l.Lot_ID, l.P_Qty AS in_qty, l.Lot_Date, l.P_ID AS in_P_ID,
                lo.Loc_N AS loc_name,
+               ch.Chg_ID, ch.In_P_ID AS chg_pid, ch.Chg_Type, ch.Settle,
+               ch.Diff_Amt, ch.Reason,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days
           FROM Purchase_Header_tb h
           JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
           JOIN Product_tb p         ON d.P_ID = p.P_ID
           LEFT JOIN Company_tb c    ON h.BRN = c.BRN
           LEFT JOIN Safe_tb s       ON p.P_ID = s.P_ID
-          LEFT JOIN Lot_tb l        ON d.H_ID = l.H_ID AND d.P_ID = l.P_ID
+          LEFT JOIN Purchase_Change_tb ch
+                 ON ch.H_ID = d.H_ID AND ch.Purchase_num = d.Purchase_num
+          LEFT JOIN Lot_tb l
+                 ON l.Lot_ID = COALESCE(ch.Lot_ID, (
+                        SELECT l2.Lot_ID FROM Lot_tb l2
+                         WHERE l2.H_ID = d.H_ID AND l2.P_ID = d.P_ID
+                           AND l2.Lot_ID NOT IN (%s)
+                         LIMIT 1))
           LEFT JOIN Location_tb lo  ON l.Loc_ID = lo.Loc_ID
          ORDER BY h.P_Date DESC, h.H_ID DESC, d.Purchase_num
-    """)
+    """ % _CLAIMED_LOTS)
 
     grouped = {}
     for r in lines:
@@ -1000,8 +1012,11 @@ def purchase_orders(conn):
         items, short, ok, pending = [], 0, 0, 0
         for l in ls:
             gap = (l["in_qty"] - l["ord_qty"]) if l["in_qty"] is not None else None
+            swapped = bool(l["chg_pid"]) and l["chg_pid"] != l["P_ID"]
             if l["in_qty"] is None:
                 st = "미입고"; pending += 1
+            elif swapped:
+                st = "대체"; ok += 1        # 발주는 닫혔다 — 다른 품번으로 받았을 뿐
             elif gap == 0:
                 st = "일치"; ok += 1
             elif gap < 0:
@@ -1020,6 +1035,9 @@ def purchase_orders(conn):
                 "in_amount": round((l["in_qty"] or 0) * (l["P_Price"] or 0)),
                 "Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
                 "loc_name": l["loc_name"], "lead_days": l["lead_days"],
+                "swap_to": l["chg_pid"] if swapped else None,
+                "chg_type": l["Chg_Type"], "settle": l["Settle"],
+                "diff_amt": l["Diff_Amt"], "reason": l["Reason"],
             })
         lds = [i["lead_days"] for i in items if i["lead_days"] is not None]
         orders.append({
@@ -2387,6 +2405,8 @@ def workbench(conn):
 
     # 입고 등록 대상 — 아직 입고되지 않은 발주.
     pending = pending_po(conn)
+    # 대체 입고용 품목 목록 (발주와 다른 품번이 왔을 때 고른다)
+    subs = sub_products(conn) if pending else []
 
     # 불출·입고 등록 담당자 — 로그인이 없으므로 화면에서 직접 고른다.
     workers = _rows(conn, """
@@ -2401,6 +2421,7 @@ def workbench(conn):
         "scan_lots": scan_lots,
         "workers": workers,
         "pending": pending,
+        "subs": subs,
     }
 
 # ── 발주 등록 (이 앱에서 유일하게 DB 를 쓰는 기능) ───────────
@@ -2543,6 +2564,14 @@ def _add_days(date, days):
     import datetime
     y, m, d = (int(x) for x in date.split("-"))
     return (datetime.date(y, m, d) + datetime.timedelta(days=int(days or 0))).isoformat()
+
+
+def _days_between(a, b):
+    """a → b 일수. 발주일 → 입고일 리드타임에 쓴다."""
+    import datetime
+    ay, am, ad = (int(x) for x in a.split("-"))
+    by, bm, bd = (int(x) for x in b.split("-"))
+    return (datetime.date(by, bm, bd) - datetime.date(ay, am, ad)).days
 
 
 def create_purchase(conn, date, items):
@@ -2741,12 +2770,46 @@ def next_lot_id(conn, date):
     return "%s%04d" % (pre, seq)
 
 
-def pending_po(conn):
-    """아직 입고되지 않은 발주. 입고 등록의 대상 목록이다.
+# 실무에서 발주한 그대로 들어오는 일은 오히려 드물다.
+# 수량이 모자라거나, 아예 다른 품번이 오거나(거래처 결품 → 호환품 대체),
+# 그래서 금액이 어긋나면 잔금을 정산해야 한다.
+# 이 세 가지를 입고 한 번에 처리한다.
 
-    Purchase_Detail_tb 에 있는데 짝이 되는 Lot_tb 행이 없으면 미입고다.
-    (발주 vs 입고 대조 화면이 쓰는 판정과 같은 기준)
-    """
+SETTLE_KINDS = ("추가청구", "차감", "정산없음")
+
+# 대체 입고로 생긴 LOT 은 "그 발주 라인이 쓴 것"으로 선점된다.
+#
+# 왜 필요한가 — A 를 발주했는데 B 가 와서 B 로 입고하면 Lot_tb 에는 (H_ID, B) 가 남는다.
+# 그런데 같은 발주서에 원래 B 라인이 따로 있으면, H_ID+P_ID 조인만으로는
+# 그 B 라인까지 입고된 것으로 잘못 닫힌다. 그래서 대체로 생긴 LOT 은 조인 대상에서 뺀다.
+_CLAIMED_LOTS = ("SELECT Lot_ID FROM Purchase_Change_tb "
+                 "WHERE Lot_ID IS NOT NULL AND In_P_ID <> Ord_P_ID")
+
+# 발주 라인이 아직 입고되지 않았는지 판정하는 조건.
+#   ch : 이 라인에 변경 이력이 있으면 처리가 끝난 것 (대체 입고가 여기 걸린다)
+#   l  : 품번이 같은 정상 입고는 Lot_tb 로 잡힌다 (과거 데이터 포함)
+PENDING_JOIN = """
+          LEFT JOIN Purchase_Change_tb ch
+                 ON ch.H_ID = d.H_ID AND ch.Purchase_num = d.Purchase_num
+          LEFT JOIN Lot_tb l
+                 ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
+                AND l.Lot_ID NOT IN (%s)
+""" % _CLAIMED_LOTS
+PENDING_WHERE = "ch.Chg_ID IS NULL AND l.Lot_ID IS NULL"
+
+
+def next_chg_id(conn, date):
+    """Chg_ID 채번 — CHG + YYYYMMDD + 4자리 순번."""
+    pre = "CHG" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Chg_ID) FROM Purchase_Change_tb WHERE Chg_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    seq = int(last[-4:]) + 1 if last else 1
+    return "%s%04d" % (pre, seq)
+
+
+def pending_po(conn):
+    """아직 입고되지 않은 발주. 입고 등록의 대상 목록이다."""
     rows = _rows(conn, """
         SELECT h.H_ID, h.P_Date, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
                d.Purchase_num, d.P_ID, p.P_N, p.Spec, p.PkgUnit, p.MinOrderQty,
@@ -2757,10 +2820,10 @@ def pending_po(conn):
           JOIN Product_tb p         ON d.P_ID = p.P_ID
           LEFT JOIN Company_tb c    ON h.BRN = c.BRN
           LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
-          LEFT JOIN Lot_tb l        ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
-         WHERE l.Lot_ID IS NULL
+          %s
+         WHERE %s
          ORDER BY h.P_Date, d.H_ID, d.Purchase_num
-    """)
+    """ % (PENDING_JOIN, PENDING_WHERE))
     loc_n = {r["Loc_ID"]: r["Loc_N"]
              for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
 
@@ -2787,15 +2850,39 @@ def pending_po(conn):
     out = sorted(groups.values(), key=lambda g: (g["P_Date"], g["H_ID"]))
     for g in out:
         g["line_cnt"] = len(g["items"])
-        g["eta"] = _add_days(g["P_Date"], g["lead_max"])   # 예상 입고일
+        g["eta"] = _add_days(g["P_Date"], g["lead_max"])
+        g["items"].sort(key=lambda x: x["Purchase_num"])
     return out
 
 
-def preview_inbound(conn, date, hid, lines, ep_id):
-    """입고 미리보기 — 발주 대비 판정과 배정 창고를 계산한다.
+def sub_products(conn):
+    """대체 입고용 품목 목록. 화면의 검색 드롭다운이 쓴다."""
+    loc_n = {r["Loc_ID"]: r["Loc_N"]
+             for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
+    out = []
+    for r in _rows(conn, """
+        SELECT p.P_ID, p.P_N, p.Spec, p.P_Price, p.MainCat, p.BRN,
+               c.CP_N AS supplier
+          FROM Product_tb p LEFT JOIN Company_tb c ON p.BRN = c.BRN
+         ORDER BY p.P_ID
+    """):
+        loc = LOC_BY_MAINCAT.get(r["MainCat"])
+        r["Loc_ID"] = loc
+        r["loc_name"] = loc_n.get(loc)
+        out.append(r)
+    return out
 
-    lines 는 {P_ID: 실입고수량} 형태. 보내지 않은 품목은 이번에 받지 않은
-    것으로 보고 미입고로 남긴다(부분 입고 허용).
+
+def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
+    """입고 미리보기 — 라인별 판정·배정 창고·정산 금액을 계산한다.
+
+    lines 는 발주 라인 기준이다.
+        [{"Purchase_num": 1, "P_ID": "V01010001", "qty": 380, "reason": ""}, ...]
+    품번(P_ID)을 발주와 다르게 보내면 대체 입고다. 수량만 다르면 수량 변경이다.
+    보내지 않은 라인은 이번에 받지 않은 것으로 보고 미입고로 남긴다.
+
+    라인을 품번이 아니라 Purchase_num 으로 지목하는 이유 —
+    대체 입고를 하면 품번이 바뀌므로 품번으로는 어느 라인인지 알 수 없다.
     """
     hid = str(hid or "").strip()
     pend = {g["H_ID"]: g for g in pending_po(conn)}
@@ -2805,6 +2892,7 @@ def preview_inbound(conn, date, hid, lines, ep_id):
         return None, ["이미 전량 입고된 발주입니다: %s" % hid if done
                       else "등록되지 않은 발주번호입니다: %s" % (hid or "(빈값)")]
     po = pend[hid]
+    by_num = {it["Purchase_num"]: it for it in po["items"]}
 
     ep_id = str(ep_id or "").strip()
     if not ep_id:
@@ -2815,88 +2903,120 @@ def preview_inbound(conn, date, hid, lines, ep_id):
     if w is None:
         return None, ["등록되지 않은 사원번호입니다: %s" % ep_id]
 
-    # 입고일이 발주일보다 앞설 수는 없다
     if date < po["P_Date"]:
         return None, ["입고일(%s)이 발주일(%s)보다 앞설 수 없습니다." % (date, po["P_Date"])]
 
-    want = {}
-    for k, v in (lines or {}).items():
+    prod = {r["P_ID"]: r for r in sub_products(conn)}
+
+    rows, seen = [], set()
+    for ln in (lines or []):
         try:
-            n = int(v or 0)
+            num = int(ln.get("Purchase_num"))
         except (TypeError, ValueError):
-            return None, ["%s 입고 수량이 숫자가 아닙니다." % k]
-        if n < 0:
-            return None, ["%s 입고 수량은 0 이상이어야 합니다." % k]
-        if n:
-            want[str(k).strip()] = n
+            return None, ["발주 라인 번호가 잘못되었습니다."]
+        if num not in by_num:
+            return None, ["이 발주에 없거나 이미 입고된 라인입니다: %d번" % num]
+        if num in seen:
+            return None, ["같은 발주 라인이 두 번 들어왔습니다: %d번" % num]
+        seen.add(num)
 
-    # 아직 안 받은 품목만 대상이다. 발주에 있긴 하지만 이미 받은 품목은
-    # "발주에 없다"가 아니라 "이미 입고됐다"로 알려야 화면에서 헷갈리지 않는다.
-    known = {it["P_ID"] for it in po["items"]}
-    on_po = {r["P_ID"] for r in _rows(
-        conn, "SELECT P_ID FROM Purchase_Detail_tb WHERE H_ID = ?", (hid,))}
-    for pid in want:
-        if pid in known:
-            continue
-        return None, ["%s 는 이미 입고 처리된 품목입니다." % pid if pid in on_po
-                      else "%s 는 이 발주에 없는 품번입니다." % pid]
+        ord_it = by_num[num]
+        try:
+            qty = int(ln.get("qty") or 0)
+        except (TypeError, ValueError):
+            return None, ["%s 입고 수량이 숫자가 아닙니다." % ord_it["P_ID"]]
+        if qty < 0:
+            return None, ["%s 입고 수량은 0 이상이어야 합니다." % ord_it["P_ID"]]
+        if qty == 0:
+            continue                       # 이번에 안 받음 → 미입고로 남김
 
-    rows, total_qty, total_amt = [], 0, 0
-    for it in po["items"]:
-        n = want.get(it["P_ID"], 0)
-        if not n:
-            continue
-        if not it["Loc_ID"]:
-            return None, ["%s 의 보관 창고를 정할 수 없습니다 (대분류 미상)." % it["P_ID"]]
-        gap = n - it["ord_qty"]
-        r = dict(it)
-        r["in_qty"] = n
-        r["gap"] = gap
-        r["judge"] = "일치" if gap == 0 else ("부족" if gap < 0 else "초과")
-        # 부족분이 포장단위의 정확한 배수인지 — 상자 단위 출하라 낱개 부족은 없다
-        r["pkg_ok"] = bool(it["pkg"]) and gap < 0 and (-gap) % it["pkg"] == 0
-        r["amount"] = round(n * (it["price"] or 0))
-        rows.append(r)
-        total_qty += n
-        total_amt += r["amount"]
+        in_pid = str(ln.get("P_ID") or ord_it["P_ID"]).strip()
+        if in_pid not in prod:
+            return None, ["등록되지 않은 품번입니다: %s" % in_pid]
+        in_p = prod[in_pid]
+        if not in_p["Loc_ID"]:
+            return None, ["%s 의 보관 창고를 정할 수 없습니다 (대분류 미상)." % in_pid]
+
+        reason = (ln.get("reason") or "").strip()
+        swapped = in_pid != ord_it["P_ID"]
+        if swapped and not reason:
+            # 품번이 바뀌는 건 거래처와 협의한 결과다. 근거가 없으면 나중에 아무도 설명 못 한다.
+            return None, ["%s → %s 대체 입고는 협의 내용을 적어야 합니다."
+                          % (ord_it["P_ID"], in_pid)]
+
+        ord_amt = int(round((ord_it["ord_qty"] or 0) * (ord_it["price"] or 0)))
+        in_amt = int(round(qty * (in_p["P_Price"] or 0)))
+        gap = qty - (ord_it["ord_qty"] or 0)
+        chg = ("대체+수량변경" if swapped and gap else
+               "대체입고" if swapped else
+               "수량변경" if gap else "없음")
+        rows.append({
+            "Purchase_num": num,
+            "ord_P_ID": ord_it["P_ID"], "ord_P_N": ord_it["P_N"],
+            "ord_qty": ord_it["ord_qty"], "ord_price": ord_it["price"],
+            "ord_amt": ord_amt,
+            "P_ID": in_pid, "P_N": in_p["P_N"], "Spec": in_p["Spec"],
+            "in_qty": qty, "price": in_p["P_Price"], "amount": in_amt,
+            "Loc_ID": in_p["Loc_ID"], "loc_name": in_p["loc_name"],
+            "supplier": in_p["supplier"],
+            "swapped": swapped, "gap": gap, "diff_amt": in_amt - ord_amt,
+            "chg_type": chg, "reason": reason,
+            "judge": "일치" if gap == 0 else ("부족" if gap < 0 else "초과"),
+            "pkg_ok": bool(ord_it["pkg"]) and gap < 0 and (-gap) % ord_it["pkg"] == 0,
+        })
 
     if not rows:
         return None, ["입고할 품목이 없습니다. 수량을 1 이상으로 지정하세요."]
+
+    ord_total = sum(r["ord_amt"] for r in rows)
+    in_total = sum(r["amount"] for r in rows)
+    diff = in_total - ord_total
+
+    settle = (settle or "").strip() or _default_settle(diff)
+    if settle not in SETTLE_KINDS:
+        return None, ["잔금 처리 방식이 잘못되었습니다: %s" % settle]
 
     plan = {
         "H_ID": hid, "P_Date": po["P_Date"], "date": date,
         "supplier": po["supplier"], "is_foreign": po["is_foreign"],
         "lead_days": _days_between(po["P_Date"], date),
         "worker": {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]},
-        "items": rows, "line_cnt": len(rows),
-        "qty": total_qty, "amount": total_amt,
-        "ok_cnt": sum(1 for r in rows if r["judge"] == "일치"),
+        "items": sorted(rows, key=lambda r: r["Purchase_num"]),
+        "line_cnt": len(rows),
+        "qty": sum(r["in_qty"] for r in rows),
+        "ord_amount": ord_total, "amount": in_total, "diff_amt": diff,
+        "settle": settle, "settle_note": (note or "").strip(),
+        "ok_cnt": sum(1 for r in rows if r["judge"] == "일치" and not r["swapped"]),
         "short_cnt": sum(1 for r in rows if r["judge"] == "부족"),
         "over_cnt": sum(1 for r in rows if r["judge"] == "초과"),
-        "rest_cnt": len(po["items"]) - len(rows),   # 이번에 안 받는 품목
+        "swap_cnt": sum(1 for r in rows if r["swapped"]),
+        "chg_cnt": sum(1 for r in rows if r["chg_type"] != "없음"),
+        "rest_cnt": len(po["items"]) - len(rows),
     }
     return plan, []
 
 
-def _days_between(a, b):
-    import datetime
-    ay, am, ad = (int(x) for x in a.split("-"))
-    by, bm, bd = (int(x) for x in b.split("-"))
-    return (datetime.date(by, bm, bd) - datetime.date(ay, am, ad)).days
+def _default_settle(diff):
+    """차액 부호로 기본 정산 방식을 고른다. 화면에서 바꿀 수 있다."""
+    if diff > 0:
+        return "추가청구"          # 발주보다 많이/비싸게 받음 → 더 낸다
+    if diff < 0:
+        return "차감"              # 덜 받음 → 결제에서 뺀다
+    return "정산없음"
 
 
-def create_inbound(conn, date, hid, lines, ep_id):
-    """입고 등록. 품목마다 Lot_tb 1행 + Transaction_tb 입고 1행을 만든다.
+def create_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
+    """입고 등록. 라인마다 Lot_tb + Transaction_tb, 변경이 있으면 Purchase_Change_tb.
 
-    LOT 만 만들고 거래를 못 남기면 이력에서 그 입고가 사라지고,
-    거래만 남으면 재고가 없는 유령 이력이 된다. 그래서 둘을 한 트랜잭션에 묶는다.
+    셋을 한 트랜잭션에 묶는다. LOT 만 만들고 거래를 못 남기면 이력에서 입고가
+    사라지고, 변경 이력을 못 남기면 대체 입고한 발주 라인이 영원히 미입고로 남는다.
     """
-    plan, errors = preview_inbound(conn, date, hid, lines, ep_id)
+    plan, errors = preview_inbound(conn, date, hid, lines, ep_id, settle, note)
     if errors:
         return None, errors
 
     ep = plan["worker"]["EP_ID"]
-    with conn:                                   # 커밋/롤백 자동
+    with conn:
         for it in plan["items"]:
             lot = next_lot_id(conn, date)
             conn.execute(
@@ -2911,4 +3031,19 @@ def create_inbound(conn, date, hid, lines, ep_id):
                 (tid, lot, TX_RECEIPT, date, it["in_qty"], ep))
             it["Lot_ID"] = lot
             it["T_ID"] = tid
+
+            if it["chg_type"] != "없음":
+                cid = next_chg_id(conn, date)
+                conn.execute(
+                    "INSERT INTO Purchase_Change_tb"
+                    " (Chg_ID, H_ID, Purchase_num, Ord_P_ID, In_P_ID,"
+                    "  Ord_Qty, In_Qty, Ord_Amt, In_Amt, Diff_Amt,"
+                    "  Chg_Type, Settle, Reason, Chg_Date, EP_ID, Lot_ID)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (cid, hid, it["Purchase_num"], it["ord_P_ID"], it["P_ID"],
+                     it["ord_qty"], it["in_qty"], it["ord_amt"], it["amount"],
+                     it["diff_amt"], it["chg_type"], plan["settle"],
+                     it["reason"] or plan["settle_note"] or None,
+                     date, ep, lot))
+                it["Chg_ID"] = cid
     return plan, []

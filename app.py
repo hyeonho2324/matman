@@ -546,13 +546,14 @@ def api_disburse_create():
 
 @app.route("/api/inbound/preview", methods=["POST"])
 def api_inbound_preview():
-    """등록 전 미리보기 — 발주 대비 일치/부족/초과와 배정 창고를 보여준다."""
+    """등록 전 미리보기 — 판정·배정 창고·정산 금액을 보여준다."""
     body = request.get_json(silent=True) or {}
     conn = db.connect()
     try:
         plan, errors = db.preview_inbound(
             conn, _entry_date(body), body.get("H_ID"),
-            body.get("lines") or {}, body.get("EP_ID"))
+            body.get("lines") or [], body.get("EP_ID"),
+            body.get("settle"), body.get("settle_note"))
         return jsonify({"ok": not errors, "plan": plan, "errors": errors})
     finally:
         conn.close()
@@ -560,13 +561,14 @@ def api_inbound_preview():
 
 @app.route("/api/inbound", methods=["POST"])
 def api_inbound_create():
-    """입고 등록. 품목마다 LOT 을 만들고 입고 거래를 남긴다."""
+    """입고 등록. 라인마다 LOT·입고거래를, 변경이 있으면 변경이력을 남긴다."""
     body = request.get_json(silent=True) or {}
     conn = db.connect()
     try:
         plan, errors = db.create_inbound(
             conn, _entry_date(body), body.get("H_ID"),
-            body.get("lines") or {}, body.get("EP_ID"))
+            body.get("lines") or [], body.get("EP_ID"),
+            body.get("settle"), body.get("settle_note"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "plan": plan})
@@ -647,5 +649,10 @@ if __name__ == "__main__":
                   "화면이 비어 보이면 'py -m pip install waitress' 후 다시 실행하세요.")
             app.run(debug=False, host="0.0.0.0", port=port)
         else:
+            # debug 가 꺼져 있으면 Jinja 가 템플릿을 캐시한다. 로컬에서 화면을
+            # 고쳐도 서버가 옛 버전을 계속 내보내므로 개발 중에는 켜 둔다.
+            # (이 블록은 배포 환경에서 실행되지 않는다)
+            app.jinja_env.auto_reload = True
+            app.config["TEMPLATES_AUTO_RELOAD"] = True
             print("Serving on http://127.0.0.1:%d  (waitress)" % port)
             serve(app, host="0.0.0.0", port=port, threads=8)

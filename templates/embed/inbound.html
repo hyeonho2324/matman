@@ -87,6 +87,29 @@ tr:last-child td{border-bottom:none}
 .dl dt{color:var(--txt3)}
 .dl dd{font-weight:500}
 .tid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--acc)}
+.sub{font-size:9px;color:var(--txt3);margin-top:1px}
+.sin{width:106px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;padding:3px 5px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--acc);outline:none}
+.sin:focus{border-color:var(--acc)}
+.rin{flex:1;font-family:inherit;font-size:10px;padding:4px 7px;border:0.5px solid var(--border-s);border-radius:var(--r);background:var(--s0);color:var(--txt);outline:none;min-width:0}
+.rin:focus{border-color:var(--acc)}
+tr.swap{background:var(--bg-wn)}
+tr.swap td{border-bottom-color:rgba(239,159,39,.35)}
+.rrow{display:flex;align-items:center;gap:6px;padding:1px 0}
+.rlab{font-size:10px;color:#854F0B;white-space:nowrap;font-weight:500}
+.setl{display:flex;gap:0;border-bottom:0.5px solid var(--border)}
+.samt{flex:1;padding:9px 12px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;gap:2px}
+.samt:last-child{border-right:none}
+.samt span{font-size:10px;color:var(--txt3)}
+.samt b{font-size:14px}
+.samt.diff b.up{color:var(--dn)}
+.samt.diff b.dn{color:var(--acc)}
+.srow{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.srow label{font-size:11px;font-weight:500;width:56px;flex-shrink:0}
+.schip{padding:3px 10px;font-size:11px}
+.schip.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.schip.on:hover{background:#2168bd}
+b.up{color:var(--dn)}
+b.dn{color:var(--acc)}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .main{flex-direction:column}
@@ -122,9 +145,12 @@ const PO      = {{ recent_po|tojson }};
 const DET     = {{ po_detail|tojson }};
 const PENDING = {{ pending|tojson }};
 const WORKERS = {{ workers|tojson }};
+const SUBS    = {{ subs|tojson }};    // 대체 입고용 품목 목록
 let mode = 'pending';                 // 'pending' = 입고 등록 · 'done' = 대조 조회
 let sel  = null;
-let qin  = {};                        // 품번별 실입고 수량
+let L    = {};                        // 발주 순번별 {pid, qty, reason}
+let settle = '';                      // 빈 값이면 차액 부호로 자동 선택
+let settleNote = '';
 // 로그인이 없으므로 입고 담당자를 화면에서 고른다
 let who  = WORKERS.length ? WORKERS[0].EP_ID : '';
 let busy = false;
@@ -230,15 +256,21 @@ function pickDone(hid){
 
 
 // ── 입고 등록 ────────────────────────────────────────────────
-// 미입고 발주를 골라 실제 입고 수량을 넣으면 LOT 이 생기고 재고가 는다.
-// 판정(일치/부족/초과)은 화면에서도 보여주지만, 저장 직전에 서버가
-// 발주 원본을 다시 읽어 다시 판정한다. 화면 값만 믿을 수는 없다.
+// 실무에서 발주한 그대로 들어오는 일은 오히려 드물다.
+// 수량이 모자라거나, 아예 다른 품번이 오거나(거래처 결품 → 호환품 대체),
+// 그래서 금액이 어긋나면 잔금을 정산해야 한다. 셋을 한 화면에서 처리한다.
+//
+// 라인을 품번이 아니라 발주 순번(Purchase_num)으로 지목한다.
+// 대체 입고를 하면 품번이 바뀌므로 품번으로는 어느 라인인지 알 수 없다.
+
+const SUBMAP = {};
+SUBS.forEach(function(s){ SUBMAP[s.P_ID] = s; });
 
 function setMode(m){
   mode = m;
   const rows = (m === 'pending') ? PENDING : PO;
   sel = rows.length ? rows[0].H_ID : null;
-  qin = {};
+  L = {}; settle = ''; settleNote = '';
   drawList();
   if(sel){ pick(sel); return; }
   document.getElementById('right').innerHTML =
@@ -249,56 +281,66 @@ function setMode(m){
 }
 
 function pick(hid){
-  sel = hid; drawList();
+  sel = hid; L = {}; settle = ''; settleNote = '';
+  drawList();
   if(mode === 'pending') pickPending(hid); else pickDone(hid);
 }
 
-function judgeOf(inq, ord){
-  if(inq === ord) return {t:'일치', c:'bok'};
-  return inq < ord ? {t:'부족', c:'bdn'} : {t:'초과', c:'bwn'};
+// 라인 상태 — 발주 순번마다 {pid, qty, reason}
+function lineOf(it){
+  if(!L[it.Purchase_num]) L[it.Purchase_num] = {pid: it.P_ID, qty: it.ord_qty, reason: ''};
+  return L[it.Purchase_num];
 }
-
-function setQ(pid, v){
-  const n = parseInt(v, 10);
-  qin[pid] = isNaN(n) ? 0 : Math.max(0, n);
+function setQ(num, v){ const n = parseInt(v,10); L[num].qty = isNaN(n) ? 0 : Math.max(0,n); pickPending(sel); }
+function setPid(num, v){
+  v = (v||'').trim().toUpperCase();
+  L[num].pid = SUBMAP[v] ? v : L[num].pid;
   pickPending(sel);
 }
-
+function setReason(num, v){ L[num].reason = v; syncIn(); }
+function setSettle(v){ settle = v; syncIn(); }
+function setNote(v){ settleNote = v; }
 function setWho(v){ who = v; syncIn(); }
+
+function autoSettle(diff){ return diff > 0 ? '추가청구' : (diff < 0 ? '차감' : '정산없음'); }
 
 function pickPending(hid){
   const o = PENDING.filter(function(x){return x.H_ID===hid;})[0];
   if(!o) return;
-  // 기본값은 발주 수량 — 전량 입고가 가장 흔하다
-  o.items.forEach(function(it){ if(qin[it.P_ID] == null) qin[it.P_ID] = it.ord_qty; });
+  o.items.forEach(lineOf);
 
-  const rows = o.items.filter(function(it){ return qin[it.P_ID] > 0; });
-  const tot  = rows.reduce(function(a,it){ return a + qin[it.P_ID]; }, 0);
-  const amt  = rows.reduce(function(a,it){ return a + qin[it.P_ID] * (it.price||0); }, 0);
-  const nOk  = rows.filter(function(it){ return qin[it.P_ID] === it.ord_qty; }).length;
-  const nSh  = rows.filter(function(it){ return qin[it.P_ID] <  it.ord_qty; }).length;
-  const nOv  = rows.filter(function(it){ return qin[it.P_ID] >  it.ord_qty; }).length;
-  const rest = o.items.length - rows.length;
+  const act = o.items.filter(function(it){ return L[it.Purchase_num].qty > 0; });
+  let ordAmt = 0, inAmt = 0, nOk = 0, nSh = 0, nOv = 0, nSw = 0, totQty = 0;
+  act.forEach(function(it){
+    const st = L[it.Purchase_num], p = SUBMAP[st.pid] || {};
+    ordAmt += Math.round(it.ord_qty * (it.price||0));
+    inAmt  += Math.round(st.qty * (p.P_Price||0));
+    totQty += st.qty;
+    if(st.pid !== it.P_ID) nSw++;
+    if(st.qty === it.ord_qty) nOk++; else if(st.qty < it.ord_qty) nSh++; else nOv++;
+  });
+  const diff = inAmt - ordAmt;
+  const eff  = settle || autoSettle(diff);
+  const rest = o.items.length - act.length;
 
   document.getElementById('right').innerHTML =
     '<div class="alert a-ac"><i class="ti ti-info-circle"></i> '
   +   '<b>' + o.H_ID + '</b> · ' + esc(o.supplier||'-') + ' · 발주 ' + o.P_Date
-  +   ' · 예상 입고 ' + o.eta + ' · ' + o.items.length + '품목 ' + nf(o.qty) + '개'
-  + '</div>'
+  +   ' · 예상 입고 ' + o.eta + ' · ' + o.items.length + '품목 ' + nf(o.qty) + '개</div>'
 
   + '<div class="kpi-row">'
   +   '<div class="card"><div class="c-l"><i class="ti ti-package"></i>입고 품목</div>'
-  +     '<div class="c-v">' + rows.length + '<small>/' + o.items.length + '</small></div>'
-  +     '<div class="c-s">' + (rest ? rest + '품목은 미입고로 남김' : '전 품목 입고') + '</div></div>'
+  +     '<div class="c-v">' + act.length + '<small>/' + o.items.length + '</small></div>'
+  +     '<div class="c-s">' + (rest ? rest + '품목 미입고로 남김' : '전 품목 입고') + '</div></div>'
   +   '<div class="card"><div class="c-l"><i class="ti ti-stack-2"></i>입고 수량</div>'
-  +     '<div class="c-v">' + nf(tot) + '<small>개</small></div>'
-  +     '<div class="c-s">' + won(amt) + '원</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-check"></i>수량 일치</div>'
-  +     '<div class="c-v ok">' + nOk + '<small>/' + rows.length + '</small></div>'
-  +     '<div class="c-s">발주 = 입고</div></div>'
-  +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>차이</div>'
-  +     '<div class="c-v ' + ((nSh||nOv)?'wn':'') + '">' + (nSh+nOv) + '<small>종</small></div>'
-  +     '<div class="c-s">' + (nSh?'부족 '+nSh:'') + (nSh&&nOv?' · ':'') + (nOv?'초과 '+nOv:'') + (nSh||nOv?'':'없음') + '</div></div>'
+  +     '<div class="c-v">' + nf(totQty) + '<small>개</small></div>'
+  +     '<div class="c-s">' + won(inAmt) + '원</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-check"></i>발주대로</div>'
+  +     '<div class="c-v ok">' + nOk + '<small>/' + act.length + '</small></div>'
+  +     '<div class="c-s">' + (nSh?'부족 '+nSh+' ':'') + (nOv?'초과 '+nOv:'') + (nSh||nOv?'':'수량 전부 일치') + '</div></div>'
+  +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-exchange"></i>대체 입고</div>'
+  +     '<div class="c-v ' + (nSw?'wn':'') + '">' + nSw + '<small>종</small></div>'
+  +     '<div class="c-s">' + (nSw ? '협의 내용 필수' : '없음') + '</div></div>'
   + '</div>'
 
   + '<div class="actbar"><label>담당자</label>'
@@ -307,35 +349,81 @@ function pickPending(hid){
           return '<option value="' + w.EP_ID + '"' + (who===w.EP_ID?' selected':'') + '>'
             + esc(w.Name) + ' ' + esc(w.Position||'') + '</option>'; }).join('')
   +   '</select>'
-  +   '<span style="font-size:10px;color:var(--txt3)">창고는 대분류에 따라 자동 배정됩니다</span>'
+  +   '<span style="font-size:10px;color:var(--txt3)">창고는 입고 품목의 대분류로 자동 배정됩니다</span>'
   +   '<button class="btn btnp" id="go" onclick="openInConfirm()">'
   +     '<i class="ti ti-arrow-bar-to-down"></i>입고 등록</button>'
   + '</div>'
 
   + '<div class="sec"><div class="sech"><i class="ti ti-git-compare"></i>'
-  +   '<span class="sech-t">품목별 입고 수량</span>'
-  +   '<span class="sech-m">0 으로 두면 이번에 받지 않고 미입고로 남습니다</span></div>'
-  +   '<table><thead><tr><th>자재</th><th>품명</th><th class="num">발주</th>'
-  +     '<th class="num">실입고</th><th class="num">차이</th><th>판정</th><th>보관 창고</th></tr></thead><tbody>'
+  +   '<span class="sech-t">품목별 입고 내역</span>'
+  +   '<span class="sech-m">수량 0 = 이번에 안 받음 · 품번을 바꾸면 대체 입고</span></div>'
+  +   '<table><thead><tr><th style="width:26px">#</th><th>발주 품목</th><th class="num">발주</th>'
+  +     '<th>실제 입고 품번</th><th class="num">실입고</th><th class="num">차이</th>'
+  +     '<th>판정</th><th>창고</th></tr></thead><tbody>'
   +   o.items.map(function(it){
-        const q = qin[it.P_ID] || 0;
-        const gap = q - it.ord_qty;
-        const j = q > 0 ? judgeOf(q, it.ord_qty) : {t:'미입고', c:'bmu'};
+        const st = L[it.Purchase_num];
+        const p  = SUBMAP[st.pid] || {};
+        const sw = st.pid !== it.P_ID;
+        const gap = st.qty - it.ord_qty;
+        const j = st.qty > 0
+          ? (gap === 0 ? {t:'일치',c:'bok'} : (gap < 0 ? {t:'부족',c:'bdn'} : {t:'초과',c:'bwn'}))
+          : {t:'미입고', c:'bmu'};
         const pkgNote = (gap < 0 && it.pkg && (-gap) % it.pkg === 0)
-          ? '<div style="font-size:9px;color:var(--txt3)">포장 ' + it.pkg + '×' + (-gap/it.pkg) + '</div>' : '';
-        return '<tr><td><span class="pid">' + it.P_ID + '</span></td>'
-          + '<td>' + esc((it.P_N||'').slice(0,12)) + '</td>'
-          + '<td class="num">' + nf(it.ord_qty) + '</td>'
-          + '<td class="num"><input class="qin" type="number" min="0" value="' + q
-          +   '" data-pid="' + it.P_ID + '" onchange="setQ(this.dataset.pid, this.value)"></td>'
-          + '<td class="num">' + (q > 0 && gap ? nf(gap) + pkgNote : (q > 0 ? '0' : '-')) + '</td>'
-          + '<td><span class="bg ' + j.c + '">' + j.t + '</span></td>'
-          + '<td>' + esc(it.loc_name||'-') + ' <span style="color:var(--txt3);font-size:9px">' + (it.Loc_ID||'') + '</span></td></tr>';
+          ? '<div class="sub">포장 ' + it.pkg + '×' + (-gap/it.pkg) + '</div>' : '';
+        let row = '<tr class="' + (sw?'swap':'') + '">'
+          + '<td>' + it.Purchase_num + '</td>'
+          + '<td><span class="pid">' + it.P_ID + '</span><div class="sub">' + esc((it.P_N||'').slice(0,14)) + '</div></td>'
+          + '<td class="num">' + nf(it.ord_qty) + '<div class="sub">' + nf(it.price) + '원</div></td>'
+          + '<td><input class="sin" list="sublist" value="' + st.pid + '" data-num="' + it.Purchase_num
+          +   '" onchange="setPid(this.dataset.num, this.value)">'
+          +   '<div class="sub">' + esc((p.P_N||'').slice(0,14)) + ' · ' + nf(p.P_Price) + '원</div></td>'
+          + '<td class="num"><input class="qin" type="number" min="0" value="' + st.qty
+          +   '" data-num="' + it.Purchase_num + '" onchange="setQ(this.dataset.num, this.value)"></td>'
+          + '<td class="num">' + (st.qty > 0 && gap ? nf(gap) + pkgNote : (st.qty > 0 ? '0' : '-')) + '</td>'
+          + '<td><span class="bg ' + j.c + '">' + j.t + '</span>'
+          +   (sw ? '<div><span class="bg bwn">대체</span></div>' : '') + '</td>'
+          + '<td>' + esc(p.loc_name||'-') + '</td></tr>';
+        if(sw && st.qty > 0){
+          row += '<tr class="swap"><td></td><td colspan="7">'
+            + '<div class="rrow"><i class="ti ti-message-2" style="color:var(--wn)"></i>'
+            + '<span class="rlab">' + it.P_ID + ' → ' + st.pid + ' 협의 내용</span>'
+            + '<input class="rin" placeholder="예: 발주품 결품으로 호환품 대체, 차액은 결제에서 차감 (거래처 협의 완료)" '
+            + 'value="' + esc(st.reason) + '" data-num="' + it.Purchase_num
+            + '" oninput="setReason(this.dataset.num, this.value)"></div></td></tr>';
+        }
+        return row;
       }).join('')
-  +   '</tbody></table>'
-  +   '<div class="note">LOT 번호는 <b>LOT + 입고일(YYYYMMDD) + 당일순번(4자리)</b> 로 자동 채번됩니다. '
-  +     '품목마다 LOT 1개와 입고 거래 1건이 생깁니다.</div>'
-  + '</div>';
+  +   '</tbody></table></div>'
+
+  + '<div class="sec"><div class="sech"><i class="ti ti-receipt-2"></i>'
+  +   '<span class="sech-t">잔금 처리</span>'
+  +   '<span class="sech-m">발주 금액과 실제 입고 금액의 차액</span></div>'
+  +   '<div class="setl">'
+  +     '<div class="samt"><span>발주 금액</span><b>' + nf(ordAmt) + '원</b></div>'
+  +     '<div class="samt"><span>입고 금액</span><b>' + nf(inAmt) + '원</b></div>'
+  +     '<div class="samt diff"><span>차액</span><b class="' + (diff>0?'up':(diff<0?'dn':'')) + '">'
+  +       (diff>0?'+':'') + nf(diff) + '원</b></div>'
+  +   '</div>'
+  +   '<div class="srow"><label>처리 방식</label>'
+  +     ['추가청구','차감','정산없음'].map(function(k){
+          return '<button class="btn schip ' + (eff===k?'on':'') + '" data-k="' + k
+            + '" onclick="setSettle(this.dataset.k)">' + k + '</button>';
+        }).join('')
+  +     '<span class="sub" style="margin-left:6px">' + (settle ? '직접 선택' : '차액 부호로 자동 선택됨') + '</span>'
+  +   '</div>'
+  +   '<div class="srow"><label>메모</label>'
+  +     '<input class="rin" placeholder="정산 관련 메모 (선택)" value="' + esc(settleNote)
+  +     '" oninput="setNote(this.value)"></div>'
+  +   '<div class="note">차액이 0이 아니면 <b>추가청구</b>(더 받았으니 더 냄) 또는 <b>차감</b>(덜 받았으니 결제에서 뺌)을 고릅니다. '
+  +     '거래처와 협의해 차액을 청구하지 않기로 했으면 <b>정산없음</b>을 고르세요. '
+  +     '변경 내역은 발주 변경 이력에 남습니다.</div>'
+  + '</div>'
+
+  + '<datalist id="sublist">'
+  +   SUBS.map(function(s){
+        return '<option value="' + s.P_ID + '">' + esc(s.P_N) + ' · ' + esc(s.Spec||'')
+          + ' · ' + esc(s.supplier||'') + '</option>'; }).join('')
+  + '</datalist>';
 
   syncIn();
 }
@@ -344,8 +432,15 @@ function syncIn(){
   const go = document.getElementById('go');
   if(!go) return;
   const o = PENDING.filter(function(x){return x.H_ID===sel;})[0];
-  const any = o && o.items.some(function(it){ return (qin[it.P_ID]||0) > 0; });
-  go.disabled = busy || !who || !any;
+  if(!o){ go.disabled = true; return; }
+  const act = o.items.filter(function(it){ return L[it.Purchase_num].qty > 0; });
+  // 대체 입고는 협의 내용이 있어야 한다 — 서버도 같은 조건으로 막는다
+  const missing = act.some(function(it){
+    const st = L[it.Purchase_num];
+    return st.pid !== it.P_ID && !(st.reason||'').trim();
+  });
+  go.disabled = busy || !who || !act.length || missing;
+  go.title = missing ? '대체 입고는 협의 내용을 적어야 합니다' : '';
 }
 
 function ovlClose(){ const o = document.getElementById('ovl'); if(o) o.remove(); }
@@ -364,28 +459,37 @@ function inBody(p, note){
   return (note || '')
   + '<dl class="dl">'
   +   '<dt>발주</dt><dd><span class="hid">' + p.H_ID + '</span> · ' + esc(p.supplier||'-') + '</dd>'
-  +   '<dt>입고일</dt><dd>' + p.date + ' <span style="color:var(--txt3);font-weight:400">(발주 '
-  +     p.P_Date + ' → 리드타임 ' + p.lead_days + '일)</span></dd>'
+  +   '<dt>입고일</dt><dd>' + p.date + ' <span class="sub">(발주 ' + p.P_Date
+  +     ' → 리드타임 ' + p.lead_days + '일)</span></dd>'
   +   '<dt>담당자</dt><dd>' + esc(p.worker.Name) + ' ' + esc(p.worker.Position||'') + '</dd>'
-  +   '<dt>입고 수량</dt><dd>' + p.line_cnt + '품목 · ' + nf(p.qty) + '개 · ' + nf(p.amount) + '원</dd>'
-  +   '<dt>판정</dt><dd>일치 ' + p.ok_cnt + (p.short_cnt ? ' · 부족 ' + p.short_cnt : '')
-  +     (p.over_cnt ? ' · 초과 ' + p.over_cnt : '') + '</dd>'
+  +   '<dt>입고</dt><dd>' + p.line_cnt + '품목 · ' + nf(p.qty) + '개'
+  +     (p.swap_cnt ? ' · <b style="color:var(--wn)">대체 ' + p.swap_cnt + '건</b>' : '') + '</dd>'
+  +   '<dt>잔금</dt><dd>발주 ' + nf(p.ord_amount) + '원 → 입고 ' + nf(p.amount) + '원 · '
+  +     '차액 <b class="' + (p.diff_amt>0?'up':(p.diff_amt<0?'dn':'')) + '">'
+  +     (p.diff_amt>0?'+':'') + nf(p.diff_amt) + '원</b> → <b>' + p.settle + '</b></dd>'
   + '</dl>'
   + (p.rest_cnt ? '<div class="alert a-wn"><i class="ti ti-alert-triangle"></i> '
       + p.rest_cnt + '개 품목은 이번에 받지 않아 미입고로 남습니다.</div>' : '')
   + '<div class="sec"><div class="sech"><i class="ti ti-box"></i>'
   +   '<span class="sech-t">' + (hasLot ? '생성된 LOT' : '생성될 LOT') + '</span>'
   +   '<span class="sech-m">' + p.line_cnt + '건</span></div>'
-  +   '<table><thead><tr><th>자재</th><th class="num">발주</th><th class="num">입고</th>'
-  +     '<th>판정</th><th>창고</th>' + (hasLot ? '<th>LOT</th>' : '') + '</tr></thead><tbody>'
+  +   '<table><thead><tr><th>발주 품목</th><th>입고 품목</th><th class="num">발주</th>'
+  +     '<th class="num">입고</th><th>판정</th><th>창고</th>'
+  +     (hasLot ? '<th>LOT</th>' : '') + '</tr></thead><tbody>'
   +   p.items.map(function(it){
         const c = it.judge === '일치' ? 'bok' : (it.judge === '부족' ? 'bdn' : 'bwn');
-        return '<tr><td><span class="pid">' + it.P_ID + '</span></td>'
+        return '<tr class="' + (it.swapped?'swap':'') + '">'
+        + '<td><span class="pid">' + it.ord_P_ID + '</span></td>'
+        + '<td>' + (it.swapped
+            ? '<span class="pid">' + it.P_ID + '</span> <span class="bg bwn">대체</span>'
+            : '<span class="sub">동일</span>') + '</td>'
         + '<td class="num">' + nf(it.ord_qty) + '</td>'
         + '<td class="num"><b style="color:var(--acc)">' + nf(it.in_qty) + '</b></td>'
         + '<td><span class="bg ' + c + '">' + it.judge + '</span></td>'
         + '<td>' + esc(it.loc_name||'-') + '</td>'
-        + (hasLot ? '<td><span class="lotid">' + it.Lot_ID + '</span></td>' : '') + '</tr>';
+        + (hasLot ? '<td><span class="lotid">' + it.Lot_ID + '</span></td>' : '') + '</tr>'
+        + (it.reason ? '<tr class="swap"><td colspan="' + (hasLot?7:6) + '">'
+            + '<span class="sub">협의: ' + esc(it.reason) + '</span></td></tr>' : '');
       }).join('')
   +   '</tbody></table></div>';
 }
@@ -397,9 +501,14 @@ const CLOSE_BTN = '<button class="btn" onclick="ovlClose()">닫기</button>';
 
 function payload(){
   const o = PENDING.filter(function(x){return x.H_ID===sel;})[0];
-  const lines = {};
-  o.items.forEach(function(it){ if((qin[it.P_ID]||0) > 0) lines[it.P_ID] = qin[it.P_ID]; });
-  return {H_ID: sel, lines: lines, EP_ID: who};
+  const lines = [];
+  o.items.forEach(function(it){
+    const st = L[it.Purchase_num];
+    if(st.qty > 0) lines.push({Purchase_num: it.Purchase_num, P_ID: st.pid,
+                               qty: st.qty, reason: st.reason});
+  });
+  return {H_ID: sel, lines: lines, EP_ID: who,
+          settle: settle, settle_note: settleNote};
 }
 
 async function openInConfirm(){
@@ -437,7 +546,9 @@ async function doInSubmit(){
       ovl('입고 등록 완료', 'ti-circle-check',
           inBody(d.plan, '<div class="alert a-ok"><i class="ti ti-check"></i> LOT '
             + d.plan.line_cnt + '건을 생성했습니다. ' + nf(d.plan.qty) + '개가 창고에 입고되어 '
-            + '이제 불출할 수 있습니다.</div>'),
+            + '이제 불출할 수 있습니다.'
+            + (d.plan.chg_cnt ? ' 변경 ' + d.plan.chg_cnt + '건은 발주 변경 이력에 남았습니다.' : '')
+            + '</div>'),
           '<button class="btn btnp" style="margin-left:0" onclick="location.reload()">확인</button>');
     }else{
       ovl('등록 실패', 'ti-alert-circle', errBody(d.errors || ['입고 등록에 실패했습니다.']), CLOSE_BTN);

@@ -189,6 +189,26 @@ CREATE TABLE Purchase_Detail_tb (
     PRIMARY KEY (H_ID, Purchase_num)
 );
 
+DROP TABLE IF EXISTS Purchase_Change_tb;
+CREATE TABLE Purchase_Change_tb (
+    Chg_ID       TEXT PRIMARY KEY,     -- 변경번호 CHG+YYYYMMDD+4자리
+    H_ID         TEXT NOT NULL,        -- 발주번호
+    Purchase_num INTEGER NOT NULL,     -- 발주서 내 순번 (어느 라인이 바뀌었나)
+    Ord_P_ID     TEXT NOT NULL,        -- 발주한 품번
+    In_P_ID      TEXT NOT NULL,        -- 실제 입고된 품번 (대체면 Ord 와 다르다)
+    Ord_Qty      INTEGER NOT NULL,     -- 발주 수량
+    In_Qty       INTEGER NOT NULL,     -- 실입고 수량
+    Ord_Amt      INTEGER NOT NULL,     -- 발주 금액
+    In_Amt       INTEGER NOT NULL,     -- 실입고 금액
+    Diff_Amt     INTEGER NOT NULL,     -- In_Amt - Ord_Amt (양수면 더 받은 것)
+    Chg_Type     TEXT NOT NULL,        -- 수량변경 / 대체입고 / 대체+수량변경
+    Settle       TEXT NOT NULL,        -- 추가청구 / 차감 / 정산없음
+    Reason       TEXT,                 -- 거래처와 협의한 내용
+    Chg_Date     TEXT NOT NULL,        -- 입고일
+    EP_ID        TEXT NOT NULL,        -- 처리자
+    Lot_ID       TEXT                  -- 이 변경으로 생성된 LOT
+);
+
 DROP TABLE IF EXISTS Lot_tb;
 CREATE TABLE Lot_tb (
     Lot_ID   TEXT PRIMARY KEY,         -- LOT번호
@@ -271,6 +291,8 @@ CREATE INDEX idx_tx_lot         ON Transaction_tb(Lot_ID);
 CREATE INDEX idx_tx_date        ON Transaction_tb(T_Date);
 CREATE INDEX idx_tx_type        ON Transaction_tb(T_Type);
 CREATE INDEX idx_pd_hid         ON Purchase_Detail_tb(H_ID);
+CREATE INDEX idx_chg_hid        ON Purchase_Change_tb(H_ID);
+CREATE UNIQUE INDEX idx_chg_line ON Purchase_Change_tb(H_ID, Purchase_num);
 CREATE INDEX idx_pd_pid         ON Purchase_Detail_tb(P_ID);
 CREATE INDEX idx_prod_wo        ON Production_tb(Work_Order);
 CREATE INDEX idx_prod_pid       ON Production_tb(P_ID);
