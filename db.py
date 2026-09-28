@@ -3856,3 +3856,158 @@ def claim_summary(conn):
                           for r in CLAIM_RESOLUTIONS},
         "by_supplier": sorted(by_sup.values(), key=lambda x: -x["qty"])[:10],
     }
+# ── LOT 이벤트 타임라인 ─────────────────────────────────────
+#
+# 자재 목록의 LOT 이력 모달은 LOT 단위 집계(입고·불출 합계)만 보여줬다.
+# 불량·반납·폐기·이동·교환, 생산 투입, 클레임, 대체품 입고가 전부 묻혔다.
+#
+# 전 자재의 이벤트를 화면에 미리 실으면 응답이 수 MB 가 된다
+# (거래 1,075 + 생산 4,535 + 클레임). 그래서 모달을 열 때 그 자재만 조회한다.
+#
+# 이벤트 종류를 SQL 에 박지 않는다 — T_Type 은 TX_META 의 kind 로 분류하므로
+# 새 유형이 들어와도 타임라인에 그대로 잡힌다.
+
+# 같은 날짜 안에서의 표시 순서. 발주가 먼저고 처분이 뒤다.
+_EVENT_ORDER = {"order": 0, "in": 1, "move": 2, "out": 3, "prod": 4, "bad": 5, "claim": 6}
+
+
+def lot_events(conn, pid):
+    """자재 하나의 전 LOT 이벤트를 시간순으로 돌려준다.
+
+    한 LOT 의 일생: 발주 → 입고 → (불출·불량·반납·폐기·이동·교환) → 생산 투입
+                    → 클레임 접수·처리 → 대체품 입고
+    """
+    pid = str(pid or "").strip()
+    prod = conn.execute(
+        "SELECT P_ID, P_N, Spec, P_Price FROM Product_tb WHERE P_ID = ?", (pid,)).fetchone()
+    if prod is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+
+    lots = _rows(conn, f"""
+        SELECT l.Lot_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name, l.P_Qty,
+               l.H_ID, l.EP_ID, u.Name AS receiver,
+               h.P_Date AS order_date, c.CP_N AS supplier,
+               CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS remain
+          FROM Lot_tb l
+          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+          LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
+          LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+          LEFT JOIN Company_tb c   ON h.BRN = c.BRN
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty
+                       FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+         WHERE l.P_ID = ?
+         ORDER BY l.Lot_Date, l.Lot_ID
+    """, (pid,))
+    if not lots:
+        return {"P_ID": pid, "P_N": prod["P_N"], "Spec": prod["Spec"],
+                "lots": [], "event_cnt": 0, "kinds": {}}, []
+
+    ids = [l["Lot_ID"] for l in lots]
+    ph = ",".join("?" * len(ids))
+
+    # 거래 — 유형은 TX_KIND 로 분류한다 (유형명을 SQL 에 박지 않는다)
+    tx = _rows(conn, """
+        SELECT t.T_ID, t.Lot_ID, t.T_Type, t.T_Date, t.T_Num, t.EP_ID, u.Name AS worker
+          FROM Transaction_tb t LEFT JOIN User_tb u ON t.EP_ID = u.EP_ID
+         WHERE t.Lot_ID IN (%s)
+         ORDER BY t.T_Date, t.T_ID
+    """ % ph, tuple(ids))
+
+    # 생산 투입
+    pr = _rows(conn, """
+        SELECT r.Lot_ID, r.Work_Order, r.FG_ID, f.FG_N, r.Prod_Date,
+               SUM(r.Prod_Qty) AS qty, MAX(r.Note) AS note
+          FROM Production_tb r LEFT JOIN FG_tb f ON r.FG_ID = f.FG_ID
+         WHERE r.Lot_ID IN (%s)
+         GROUP BY r.Lot_ID, r.Work_Order, r.FG_ID, f.FG_N, r.Prod_Date
+         ORDER BY r.Prod_Date
+    """ % ph, tuple(ids))
+
+    # 클레임 — 이 LOT 에서 난 것과, 이 LOT 이 대체품으로 만들어진 경우 둘 다
+    cl = _rows(conn, """
+        SELECT k.*, u.Name AS worker
+          FROM Inbound_Claim_tb k LEFT JOIN User_tb u ON k.EP_ID = u.EP_ID
+         WHERE k.Lot_ID IN (%s) OR k.New_Lot_ID IN (%s)
+    """ % (ph, ph), tuple(ids) * 2)
+
+    # 발주 변경 (대체 입고로 생긴 LOT 인지)
+    chg = {r["Lot_ID"]: r for r in _rows(conn, """
+        SELECT Lot_ID, Ord_P_ID, In_P_ID, Chg_Type, Settle, Diff_Amt, Reason
+          FROM Purchase_Change_tb WHERE Lot_ID IN (%s)
+    """ % ph, tuple(ids))}
+
+    by_lot = {i: [] for i in ids}
+    kinds = {}
+
+    def add(lot, kind, date, title, desc, qty=None, ref=None, tone=None):
+        by_lot[lot].append({"kind": kind, "date": date, "title": title,
+                            "desc": desc, "qty": qty, "ref": ref,
+                            "tone": tone or kind})
+        kinds[title] = kinds.get(title, 0) + 1
+
+    for l in lots:
+        lid = l["Lot_ID"]
+        if l["order_date"]:
+            ch = chg.get(lid)
+            d = "%s · %s" % (l["H_ID"], l["supplier"] or "-")
+            if ch and ch["In_P_ID"] != ch["Ord_P_ID"]:
+                d += " · 발주품 %s → 대체 입고" % ch["Ord_P_ID"]
+            elif ch:
+                d += " · %s" % ch["Chg_Type"]
+            add(lid, "order", l["order_date"], "발주", d, ref=l["H_ID"])
+
+    for t in tx:
+        kind = TX_KIND.get(t["T_Type"], "move")
+        desc = t["worker"] or "-"
+        add(t["Lot_ID"], kind, t["T_Date"], t["T_Type"], desc, t["T_Num"], t["T_ID"])
+
+    lot_date = {l["Lot_ID"]: l["Lot_Date"] for l in lots}
+    for r in pr:
+        # ⚠️ 더미데이터에 생산일이 입고일보다 빠른 행이 있다(4,535 중 1,224행).
+        #    물리적으로 불가능한 순서라 타임라인에 그대로 표시하고 표시만 남긴다.
+        #    고치면 생산 실적·BOM 일치율 등 문서화된 수치가 흔들린다.
+        warn = bool(r["Prod_Date"] and lot_date.get(r["Lot_ID"])
+                    and r["Prod_Date"] < lot_date[r["Lot_ID"]])
+        by_lot[r["Lot_ID"]].append({
+            "kind": "prod", "date": r["Prod_Date"], "title": "생산 투입",
+            "desc": "%s · %s%s" % (r["Work_Order"], r["FG_ID"] or "-",
+                                   " " + (r["FG_N"] or "") if r["FG_N"] else ""),
+            "qty": r["qty"], "ref": r["Work_Order"], "tone": "prod",
+            "warn": "입고일(%s)보다 앞선 생산일" % lot_date.get(r["Lot_ID"]) if warn else None})
+        kinds["생산 투입"] = kinds.get("생산 투입", 0) + 1
+
+    for k in cl:
+        if k["Lot_ID"] in by_lot:
+            add(k["Lot_ID"], "claim", k["Claim_Date"], "클레임 접수",
+                "%s · %s%s" % (k["Claim_ID"], k["Claim_Type"],
+                               " · " + k["Reason"] if k["Reason"] else ""),
+                k["Claim_Qty"], k["Claim_ID"])
+            if k["Status"] == "완료":
+                add(k["Lot_ID"], "claim", k["Done_Date"] or k["Claim_Date"],
+                    "클레임 " + k["Resolution"],
+                    "%s%s" % (k["Claim_ID"],
+                              " · 대체 LOT " + k["New_Lot_ID"] if k["New_Lot_ID"] else
+                              " · %s원 정산" % format(k["Amount"] or 0, ",")),
+                    k["Claim_Qty"], k["Claim_ID"])
+        if k["New_Lot_ID"] in by_lot:
+            add(k["New_Lot_ID"], "claim", k["Done_Date"] or k["Claim_Date"],
+                "대체품으로 입고", "%s 의 불량 %s개를 대신해 들어온 LOT (원 LOT %s)"
+                % (k["Claim_ID"], format(k["Claim_Qty"], ","), k["Lot_ID"]),
+                k["Claim_Qty"], k["Claim_ID"])
+
+    total = 0
+    for l in lots:
+        ev = by_lot[l["Lot_ID"]]
+        ev.sort(key=lambda e: (e["date"] or "", _EVENT_ORDER.get(e["kind"], 9)))
+        l["events"] = ev
+        l["event_cnt"] = len(ev)
+        l["is_swap_in"] = any(e["title"] == "대체품으로 입고" for e in ev)
+        l["has_defect"] = any(e["kind"] == "bad" for e in ev)
+        l["warn_cnt"] = sum(1 for e in ev if e.get("warn"))
+        total += len(ev)
+
+    return {"P_ID": pid, "P_N": prod["P_N"], "Spec": prod["Spec"],
+            "price": prod["P_Price"], "lots": lots,
+            "event_cnt": total, "kinds": kinds,
+            "warn_cnt": sum(l["warn_cnt"] for l in lots)}, []

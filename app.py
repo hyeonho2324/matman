@@ -589,6 +589,20 @@ def api_disburse_batch_create():
         conn.close()
 
 
+@app.route("/api/lot-events")
+def api_lot_events():
+    """자재 하나의 전 LOT 이벤트 타임라인 (조회 전용).
+
+    전 자재를 화면에 미리 실으면 응답이 수 MB 가 되므로 모달을 열 때만 부른다.
+    """
+    conn = db.connect()
+    try:
+        data, errors = db.lot_events(conn, request.args.get("P_ID"))
+        return jsonify({"ok": not errors, "data": data, "errors": errors})
+    finally:
+        conn.close()
+
+
 # ── 입고 클레임 API (불량 · 반품 · 대체) ────────────────────
 # 입고 검수에서 나온 불량은 입고 등록이 한 트랜잭션으로 함께 남긴다.
 # 여기 두 엔드포인트는 (1) 이미 입고된 LOT 에서 뒤늦게 발견한 불량 접수와
