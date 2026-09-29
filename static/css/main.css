@@ -335,6 +335,31 @@ input, select, textarea { font-family: inherit; }
 .kpi-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .kpi-grid-3 { grid-template-columns: repeat(3, 1fr); }
 .kpi-grid-2 { grid-template-columns: repeat(2, 1fr); }
+/* ── 오늘 할 일 (대시보드) ─────────────────────────────────
+   현황이 아니라 '지금 손이 필요한 곳' 이다. KPI 위에 둔다. */
+.todo-bar { margin-bottom: 14px; }
+.todo-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.todo-h .t { font-size: 13px; font-weight: 600; }
+.todo-h .n { font-size: 11px; color: var(--text-muted); }
+.todo-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.todo-card {
+  display: block; padding: 10px 12px; border-radius: 10px;
+  border: 0.5px solid var(--border); background: var(--surface-0);
+  text-decoration: none; color: inherit; transition: background .12s, border-color .12s;
+}
+.todo-card:hover { background: var(--surface-1); border-color: var(--border-strong); }
+.todo-l { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.todo-v { font-size: 22px; font-weight: 600; line-height: 1.15; margin-top: 3px; }
+.todo-v small { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 1px; }
+.todo-s { font-size: 10px; color: var(--text-muted); margin-top: 3px; line-height: 1.5; }
+.todo-ac .todo-v { color: var(--fill-accent); }
+.todo-wn .todo-v { color: var(--fill-warning); }
+.todo-dn .todo-v { color: var(--fill-danger); }
+.todo-mu .todo-v { color: var(--text-muted); }
+.todo-mu { opacity: .72; }
+@media (max-width: 1200px) { .todo-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .todo-grid { grid-template-columns: repeat(2, 1fr); } }
+
 .kpi-grid-5 { grid-template-columns: repeat(5, 1fr); }
 .kpi-card {
   background: var(--surface-1);

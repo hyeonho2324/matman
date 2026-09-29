@@ -5,6 +5,16 @@ import db
 
 app = Flask(__name__)
 
+# 오늘 할 일 카드의 아이콘. db 는 숫자만 내고 표시는 여기서 정한다.
+TODO_ICON = {
+    "inbound":  "ti-arrow-bar-to-down",
+    "claim":    "ti-alert-octagon",
+    "approval": "ti-check",
+    "picking":  "ti-list-check",
+    "disburse": "ti-arrow-bar-up",
+    "safety":   "ti-shield-check",
+}
+
 # ── 메뉴 구조 ───────────────────────────────────────────────
 MENUS = [
     {
@@ -85,7 +95,7 @@ def dashboard():
     finally:
         conn.close()
     return render_template("dashboard.html", **get_menu_context("dashboard"),
-                           page_title="메인 대시보드", d=data)
+                           page_title="메인 대시보드", d=data, icon=TODO_ICON)
 
 @app.route("/products")
 def products():

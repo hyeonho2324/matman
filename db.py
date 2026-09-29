@@ -1384,6 +1384,58 @@ def stock_summary(zones):
 
 
 # ── 메인 대시보드 ────────────────────────────────────────────
+# ── 오늘 할 일 ───────────────────────────────────────────────
+#
+# 대시보드가 재고·발주·리스크 같은 '현황' 만 보여주고 있었다.
+# 정작 담당자가 아침에 알아야 할 것은 "지금 내 손이 필요한 곳" 이다.
+# 쓰기 화면 7개가 각자 대기열을 갖고 있는데 한 군데서 볼 수가 없었다.
+#
+# 숫자는 각 화면의 조회 함수를 그대로 쓴다 — 대시보드만 따로 세면 어긋난다.
+
+def worklist(conn):
+    """처리 대기 중인 일감을 화면별로 모은다."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+
+    pending = pending_po(conn)                 # 받을 발주
+    claims = claim_summary(conn)               # 불량·반품
+    wait_appr = wait_approval_cnt(conn)        # 승인 대기
+    opens = open_requests(conn)                # 승인 끝나고 아직 안 나간 요청
+
+    due = conn.execute(
+        "SELECT COUNT(*) FROM Safe_tb s"
+        " LEFT JOIN (SELECT P_ID, MAX(Updated_Date) AS d FROM Update_Log_tb GROUP BY P_ID) l"
+        "        ON s.P_ID = l.P_ID"
+        " LEFT JOIN Update_Log_tb u ON u.P_ID = l.P_ID AND u.Updated_Date = l.d"
+        " WHERE u.Next_Date IS NOT NULL AND u.Next_Date <= ?", (base,)).fetchone()[0]
+
+    ovr_soon = conn.execute(
+        "SELECT COUNT(*) FROM Safe_Override_tb"
+        " WHERE Status = '적용'"
+        "   AND CAST(julianday(End_Date) - julianday(?) AS INT) BETWEEN 0 AND 14",
+        (base,)).fetchone()[0]
+
+    return [
+        {"key": "inbound",  "label": "입고 대기",    "n": len(pending),    "unit": "건",
+         "sub": "발주는 나갔는데 아직 안 받은 건", "url": "/inbound",
+         "tone": "ac" if pending else "mu"},
+        {"key": "claim",    "label": "불량 · 반품",  "n": claims.get("open", 0), "unit": "건",
+         "sub": "대체입고 / 환불 / 폐기를 정해야 함", "url": "/inbound",
+         "tone": "dn" if claims.get("open") else "mu"},
+        {"key": "approval", "label": "불출 승인",    "n": wait_appr,       "unit": "건",
+         "sub": "승인해야 창고가 열린다", "url": "/approval",
+         "tone": "wn" if wait_appr else "mu"},
+        {"key": "picking",  "label": "피킹 지시서",  "n": len(opens),      "unit": "장",
+         "sub": "승인된 요청 — 집으러 갈 목록", "url": "/picking",
+         "tone": "ac" if opens else "mu"},
+        {"key": "disburse", "label": "불출 대기",    "n": sum(1 for r in opens if r["left_qty"] > 0), "unit": "건",
+         "sub": "잔여 %s개" % format(sum(r["left_qty"] for r in opens), ","), "url": "/disburse",
+         "tone": "ac" if opens else "mu"},
+        {"key": "safety",   "label": "안전재고 재검토", "n": due,           "unit": "종",
+         "sub": ("조정 만료 임박 %d종" % ovr_soon) if ovr_soon else "등급별 주기 도래",
+         "url": "/wizard", "tone": "wn" if due else "mu"},
+    ]
+
+
 def dashboard(conn):
     """대시보드 한 화면에 필요한 집계를 모아 돌려준다.
 
@@ -1417,6 +1469,8 @@ def dashboard(conn):
             "worker": r["worker"],
         })
 
+    todo = worklist(conn)
+
     # 안전재고 긴급 — 부족량이 큰 순
     urgent = [{
         "P_ID": r["P_ID"], "P_N": r["P_N"], "grade": r["grade"],
@@ -1445,6 +1499,10 @@ def dashboard(conn):
         } for z in zones],
         "zone_max": max((z["value"] or 0) for z in zones) if zones else 1,
         "recent_tx": recent_tx,
+        "todo": todo,
+        # 안전재고 재검토는 199종짜리 일괄 작업이라 대기열 합계에서 뺀다.
+        # 넣으면 나머지 6건이 숫자에 묻힌다.
+        "todo_total": sum(t["n"] for t in todo if t["key"] != "safety"),
         "recent_po": [{
             "H_ID": o["H_ID"], "date": o["date"], "supplier": o["supplier"],
             "line_cnt": o["line_cnt"], "amount": o["amount"],

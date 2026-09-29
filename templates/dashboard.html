@@ -21,6 +21,24 @@
   </div>
 </div>
 
+<!-- 오늘 할 일 — 현황이 아니라 지금 손이 필요한 곳 -->
+<div class="todo-bar">
+  <div class="todo-h">
+    <i class="ti ti-checkup-list" style="color:var(--fill-accent)"></i>
+    <span class="t">오늘 할 일</span>
+    <span class="n">처리 대기 {{ d.todo_total }}건 · 카드를 누르면 그 화면으로 갑니다</span>
+  </div>
+  <div class="todo-grid">
+    {%- for t in d.todo %}
+    <a class="todo-card todo-{{ t.tone }}" href="{{ t.url }}">
+      <div class="todo-l"><i class="ti {{ icon[t.key] }}"></i>{{ t.label }}</div>
+      <div class="todo-v">{{ t.n }}<small>{{ t.unit }}</small></div>
+      <div class="todo-s">{{ t.sub }}</div>
+    </a>
+    {%- endfor %}
+  </div>
+</div>
+
 <!-- ── KPI ──────────────────────────────────────────── -->
 <div class="kpi-grid kpi-grid-5">
   <div class="kpi-card">
