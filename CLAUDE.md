@@ -120,8 +120,8 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | Safe_tb | 200 | P_ID(PK), Lead_Time, Sf_Lv, Sf_Num, Price/Sub/Impact/Supply/Usage_Score | CSV |
 | Update_Log_tb | 200 | P_ID+Updated_Date(PK), Next_Date, **Old/New_Lv, Old/New_Num, Old/New_Usage, EP_ID, Note** | CSV |
 | Purchase_Change_tb | 0 | Chg_ID(PK), H_ID+Purchase_num, Ord/In_P_ID, Ord/In_Qty, Ord/In_Amt, Diff_Amt, Chg_Type, Settle, Reason, Chg_Date, EP_ID, Lot_ID | **신설** |
-| Disburse_Req_tb | 2 | Req_ID(PK), Req_Date, FG_ID, Plan_Qty, Work_Order, EP_ID, Status, Note, **Appr_EP_ID, Appr_Date, Appr_Note** | **신설** |
-| Disburse_Req_Item_tb | 18 | Req_ID+Req_num(PK), P_ID, Need_Qty, **Site_Qty**, Stock_Qty, Req_Qty, Pkg_Unit, Is_Manual, **Appr_Qty**, Done_Qty | **신설** |
+| Disburse_Req_tb | 3 | Req_ID(PK), Req_Date, FG_ID, Plan_Qty, Work_Order, EP_ID, Status, Note, **Appr_EP_ID, Appr_Date, Appr_Note** | **신설** |
+| Disburse_Req_Item_tb | 28 | Req_ID+Req_num(PK), P_ID, Need_Qty, **Site_Qty**, Stock_Qty, Req_Qty, Pkg_Unit, Is_Manual, **Appr_Qty**, Done_Qty | **신설** |
 | Inbound_Claim_tb | 1 | Claim_ID(PK), Lot_ID, H_ID, P_ID, Claim_Qty, Claim_Type, Resolution, Status, T_ID, New_Lot_ID, Amount, Reason, Claim_Date, Done_Date, EP_ID | **신설** |
 | Safe_Override_tb | 0 | Ovr_ID(PK), P_ID, Ovr_Lv, Min_Qty, Calc_Lv, Calc_Num, Reason_Cd, Reason, Start/End_Date, Status, EP_ID, Off_Date, Off_Note | **신설** |
 | Production_tb | 4,535 | Prod_ID(PK), FG_ID, P_ID, Lot_ID, Prod_Date, Prod_Qty, EP_ID, **Work_Order**, Note | CSV |
@@ -1369,16 +1369,27 @@ FIFO 라 한 품번이 LOT 하나로 안 채워지면 **줄이 나뉜다.** 나�
 담은 표시는 **화면에만** 남는다(새로 고치면 지워진다). 재고는 불출 처리에서 등록해야 줄어든다 —
 피킹은 준비 작업이지 출고가 아니기 때문이다.
 
-#### 시연용 승인 요청
+#### 시연용 요청 3건
+
+| 요청 | 상태 | 쓰임 |
+|---|---|---|
+| `REQ202602080001` FG007 200대 | **요청** | 불출 승인 화면의 **대기 건** |
+| `REQ202602090001` FG007 60대 | 승인 | 피킹 — 분할 없는 기본형. **L03 C동**, 7줄 730개, 동선 4구간, 부족 1종 |
+| `REQ202602090002` FG011 400대 | 승인 | 피킹 — **LOT 분할**. **L04 D동**, 11줄 1,636개, 동선 3구간, 분할 3종, 부족 9종 |
 
 ```
-REQ202602090001  2026-02-09  FG007 후방카메라 완제품 60대
-작업지시 WO202602090001 · 요청 조동현 사원 · 승인 장경수 차장(한도 3,000만)
-8품목 760개 1,814만원 · 상태 승인
-→ 피킹 7줄 730개 · 동선 4단계 · 재고 부족 1종 30개
+REQ202602090002  FG011 승용탱크 완제품 400대
+작업지시 WO202602090002 · 요청 장시우 사원 · 승인 정예은 부장(2.18억이라 부장만 가능)
+
+  U02010001 승용 탱크바디   LOT 1/2  72   LOT 2/2  72        창고 144  (요청 396 → 252 부족)
+  U02020002 승용 브라켓     LOT 1/3 192   LOT 2/3 192   3/3 24   창고 576
+  U02040001 승용 레벨샌더   LOT 1/2 192   LOT 2/2 192        창고 384
 ```
-`REQ202602080001`(200대)은 **`요청` 상태로 남겨 두었다** — 불출 승인 화면의 대기 건이다.
-두 요청이 같은 자재를 보므로 **LOT 을 나눠 갖는 동작**도 함께 보인다.
+**한 품번을 LOT 2~3개에서 집는 경우**와 **마지막 LOT 에서 24개만 덜어 오는 경우**가
+한 장에 다 들어 있다. 부족 9종은 이 더미데이터가 200종 중 67종이 재고 0 이라 자연스럽다 —
+`담을 수 있는 만큼만 불출` / `발주가 먼저입니다` 로 조치가 갈린다.
+
+두 승인 요청이 **서로 다른 대분류**(E계열 / U계열)라 창고 구역도 갈린다.
 
 > ✅ **검증** — 지시서 1장 · 7줄 · 730개 · 동선 4단계(LCD 30 › 커버 300 › 가스켓 200 › 기타 200) ·
 > 부족 1종(E01010003 요청 30 · 확보 0 · 부족 30).
