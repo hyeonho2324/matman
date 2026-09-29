@@ -2756,6 +2756,7 @@ def picking_lists(conn):
 
     # 자재별 잔여 LOT 을 한 번만 읽어 요청들이 나눠 쓴다
     pool = {}
+    stock0 = {}        # 배분 전 창고 현재고 — 앞 요청이 덜어 가도 이 값은 안 변한다
     loc_name = {}
     out = []
     for r in reqs:
@@ -2770,8 +2771,13 @@ def picking_lists(conn):
             pid = it["P_ID"]
             if pid not in pool:
                 pool[pid] = [dict(l) for l in live_lots(conn, pid)]
+                stock0[pid] = sum(l["remain"] for l in pool[pid])
                 for l in pool[pid]:
                     loc_name[l["Loc_ID"]] = l["loc_name"]
+            # 앞선 요청이 이미 덜어 간 몫. 창고에는 있지만 이 지시서가 쓸 수 없는 양이다.
+            avail = sum(l["remain"] for l in pool[pid])
+            taken = stock0[pid] - avail
+            mine = []
             left, picks = need, 0
             for l in pool[pid]:
                 if left <= 0:
@@ -2783,7 +2789,7 @@ def picking_lists(conn):
                 left -= take
                 picks += 1
                 z = zones.setdefault(l["Loc_ID"], [])
-                z.append({
+                ln = {
                     "cat": pid[3:5],
                     "cat_name": cat_name.get((pid[0], pid[1:3], pid[3:5]), pid[:5]),
                     "P_ID": pid, "P_N": it["P_N"], "Spec": it["Spec"],
@@ -2792,9 +2798,16 @@ def picking_lists(conn):
                     "age_days": _days_between(l["Lot_Date"], base),
                     "take": take, "need": need,
                     "lot_remain": l["remain"] + take,     # 집기 전 잔량
-                })
+                    "stock": stock0[pid], "avail": avail, "reserved": taken,
+                }
+                z.append(ln)
+                mine.append(ln)
                 tot_qty += take
                 amount += int(round(take * price.get(pid, 0)))
+            for n, ln in enumerate(mine, 1):
+                ln["pick_idx"] = n
+                ln["pick_of"] = len(mine)
+                ln["pick_qty"] = sum(x["take"] for x in mine)   # 이 자재를 다 합쳐 몇 개
             if picks > 1:
                 split += 1
             if left > 0:
@@ -2805,6 +2818,7 @@ def picking_lists(conn):
                     "grade": it["grade"], "Req_num": it["Req_num"],
                     "Lot_ID": None, "Lot_Date": None, "age_days": None,
                     "take": 0, "need": need, "got": need - left, "shortage": left,
+                    "stock": stock0[pid], "avail": avail, "reserved": taken,
                 })
 
         zlist = []

@@ -92,6 +92,11 @@ tr.done .seq{background:var(--ok);color:#fff}
 .bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
 .bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
 .bok{background:var(--bg-ok);color:#1D6E52}.bac{background:var(--bg-ac);color:#185FA5}
+tr.sp td{border-bottom-style:dashed}
+tr.sp-last td{border-bottom-style:solid}
+.spb{background:var(--bg-wn);color:#854F0B;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.stk{font-variant-numeric:tabular-nums}
+.stk small{display:block;font-size:9px;color:var(--txt3);font-weight:400}
 .ck{width:15px;height:15px;accent-color:var(--ok);cursor:pointer}
 .qty{font-size:13px;font-weight:600}
 
@@ -254,23 +259,29 @@ function drawSheet(){
       + '<div class="tw"><table><thead><tr>'
       +   '<th style="width:34px">순</th><th>품번</th><th>품명 / 규격</th>'
       +   '<th>집을 LOT</th><th class="num">담을 수량</th><th class="num">LOT 잔량</th>'
-      +   '<th style="width:38px">담음</th>'
+      +   '<th class="num">창고 현재고</th><th style="width:38px">담음</th>'
       + '</tr></thead><tbody>'
       + z.groups.map(function(g){
-        return '<tr class="gsep"><td colspan="7">'
+        return '<tr class="gsep"><td colspan="8">'
           + '<span class="gn">' + esc(g.cat) + '</span>' + esc(g.cat_name)
           + '<span class="gq">' + g.lines.length + '줄 · ' + nf(g.qty) + '개</span></td></tr>'
         + g.lines.map(function(l){
           const k = key(l), on = !!m[k];
-          return '<tr class="' + (on?'done':'') + '">'
+          const sp = l.pick_of > 1;    // 한 자재를 LOT 여러 개에서 집는다
+          return '<tr class="' + (on?'done ':'')
+            +   (sp ? (l.pick_idx === l.pick_of ? 'sp sp-last' : 'sp') : '') + '">'
             + '<td><span class="seq">' + l.seq + '</span></td>'
             + '<td><span class="pid">' + esc(l.P_ID) + '</span>'
-            +   (l.grade ? ' <span class="gr gr'+l.grade+'">'+l.grade+'</span>' : '') + '</td>'
+            +   (l.grade ? ' <span class="gr gr'+l.grade+'">'+l.grade+'</span>' : '')
+            +   (sp ? '<div class="sub"><span class="bg spb">LOT ' + l.pick_idx + '/' + l.pick_of
+                      + '</span> 자재 합계 ' + nf(l.pick_qty) + '개</div>' : '') + '</td>'
             + '<td>' + esc(l.P_N||'-') + '<div class="sub">' + esc(l.Spec||'') + '</div></td>'
             + '<td><span class="lid">' + esc(l.Lot_ID) + '</span>'
             +   '<div class="sub">' + esc(l.Lot_Date) + ' 입고 · 체류 ' + l.age_days + '일</div></td>'
             + '<td class="num"><span class="qty">' + nf(l.take) + '</span></td>'
             + '<td class="num sub" style="margin:0">' + nf(l.lot_remain) + '</td>'
+            + '<td class="num stk">' + nf(l.stock)
+            +   (l.reserved ? '<small>앞 요청 ' + nf(l.reserved) + ' 선점</small>' : '') + '</td>'
             + '<td><input class="ck" type="checkbox"' + (on?' checked':'')
             +   ' data-k="' + esc(k) + '" onchange="toggle(this.dataset.k)"></td>'
             + '</tr>';
@@ -285,7 +296,8 @@ function drawSheet(){
       + nf(o.short_qty) + '개 부족</span></div>'
       + '<div class="tw"><table><thead><tr>'
       +   '<th>품번</th><th>품명 / 규격</th><th class="num">요청</th>'
-      +   '<th class="num">담을 수 있는 양</th><th class="num">부족</th><th>조치</th>'
+      +   '<th class="num">담을 수 있는 양</th><th class="num">부족</th>'
+      +   '<th class="num">창고 현재고</th><th>조치</th>'
       + '</tr></thead><tbody>'
       + o.short_lines.map(function(l){
           return '<tr><td><span class="pid">' + esc(l.P_ID) + '</span>'
@@ -294,7 +306,12 @@ function drawSheet(){
             + '<td class="num">' + nf(l.need) + '</td>'
             + '<td class="num">' + nf(l.got) + '</td>'
             + '<td class="num" style="color:#9B1C1C;font-weight:600">' + nf(l.shortage) + '</td>'
-            + '<td class="sub" style="margin:0">' + (l.got ? '담을 수 있는 만큼만 불출' : '발주가 먼저입니다') + '</td>'
+            + '<td class="num stk">' + nf(l.stock)
+            +   (l.reserved ? '<small>앞 요청 ' + nf(l.reserved) + ' 선점</small>' : '') + '</td>'
+            + '<td class="sub" style="margin:0">'
+            +   (l.reserved && l.got < l.need
+                  ? '앞 요청이 먼저 가져갔습니다'
+                  : (l.got ? '담을 수 있는 만큼만 불출' : '발주가 먼저입니다')) + '</td>'
             + '</tr>';
         }).join('')
       + '</tbody></table></div></div>'
@@ -361,7 +378,12 @@ function drawSheet(){
 
     + '<div class="note no-print">'
     +   '자재는 <b>FIFO</b> — 같은 품번이면 <b>오래된 LOT 부터</b> 집습니다. '
-    +   '한 품번이 여러 LOT 에 걸치면 줄이 나뉩니다' + (o.split_cnt ? ' (이 지시서 ' + o.split_cnt + '건)' : '') + '.<br>'
+    +   '한 품번을 여러 LOT 에서 집어야 하면 줄이 나뉘고 <b>LOT 1/3</b> 처럼 몇 번째인지, '
+    +   '<b>자재 합계</b>가 몇 개인지 함께 적습니다'
+    +   (o.split_cnt ? ' (이 지시서 ' + o.split_cnt + '건)' : '') + '.<br>'
+    +   '<b>창고 현재고</b>는 그 자재의 전체 잔여 LOT 합계입니다. '
+    +   '앞선 요청이 이미 가져간 몫이 있으면 <b>선점</b>으로 함께 적습니다 — '
+    +   '창고에는 있지만 이 지시서가 쓸 수 없는 양입니다.<br>'
     +   '동선은 <b>창고 구역 → 구역 안의 소분류 구간</b> 순서입니다. '
     +   '통로·랙 번지가 데이터에 없어, 없는 번지를 지어내는 대신 <b>있는 분류</b>를 씁니다 — '
     +   '품번이 대분류+중분류+소분류+순번이라 소분류가 같으면 같은 물건 계열이고 선반에도 붙어 있습니다.<br>'
@@ -376,18 +398,19 @@ function draw(){ drawSide(); drawSheet(); }
 function dl(){
   const o = cur(); if(!o) return;
   const head = ['순번','구역','창고','구간','구간명','품번','품명','규격','등급','LOT','입고일','체류일',
-                '담을수량','LOT잔량'];
+                'LOT분할','자재합계','담을수량','LOT잔량','창고현재고','앞요청선점'];
   const lines = [head.join(',')];
   const q = function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; };
   o.zones.forEach(function(z){
     z.lines.forEach(function(l){
       lines.push([l.seq,z.Loc_ID,z.loc_name,l.cat,l.cat_name,l.P_ID,l.P_N,l.Spec,l.grade,l.Lot_ID,
-                  l.Lot_Date,l.age_days,l.take,l.lot_remain].map(q).join(','));
+                  l.Lot_Date,l.age_days,l.pick_idx+'/'+l.pick_of,l.pick_qty,
+                  l.take,l.lot_remain,l.stock,l.reserved].map(q).join(','));
     });
   });
   o.short_lines.forEach(function(l){
-    lines.push(['부족','','','','',l.P_ID,l.P_N,l.Spec,l.grade,'','','',
-                l.shortage + '개 부족 (요청 ' + l.need + ' · 확보 ' + l.got + ')',''].map(q).join(','));
+    lines.push(['부족','','','','',l.P_ID,l.P_N,l.Spec,l.grade,'','','','','',
+                l.got, l.shortage + '개 부족 (요청 ' + l.need + ')', l.stock, l.reserved].map(q).join(','));
   });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type:'text/csv;charset=utf-8'}));
