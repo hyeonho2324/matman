@@ -2148,6 +2148,9 @@ def wizard_data(conn):
     span = operating_days(conn)
     abc = {r["P_ID"]: r for r in abc_analysis(conn)}
     safe = safety_stock_list(conn)
+    # ⚠️ 수동 조정이 걸린 품목은 일괄 갱신이 등급을 되돌리면 안 된다.
+    #    조정을 무시하면 자동 갱신이 사람 판단을 조용히 지운다.
+    ovr = active_overrides(conn, base)
 
     due, rows = 0, []
     for r in safe:
@@ -2161,12 +2164,19 @@ def wizard_data(conn):
         old_u = r["Usage_Score"]
         new_u = a.get("calc_usage_score")
 
-        # 안전재고 재계산 (SAFE_STOCK_DESIGN 의 초기 추정 σ 사용)
-        Z = Z_BY_GRADE.get(new_g, 1.65)
-        k = {"A": 0.20, "B": 0.25, "C": 0.30}.get(new_g, 0.25)
         L = r["lead_time_real"] or r["lead_time"] or 0
         d = r["daily_use"] or 0
-        new_ss = round(Z * ((L * (d * k) ** 2 + d * d * (L * k) ** 2) ** 0.5)) if d and L else r["safe_qty"]
+
+        # 조정이 걸려 있으면 등급은 조정값으로 고정하고 수량만 다시 계산한다.
+        # 사용량·리드타임이 변한 건 따라가되, 사람이 정한 등급은 건드리지 않는다.
+        o = ovr.get(r["P_ID"])
+        if o is not None and o["Ovr_Lv"]:
+            new_g = o["Ovr_Lv"]
+        new_ss = safe_formula(new_g, L, d)
+        if new_ss is None:
+            new_ss = r["safe_qty"]
+        if o is not None and o["Min_Qty"]:
+            new_ss = max(new_ss, o["Min_Qty"])       # 최소 보유량 하한
 
         rows.append({
             "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
@@ -2189,6 +2199,13 @@ def wizard_data(conn):
             "ss_diff": (new_ss or 0) - (r["safe_qty"] or 0),
             "stock": r["stock"], "daily": d, "lead_time": L,
             "new_cycle": REVIEW_CYCLE_DAYS.get(new_g, 90),
+            # 조정이 걸린 품목 — 화면이 '등급 고정' 으로 표시한다
+            "ovr_id": o["Ovr_ID"] if o else None,
+            "ovr_lv": o["Ovr_Lv"] if o else None,
+            "ovr_min": o["Min_Qty"] if o else None,
+            "ovr_reason": o["Reason_Cd"] if o else None,
+            "ovr_end": o["End_Date"] if o else None,
+            "locked": 1 if (o and o["Ovr_Lv"]) else 0,
         })
 
     rows.sort(key=lambda x: (-x["grade_changed"], -abs(x["ss_diff"])))
@@ -2214,6 +2231,8 @@ def wizard_summary(rows, base, due):
         "ss_total_diff": sum(r["ss_diff"] for r in rows),
         "grade_dist_old": {g: len([r for r in rows if r["old_grade"] == g]) for g in "ABC"},
         "grade_dist_new": {g: len([r for r in rows if r["new_grade"] == g]) for g in "ABC"},
+        "locked": len([r for r in rows if r.get("locked")]),
+        "ovr_min": len([r for r in rows if r.get("ovr_min")]),
     }
 
 
@@ -2233,7 +2252,12 @@ def wizard_summary(rows, base, due):
 
 
 def safety_targets(conn, date=None):
-    """갱신 대상과 제외 사유. 화면과 API 가 같은 판정을 쓴다."""
+    """갱신 대상과 제외 사유. 화면과 API 가 같은 판정을 쓴다.
+
+    만료된 수동 조정을 먼저 정리한다 — 만료분이 남아 있으면 갱신이 그 등급을
+    계속 고정해 조정이 영구 관행이 된다.
+    """
+    expire_overrides(conn)
     rows, base, span, _due = wizard_data(conn)
     date = date or _add_days(base, 1)
     done = {r["P_ID"] for r in _rows(
@@ -2312,6 +2336,8 @@ def preview_safety_update(conn, date, pids=None, ep_id=None, note=None):
         "ss_total_diff": sum(r["ss_diff"] for r in items),
         "grade_dist_old": {g: len([r for r in items if r["old_grade"] == g]) for g in "ABC"},
         "grade_dist_new": {g: len([r for r in items if r["new_grade"] == g]) for g in "ABC"},
+        "locked": len([r for r in items if r.get("locked")]),
+        "ovr_min": len([r for r in items if r.get("ovr_min")]),
     }, []
 
 
@@ -2395,6 +2421,266 @@ def revert_safety_update(conn, run_date, ep_id=None):
         conn.execute("DELETE FROM Update_Log_tb WHERE Updated_Date = ? AND EP_ID IS NOT NULL",
                      (run_date,))
     return {"run_date": run_date, "cnt": len(rows), "worker": w}, []
+
+
+# ── 안전재고 수동 조정 ───────────────────────────────────────
+#
+# 점수제가 B 를 주지만 실무에서는 A 로 다뤄야 하는 자재가 있다.
+# 단종 예정, 고객사가 품번을 지정한 것, 품질 이슈 이력이 있는 것 같은 사정은
+# 5개 항목 어디에도 안 들어간다.
+#
+# ⚠️ "주관이 들어가서 문제" 가 아니다. 주관은 이미 들어와 있다.
+#    5개 점수 중 자동은 Usage_Score 하나뿐이고 나머지 넷은 사람이 매긴다.
+#    규칙이 분명한 Price_Score(단가 10만원) 조차 200종 중 13종이 규칙을 벗어나 있다
+#    (53,800~99,200원인데 3점). 누가 왜 그랬는지는 DB 어디에도 없다.
+#
+#    막는다고 사라지지 않는다. 담당자가 발주할 때 더 넣는 식으로 시스템 밖에 남고,
+#    그 사람이 퇴사하면 근거가 증발한다. 그래서 막는 대신 기록한다.
+#
+# 네 가지를 강제한다
+#   ① 계산값을 동결한다   Calc_Lv/Calc_Num. "계산은 B, 운영은 A" 를 항상 말할 수 있어야 한다
+#   ② 사유를 분류로 받는다 자유 텍스트만 받으면 '중요해서' 가 쌓인다
+#   ③ 만료된다           만료 없는 예외는 아무도 이유를 모르는 관행이 된다.
+#                        만료일 = 조정일 + 조정 등급의 재검토 주기 (A30/B90/C180)
+#   ④ 권한이 필요하다     불출 승인과 같은 직급 기준을 쓴다
+#
+# Safe_tb 는 '운영값' 을 담는다 — 창고가 실제로 쓰는 숫자여야 하기 때문이다.
+# 기존 24개 화면은 Safe_tb 만 읽으므로 손댈 필요가 없고,
+# 왜 계산과 다른지는 Safe_Override_tb 가 설명한다.
+
+# 사유 분류. 점수제가 못 담는 사정만 모았다.
+OVERRIDE_REASONS = (
+    ("단종예정",   "단종·EOL 예정이라 남은 물량을 확보해야 한다"),
+    ("고객사지정", "고객사가 품번을 지정해 대체가 불가능하다"),
+    ("품질이슈",   "불량·클레임 이력이 있어 여유분이 필요하다"),
+    ("신규양산",   "신규 양산 초기라 사용량 실적을 믿기 어렵다"),
+    ("공급불안",   "협력사 사정으로 납기가 불안정하다"),
+    ("라인전용",   "특정 라인 전용이라 결품 시 대체 투입이 안 된다"),
+    ("기타",       "위에 없는 사유 — 설명에 자세히 적는다"),
+)
+_REASON_CODES = tuple(c for c, _ in OVERRIDE_REASONS)
+OVERRIDE_STATUS = ("적용", "만료", "해제")
+
+
+def next_ovr_id(conn, date):
+    """Ovr_ID 채번 — OVR + YYYYMMDD + 4자리."""
+    pre = "OVR" + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Ovr_ID) FROM Safe_Override_tb WHERE Ovr_ID LIKE ?", (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, int(last[-4:]) + 1 if last else 1)
+
+
+def safe_formula(grade, lead, daily):
+    """등급 · 리드타임 · 일평균 사용량으로 안전재고를 계산한다.
+
+    SAFE_STOCK_DESIGN 의 공식. wizard 와 수동 조정이 같은 식을 쓰도록 떼어냈다.
+        SS = Z x sqrt(L x sigma_d^2 + d^2 x sigma_L^2)
+    """
+    L, d = (lead or 0), (daily or 0)
+    if not L or not d:
+        return None
+    Z = Z_BY_GRADE.get(grade, 1.65)
+    k = {"A": 0.20, "B": 0.25, "C": 0.30}.get(grade, 0.25)
+    return round(Z * ((L * (d * k) ** 2 + d * d * (L * k) ** 2) ** 0.5))
+
+
+def active_overrides(conn, date=None):
+    """유효한 조정을 품번별로 돌려준다. 만료일이 지난 것은 빼고 본다."""
+    date = date or conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    return {r["P_ID"]: r for r in _rows(conn, """
+        SELECT o.*, u.Name AS worker, u.Position AS pos
+          FROM Safe_Override_tb o LEFT JOIN User_tb u ON o.EP_ID = u.EP_ID
+         WHERE o.Status = '적용' AND o.End_Date >= ?
+         ORDER BY o.P_ID, o.Ovr_ID
+    """, (date,))}
+
+
+def expire_overrides(conn, date=None):
+    """만료일이 지난 조정을 정리하고 그 품목을 계산값으로 되돌린다.
+
+    일괄 갱신 직전과 조회 화면에서 부른다. 만료를 방치하면 조정이 영구 관행이 된다.
+    """
+    date = date or conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    stale = _rows(conn, "SELECT * FROM Safe_Override_tb"
+                        " WHERE Status = '적용' AND End_Date < ?", (date,))
+    if not stale:
+        return []
+    safe = {r["P_ID"]: r for r in safety_stock_list(conn)}
+    with conn:
+        for o in stale:
+            r = safe.get(o["P_ID"])
+            if r:
+                # 만료 시점의 계산값으로 되돌린다 (동결값이 아니라 지금 계산값이다 —
+                # 그 사이 사용량이 변했으면 현재 실적을 따르는 게 맞다)
+                lv = r["grade"] if o["Ovr_Lv"] is None else o["Calc_Lv"]
+                num = safe_formula(lv, r["lead_time_real"] or r["lead_time"], r["daily_use"])
+                conn.execute("UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ? WHERE P_ID = ?",
+                             (lv, num if num is not None else r["safe_qty"], o["P_ID"]))
+            conn.execute("UPDATE Safe_Override_tb SET Status = '만료', Off_Date = ?,"
+                         " Off_Note = '만료일 경과로 자동 해제' WHERE Ovr_ID = ?",
+                         (date, o["Ovr_ID"]))
+    return [dict(o) for o in stale]
+
+
+def preview_override(conn, date, pid, ep_id, lv=None, min_qty=None,
+                     reason_cd=None, reason=None):
+    """조정 미리보기 — 계산값과 운영값의 차이를 보여준다. create 가 다시 부른다."""
+    pid = str(pid or "").strip()
+    row = next((r for r in safety_stock_list(conn) if r["P_ID"] == pid), None)
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+
+    cur = active_overrides(conn, date).get(pid)
+    if cur:
+        return None, ["이미 조정이 걸려 있습니다: %s (%s 까지). 해제 후 다시 등록하세요."
+                      % (cur["Ovr_ID"], cur["End_Date"])]
+
+    lv = (str(lv).strip().upper() if lv else None) or None
+    if lv is not None and lv not in ("A", "B", "C"):
+        return None, ["등급은 A · B · C 중 하나여야 합니다: %s" % lv]
+
+    if min_qty in ("", None):
+        min_qty = None
+    else:
+        try:
+            min_qty = int(min_qty)
+        except (TypeError, ValueError):
+            return None, ["최소 보유량이 숫자가 아닙니다."]
+        if min_qty < 0:
+            return None, ["최소 보유량은 음수일 수 없습니다."]
+        if min_qty == 0:
+            min_qty = None
+
+    if lv is None and min_qty is None:
+        return None, ["조정할 내용이 없습니다. 등급이나 최소 보유량 중 하나는 지정하세요."]
+
+    calc_lv = row["grade"]
+    calc_num = row["safe_qty"]
+    if lv is not None and lv == calc_lv and min_qty is None:
+        return None, ["계산 등급과 같습니다(%s). 조정할 이유가 없습니다." % calc_lv]
+
+    reason_cd = str(reason_cd or "").strip()
+    if reason_cd not in _REASON_CODES:
+        return None, ["사유 분류를 고르세요: %s" % " / ".join(_REASON_CODES)]
+    reason = (reason or "").strip()
+    if len(reason) < 5:
+        return None, ["사유를 5자 이상 적으세요. 나중에 이 조정을 설명할 근거가 됩니다."]
+
+    ep, errors = _approver(conn, ep_id, what="안전재고 조정")
+    if errors:
+        return None, errors
+
+    eff_lv = lv or calc_lv
+    lead = row["lead_time_real"] or row["lead_time"]
+    by_formula = safe_formula(eff_lv, lead, row["daily_use"])
+    if by_formula is None:
+        by_formula = calc_num or 0
+    eff_num = max(by_formula, min_qty or 0)
+
+    # 만료일 = 조정일 + 조정 등급의 재검토 주기. A 로 올리면 30일마다 다시 본다.
+    end = _add_days(date, REVIEW_CYCLE_DAYS.get(eff_lv, 90))
+    return {
+        "P_ID": pid, "P_N": row["P_N"], "Spec": row["Spec"], "supplier": row["supplier"],
+        "calc_lv": calc_lv, "calc_num": calc_num,
+        "ovr_lv": lv, "min_qty": min_qty,
+        "eff_lv": eff_lv, "by_formula": by_formula, "eff_num": eff_num,
+        "num_diff": eff_num - (calc_num or 0),
+        "lv_changed": eff_lv != calc_lv,
+        "min_binds": bool(min_qty and min_qty > by_formula),   # 하한이 공식을 이기는가
+        "stock": row["stock"], "daily": row["daily_use"], "lead": lead,
+        "price": row["P_Price"],
+        "amount_diff": int(round((eff_num - (calc_num or 0)) * (row["P_Price"] or 0))),
+        "reason_cd": reason_cd, "reason": reason,
+        "worker": ep, "start": date, "end": end,
+        "cycle": REVIEW_CYCLE_DAYS.get(eff_lv, 90),
+        "short_after": (row["stock"] or 0) < eff_num,
+    }, []
+
+
+def create_override(conn, date, pid, ep_id, lv=None, min_qty=None,
+                    reason_cd=None, reason=None):
+    """안전재고 수동 조정 등록. Safe_tb(운영값) + Safe_Override_tb(근거)."""
+    plan, errors = preview_override(conn, date, pid, ep_id, lv, min_qty, reason_cd, reason)
+    if errors:
+        return None, errors
+    with conn:
+        oid = next_ovr_id(conn, date)
+        conn.execute(
+            "INSERT INTO Safe_Override_tb"
+            " (Ovr_ID, P_ID, Ovr_Lv, Min_Qty, Calc_Lv, Calc_Num, Reason_Cd, Reason,"
+            "  Start_Date, End_Date, Status, EP_ID)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (oid, pid, plan["ovr_lv"], plan["min_qty"], plan["calc_lv"], plan["calc_num"],
+             plan["reason_cd"], plan["reason"], date, plan["end"], "적용",
+             plan["worker"]["EP_ID"]))
+        conn.execute("UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ? WHERE P_ID = ?",
+                     (plan["eff_lv"], plan["eff_num"], pid))
+        plan["Ovr_ID"] = oid
+    return plan, []
+
+
+def release_override(conn, date, oid, ep_id, note=None):
+    """조정 해제 — 계산값으로 되돌린다."""
+    oid = str(oid or "").strip()
+    o = conn.execute("SELECT * FROM Safe_Override_tb WHERE Ovr_ID = ?", (oid,)).fetchone()
+    if o is None:
+        return None, ["등록되지 않은 조정번호입니다: %s" % (oid or "(빈값)")]
+    if o["Status"] != "적용":
+        return None, ["이미 %s된 조정입니다: %s" % (o["Status"], oid)]
+
+    ep, errors = _approver(conn, ep_id, what="안전재고 조정")
+    if errors:
+        return None, errors
+
+    row = next((r for r in safety_stock_list(conn) if r["P_ID"] == o["P_ID"]), None)
+    lv = o["Calc_Lv"]
+    num = safe_formula(lv, (row["lead_time_real"] or row["lead_time"]) if row else None,
+                       row["daily_use"] if row else None)
+    if num is None:
+        num = o["Calc_Num"]
+    with conn:
+        conn.execute("UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ? WHERE P_ID = ?",
+                     (lv, num, o["P_ID"]))
+        conn.execute("UPDATE Safe_Override_tb SET Status = '해제', Off_Date = ?, Off_Note = ?"
+                     " WHERE Ovr_ID = ?", (date, (note or "").strip() or None, oid))
+    return {"Ovr_ID": oid, "P_ID": o["P_ID"], "Status": "해제",
+            "back_lv": lv, "back_num": num, "worker": ep}, []
+
+
+def override_list(conn, date=None):
+    """조정 현황 — 적용 중인 것과 지난 것. 만료 임박을 함께 센다."""
+    date = date or conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    rows = _rows(conn, """
+        SELECT o.*, p.P_N, p.Spec, p.P_Price, c.CP_N AS supplier,
+               s.Sf_Lv AS now_lv, s.Sf_Num AS now_num,
+               u.Name AS worker, u.Position AS pos,
+               CAST(julianday(o.End_Date) - julianday(?) AS INT) AS days_left
+          FROM Safe_Override_tb o
+          JOIN Product_tb p    ON o.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s  ON o.P_ID = s.P_ID
+          LEFT JOIN User_tb u  ON o.EP_ID = u.EP_ID
+         ORDER BY CASE o.Status WHEN '적용' THEN 0 ELSE 1 END, o.End_Date, o.Ovr_ID
+    """, (date,))
+    for r in rows:
+        r["eff_lv"] = r["Ovr_Lv"] or r["Calc_Lv"]
+        r["lv_changed"] = r["eff_lv"] != r["Calc_Lv"]
+        r["num_diff"] = (r["now_num"] or 0) - (r["Calc_Num"] or 0)
+        r["amount_diff"] = int(round(r["num_diff"] * (r["P_Price"] or 0)))
+        r["soon"] = bool(r["Status"] == "적용" and r["days_left"] is not None
+                         and 0 <= r["days_left"] <= 14)
+    live = [r for r in rows if r["Status"] == "적용"]
+    return {
+        "rows": rows, "base": date,
+        "reasons": [{"code": c, "desc": d} for c, d in OVERRIDE_REASONS],
+        "live_cnt": len(live),
+        "soon_cnt": len([r for r in live if r["soon"]]),
+        "lv_cnt": len([r for r in live if r["lv_changed"]]),
+        "min_cnt": len([r for r in live if r["Min_Qty"]]),
+        "qty_diff": sum(r["num_diff"] for r in live),
+        "amount_diff": sum(r["amount_diff"] for r in live),
+        "past_cnt": len(rows) - len(live),
+    }
 
 
 # ── 발주 시뮬레이터 ──────────────────────────────────────────

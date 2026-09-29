@@ -216,14 +216,35 @@ EMBED_MAP = {
 # 여기에 등록되지 않은 화면은 데이터 없이 렌더링된다(아직 더미데이터 화면).
 
 def _ctx_safety_stock():
+    """안전재고 200종 + 수동 조정 현황.
+
+    만료된 조정을 먼저 정리한다 — 방치하면 화면이 만료된 조정을 계속 보여준다.
+    """
     conn = db.connect()
     try:
+        db.expire_overrides(conn)
         rows = db.safety_stock_list(conn)
+        ovr = db.override_list(conn)
+        live = {r["P_ID"]: r for r in ovr["rows"] if r["Status"] == "적용"}
+        for r in rows:
+            o = live.get(r["P_ID"])
+            r["ovr"] = ({"Ovr_ID": o["Ovr_ID"], "calc_lv": o["Calc_Lv"],
+                         "calc_num": o["Calc_Num"], "min_qty": o["Min_Qty"],
+                         "reason_cd": o["Reason_Cd"], "reason": o["Reason"],
+                         "end": o["End_Date"], "days_left": o["days_left"],
+                         "worker": o["worker"], "pos": o["pos"],
+                         "lv_changed": o["lv_changed"], "soon": o["soon"]}
+                        if o else None)
         return {
             "rows": rows,
             "summary": db.safety_stock_summary(rows),
             "op_days": db.operating_days(conn),
             "z_by_grade": db.Z_BY_GRADE,
+            "override": ovr,
+            # 조정은 권한이 필요하다. 권한 없는 사람을 목록에 넣으면 고른 뒤에야 막힌다.
+            "workers": [w for w in db._rows(
+                conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")
+                if db.approval_limit(w["Position"]) != 0],
         }
     finally:
         conn.close()
@@ -735,6 +756,55 @@ def api_request_cancel():
 # ── 입고 등록 API ───────────────────────────────────────────
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
 # Lot_tb 와 Transaction_tb 를 한 트랜잭션에 함께 쓴다.
+
+@app.route("/api/override/preview", methods=["POST"])
+def api_override_preview():
+    """안전재고 조정 미리보기 — 계산값과 운영값의 차이 (저장 안 함)."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_override(
+            conn, _entry_date(body), body.get("P_ID"), body.get("EP_ID"),
+            body.get("lv"), body.get("min_qty"), body.get("reason_cd"), body.get("reason"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/override", methods=["POST"])
+def api_override_create():
+    """안전재고 수동 조정 등록 — Safe_tb(운영값) + Safe_Override_tb(근거)."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_override(
+            conn, _entry_date(body), body.get("P_ID"), body.get("EP_ID"),
+            body.get("lv"), body.get("min_qty"), body.get("reason_cd"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/override/release", methods=["POST"])
+def api_override_release():
+    """조정 해제 — 계산 등급으로 되돌리고 수량을 공식으로 다시 낸다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        res, errors = db.release_override(
+            conn, _entry_date(body), body.get("Ovr_ID"), body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": res})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 @app.route("/api/safety/preview", methods=["POST"])
 def api_safety_preview():

@@ -22,7 +22,7 @@ python app.py
 | /products | 자재 목록 |
 | /lot | LOT 상세 |
 | /bom | BOM 관리 |
-| /safety-stock | 안전재고 |
+| /safety-stock | 안전재고 ✎ |
 | /abc | ABC 분석 |
 | /inbound | 입고 처리 ✎ |
 | /disburse-request | 불출 요청 ✎ |
@@ -44,7 +44,7 @@ python app.py
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
-✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 승인(`Appr_Qty`·`Status`) · 불출 등록(`Transaction_tb`) · 안전재고 갱신(`Safe_tb`·`Update_Log_tb`). 발주 → 입고 → 불출 요청 → 승인 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
+✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 승인(`Appr_Qty`·`Status`) · 불출 등록(`Transaction_tb`) · 안전재고 갱신(`Safe_tb`·`Update_Log_tb`) · 안전재고 수동 조정(`Safe_Override_tb`). 발주 → 입고 → 불출 요청 → 승인 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
 
 > 승인되지 않은 요청은 불출 처리 화면에 내려가지 않습니다. 요청자 본인은 승인할 수 없고, 직급별 금액 한도(대리 300만 / 과장 1,000만 / 차장 3,000만 / 부장 무제한)를 넘으면 윗선이 처리합니다.
 

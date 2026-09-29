@@ -311,6 +311,25 @@ CREATE TABLE Update_Log_tb (
     PRIMARY KEY (P_ID, Updated_Date)
 );
 
+DROP TABLE IF EXISTS Safe_Override_tb;
+CREATE TABLE Safe_Override_tb (
+    Ovr_ID     TEXT PRIMARY KEY,   -- 조정번호 OVR+YYYYMMDD+4자리
+    P_ID       TEXT NOT NULL,
+    Ovr_Lv     TEXT,               -- 조정 등급. NULL 이면 등급은 계산값을 따른다
+    Min_Qty    INTEGER,            -- 최소 보유량 하한. NULL 이면 하한 없음
+    -- 등록 시점의 계산값을 동결한다. "계산은 B 인데 운영은 A" 를 말할 수 있어야 한다.
+    Calc_Lv    TEXT NOT NULL,
+    Calc_Num   INTEGER,
+    Reason_Cd  TEXT NOT NULL,      -- 사유 분류 (자유 텍스트만 받으면 '중요해서' 가 쌓인다)
+    Reason     TEXT NOT NULL,      -- 설명. 없으면 등록되지 않는다
+    Start_Date TEXT NOT NULL,
+    End_Date   TEXT NOT NULL,      -- 만료일 = 조정일 + 조정 등급의 재검토 주기
+    Status     TEXT NOT NULL,      -- 적용 / 만료 / 해제
+    EP_ID      TEXT NOT NULL,      -- 조정한 사람 (승인 권한 직급이어야 한다)
+    Off_Date   TEXT,               -- 해제·만료 처리일
+    Off_Note   TEXT
+);
+
 DROP TABLE IF EXISTS FG_tb;
 CREATE TABLE FG_tb (
     FG_ID    TEXT PRIMARY KEY,         -- 완제품 코드 FG001~FG015
@@ -361,6 +380,8 @@ CREATE INDEX idx_pd_pid         ON Purchase_Detail_tb(P_ID);
 CREATE INDEX idx_prod_wo        ON Production_tb(Work_Order);
 CREATE INDEX idx_prod_pid       ON Production_tb(P_ID);
 CREATE INDEX idx_prod_date      ON Production_tb(Prod_Date);
+CREATE INDEX idx_ovr_pid        ON Safe_Override_tb(P_ID);
+CREATE INDEX idx_ovr_status     ON Safe_Override_tb(Status);
 CREATE INDEX idx_product_cat    ON Product_tb(MainCat, SubCat, DetailCat);
 CREATE INDEX idx_bom_fg         ON BOM_tb(FG_ID);
 CREATE INDEX idx_bom_pid        ON BOM_tb(P_ID);

@@ -36,7 +36,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .stitle{font-size:16px;font-weight:600;margin-bottom:3px}
 .ssub{font-size:11px;color:var(--txt3);margin-bottom:12px;line-height:1.6}
 
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:11px 13px}
 .c-l{font-size:10px;color:var(--txt3);margin-bottom:5px;display:flex;align-items:center;gap:4px}
 .c-v{font-size:21px;font-weight:600;line-height:1.1}
@@ -85,6 +85,7 @@ tr:last-child td{border-bottom:none}
 .bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
 .bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
 .bac{background:var(--bg-ac);color:#185FA5}.bok{background:var(--bg-ok);color:#1D6E52}.bdn{background:var(--bg-dn);color:#9B1C1C}
+.bwn{background:var(--bg-wn);color:#854F0B}
 .empty{padding:26px;text-align:center;color:var(--txt3);font-size:11px}
 
 /* 등급 분포 비교 */
@@ -367,7 +368,8 @@ function render(){
             return '<tr><td><span class="pid">'+r.P_ID+'</span></td>'
                  + '<td>'+esc(r.P_N)+'</td>'
                  + '<td><span class="gr gr'+r.old_grade+'">'+r.old_grade+'</span>'
-                 +   (r.grade_changed ? '<span class="arw">→</span><span class="gr gr'+r.new_grade+'">'+r.new_grade+'</span>' : '') + '</td>'
+                 +   (r.grade_changed ? '<span class="arw">→</span><span class="gr gr'+r.new_grade+'">'+r.new_grade+'</span>' : '')
+                 +   (r.locked ? ' <span class="bg bwn" title="수동 조정으로 등급 고정">조정</span>' : '') + '</td>'
                  + '<td class="num">'+r.daily+'</td>'
                  + '<td class="num">'+r.lead_time+'일</td>'
                  + '<td class="num">'+nf(r.old_ss)+'</td>'
@@ -397,7 +399,13 @@ function render(){
           + Object.keys(why).map(function(k){ return esc(k) + ' ' + why[k]; }).join(' · ')
         : '')
     +   '<br>사람이 매기는 4개 점수(단가·대체·영향·공급)는 건드리지 않습니다. '
-    +   '자동 산정 대상은 <code>Usage_Score</code> 하나뿐입니다.</div>'
+    +   '자동 산정 대상은 <code>Usage_Score</code> 하나뿐입니다.'
+    +   (SUM.locked
+        ? '<br><b>수동 조정 ' + SUM.locked + '종은 등급을 고정</b>합니다 — 자동 갱신이 '
+          + '사람 판단을 덮지 않습니다. 수량만 현재 실적으로 다시 계산합니다.'
+          + (SUM.ovr_min ? ' 최소 보유량이 걸린 ' + SUM.ovr_min + '종은 하한을 지킵니다.' : '')
+        : '')
+    +   '</div>'
 
     + '<div class="cards">'
     +   '<div class="card"><div class="c-l"><i class="ti ti-target"></i>갱신 대상</div>'
@@ -409,6 +417,11 @@ function render(){
     +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>수량 변동</div>'
     +     '<div class="c-v">' + SUM.ss_changed + '<small>종</small></div>'
     +     '<div class="c-s">순증 ' + nf(SUM.ss_total_diff) + '개</div></div>'
+    +   (SUM.locked
+        ? '<div class="card"><div class="c-l"><i class="ti ti-adjustments"></i>수동 조정</div>'
+          + '<div class="c-v wn">' + SUM.locked + '<small>종</small></div>'
+          + '<div class="c-s">등급 고정 · 수량만 재계산</div></div>'
+        : '')
     +   '<div class="card"><div class="c-l"><i class="ti ti-calendar-plus"></i>실행일</div>'
     +     '<div class="c-v" style="font-size:14px">' + ENTRY + '</div>'
     +     '<div class="c-s">다음 예정일 = 실행일 + 등급별 주기</div></div>'
