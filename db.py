@@ -159,6 +159,9 @@ def safety_stock_list(conn):
                CASE WHEN s.Usage_Score IS NULL THEN 1 ELSE 0 END AS is_new,
                COALESCE(u.out_qty, 0)             AS used_qty,
                COALESCE(u.out_cnt, 0)             AS used_cnt,
+               -- 연간 사용금액 = 불출수량 x 단가. ABC 파레토와 같은 기준이라
+               -- 이 값 내림차순이 곧 파레토 순위다 (abc_analysis 를 다시 조인하지 않는다)
+               ROUND(COALESCE(u.out_qty, 0) * p.P_Price) AS use_amount,
                ROUND(COALESCE(u.out_qty, 0) * 1.0 / {days}, 2) AS daily_use,
                ul.Updated_Date                    AS updated_date,
                ul.Next_Date                       AS next_date

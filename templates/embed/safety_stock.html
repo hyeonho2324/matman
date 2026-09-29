@@ -77,6 +77,10 @@ tbody tr.on{background:var(--bg-ac)}
 .sc-v{width:13px;text-align:right;font-weight:500;font-size:10px;color:var(--txt3)}
 .sum{padding:7px 10px;background:var(--bg-ac);display:flex;justify-content:space-between;align-items:center;font-size:11px}
 .sum b{font-size:14px}
+th{cursor:pointer;user-select:none}
+th:hover{color:var(--txt2)}
+th.on{color:var(--acc)}
+th .sar{font-size:9px;color:var(--acc);margin-left:2px}
 .fxbtn{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;border:0.5px solid var(--border-s);background:var(--s0);color:var(--txt3);font-size:9px;font-family:inherit;cursor:pointer}
 .fxbtn:hover{background:var(--s1);color:var(--txt2)}
 .fx{padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.7;color:var(--txt2);background:var(--s1);border-bottom:0.5px solid var(--border);white-space:pre-wrap;word-break:break-all}
@@ -168,7 +172,8 @@ tbody tr.on{background:var(--bg-ac)}
           <th onclick="sortBy('P_ID')">자재코드</th>
           <th onclick="sortBy('P_N')">자재명 / 규격</th>
           <th class="hide-sm" onclick="sortBy('supplier')">협력사</th>
-          <th onclick="sortBy('grade')">등급</th>
+          <th onclick="sortBy('pareto')">등급</th>
+          <th class="num hide-sm" onclick="sortBy('use_amount')">연간 사용금액</th>
           <th class="num" onclick="sortBy('safe_qty')">안전재고</th>
           <th class="num" onclick="sortBy('stock')">현재고</th>
           <th class="num" onclick="sortBy('diff')">과부족</th>
@@ -201,11 +206,16 @@ const CUT    = {"new":{A:10,B:6}, "old":{A:13,B:8}};
 const OVR     = {{ override|tojson }};
 const WORKERS = {{ workers|tojson }};
 const REASONS = OVR.reasons;
-let filter='all', sortKey='diff', sortAsc=true, sel=null, ovbusy=false;
+// 기본 정렬은 파레토 순이다 — 등급 A→B→C, 그 안에서 연간 사용금액 내림차순.
+// 과부족순(기존 기본값)은 등급이 뒤섞여 무슨 기준인지 안 보였다.
+let filter='all', sortKey='pareto', sortAsc=true, sel=null, ovbusy=false;
+const GRANK = {A:0, B:1, C:2};
 // 공식 칸은 기본으로 접는다 — 상세 패널이 길어져 아래 내용이 밀린다.
 // 한 번 펼치면 다른 품목을 눌러도 펼친 상태를 유지한다.
 let fxOpen = false;
 const nf = n => (n==null ? '-' : Number(n).toLocaleString());
+const won = n => !n ? '-' : (n>=100000000 ? (n/100000000).toFixed(1)+'억'
+                 : (n>=10000 ? Math.round(n/10000).toLocaleString()+'만' : nf(n)));
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function view(){
@@ -221,6 +231,14 @@ function view(){
     return true;
   });
   r.sort(function(a,b){
+    if(sortKey==='pareto'){
+      // 등급이 먼저, 같은 등급 안에서는 사용금액이 큰 것부터.
+      // 사용금액 내림차순이 곧 ABC 파레토 순위다.
+      const ga = GRANK[a.grade]==null ? 9 : GRANK[a.grade];
+      const gb = GRANK[b.grade]==null ? 9 : GRANK[b.grade];
+      const v = (ga-gb) || ((b.use_amount||0)-(a.use_amount||0)) || a.P_ID.localeCompare(b.P_ID);
+      return sortAsc ? v : -v;
+    }
     let x=a[sortKey], y=b[sortKey];
     if(typeof x==='string'||typeof y==='string'){
       x=(x||'')+''; y=(y||'')+'';
@@ -233,10 +251,11 @@ function view(){
 
 function render(){
   const r=view();
+  markSort();
   document.getElementById('cnt').textContent=r.length+'종 표시';
   const tb=document.getElementById('tb');
   if(!r.length){
-    tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 품목이 없습니다.</div></td></tr>';
+    tb.innerHTML='<tr><td colspan="9"><div class="empty">조건에 맞는 품목이 없습니다.</div></td></tr>';
     return;
   }
   tb.innerHTML=r.map(function(x){
@@ -247,6 +266,7 @@ function render(){
       + '<td><div class="nm">' + esc(x.P_N) + '</div><div class="sp">' + esc(x.Spec) + '</div></td>'
       + '<td class="hide-sm">' + esc(x.supplier||'-') + (x.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</td>'
       + '<td><span class="gr gr' + x.grade + '">' + x.grade + '</span></td>'
+      + '<td class="num hide-sm">' + won(x.use_amount) + '</td>'
       + '<td class="num">' + nf(x.safe_qty) + '</td>'
       + '<td class="num">' + nf(x.stock) + '<div class="bar"><i style="width:' + pct + '%;background:' + col + '"></i></div></td>'
       + '<td class="num ' + (x.diff<0?'short':'okv') + '">' + (x.diff>0?'+':'') + nf(x.diff) + '</td>'
@@ -500,17 +520,42 @@ function setF(f){
   render();
 }
 
+// 금액은 큰 것부터 보는 게 맞다. 첫 클릭 방향만 열마다 다르게 준다.
+const DESC_FIRST = {use_amount:1};
 function sortBy(k){
-  if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; }
+  if(sortKey===k){ sortAsc=!sortAsc; }
+  else { sortKey=k; sortAsc=!DESC_FIRST[k]; }
   render();
+}
+
+// 어느 열로 정렬 중인지 표 머리에 표시한다 — 없으면 순서의 근거가 안 보인다.
+function markSort(){
+  const ths = document.querySelectorAll('thead th');
+  for(let i=0;i<ths.length;i++){
+    const th = ths[i];
+    const oc = th.getAttribute('onclick') || '';
+    const key = oc.indexOf("sortBy('") >= 0
+      ? oc.slice(oc.indexOf("sortBy('")+8, oc.indexOf("')", oc.indexOf("sortBy('")))
+      : null;
+    const mark = th.querySelector('.sar');
+    if(mark) mark.remove();
+    const on = key && key === sortKey;
+    th.classList.toggle('on', !!on);
+    if(on){
+      const sp = document.createElement('span');
+      sp.className = 'sar';
+      sp.textContent = sortAsc ? '\u25B2' : '\u25BC';
+      th.appendChild(sp);
+    }
+  }
 }
 
 function dl(){
   const r=view();
-  const head=['자재코드','자재명','규격','협력사','등급','안전재고','현재고','과부족','리드타임'];
+  const head=['자재코드','자재명','규격','협력사','등급','연간사용금액','안전재고','현재고','과부족','리드타임'];
   const lines=[head.join(',')];
   r.forEach(function(x){
-    lines.push([x.P_ID,x.P_N,x.Spec,x.supplier,x.grade,x.safe_qty,x.stock,x.diff,x.lead_time]
+    lines.push([x.P_ID,x.P_N,x.Spec,x.supplier,x.grade,x.use_amount,x.safe_qty,x.stock,x.diff,x.lead_time]
       .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
   });
   const a=document.createElement('a');
