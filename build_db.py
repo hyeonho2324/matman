@@ -216,8 +216,11 @@ CREATE TABLE Disburse_Req_tb (
     Plan_Qty   INTEGER,              -- 생산 목표 대수 (실적이 아니라 계획이다)
     Work_Order TEXT,                 -- 작업지시번호 WO+YYYYMMDD+4자리
     EP_ID      TEXT NOT NULL,        -- 요청자 (생산 작업자)
-    Status     TEXT NOT NULL,        -- 요청 / 일부불출 / 불출완료 / 취소
-    Note       TEXT
+    Status     TEXT NOT NULL,        -- 요청 / 승인 / 반려 / 일부불출 / 불출완료 / 취소
+    Note       TEXT,
+    Appr_EP_ID TEXT,                 -- 승인자 (자재팀). 요청자와 같을 수 없다
+    Appr_Date  TEXT,                 -- 승인·반려일
+    Appr_Note  TEXT                  -- 승인 의견 / 반려 사유(반려는 필수)
 );
 
 DROP TABLE IF EXISTS Disburse_Req_Item_tb;
@@ -231,6 +234,7 @@ CREATE TABLE Disburse_Req_Item_tb (
     Req_Qty   INTEGER NOT NULL,      -- 실제 요청 수량
     Pkg_Unit  INTEGER,               -- 요청 시점 포장단위
     Is_Manual TEXT NOT NULL,         -- Y = 포장단위 배수가 아닌 직접 입력
+    Appr_Qty  INTEGER,               -- 승인 수량. 미승인은 NULL, 0 이면 그 라인 반려
     Done_Qty  INTEGER NOT NULL DEFAULT 0,   -- 실제 불출된 누계
     PRIMARY KEY (Req_ID, Req_num)
 );

@@ -2767,9 +2767,15 @@ def _req_line(conn, req):
     if row is None:
         return None, ["등록되지 않은 요청 라인입니다: %s #%d" % (rid or "(빈값)", num)]
     d = dict(row)
-    if d["Status"] == "취소":
-        return None, ["취소된 요청입니다: %s" % rid]
-    d["left_qty"] = max((d["Req_Qty"] or 0) - (d["Done_Qty"] or 0), 0)
+    if d["Status"] in ("요청", "반려", "취소"):
+        return None, ["%s 상태의 요청은 불출할 수 없습니다: %s (승인 후 처리하세요)"
+                      % (d["Status"], rid)]
+    if d["Appr_Qty"] is None:
+        return None, ["승인되지 않은 요청 라인입니다: %s #%d" % (rid, num)]
+    # 불출 가능량의 기준은 요청 수량이 아니라 승인 수량이다
+    d["left_qty"] = max((d["Appr_Qty"] or 0) - (d["Done_Qty"] or 0), 0)
+    if d["Appr_Qty"] == 0:
+        return None, ["승인 과정에서 제외된 요청 라인입니다: %s #%d" % (rid, num)]
     if d["left_qty"] <= 0:
         return None, ["이미 전량 불출된 요청 라인입니다: %s #%d" % (rid, num)]
     return d, []
@@ -3321,7 +3327,27 @@ def create_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
 #              잘못된 요청이 검토 없이 그대로 창고를 비운다.
 #   반자동   — 산출 근거(BOM 소요량·현재고)가 요청에 남아 자재팀이 검증할 수 있다.
 
-REQ_STATUS = ("요청", "일부불출", "불출완료", "취소")
+REQ_STATUS = ("요청", "승인", "반려", "일부불출", "불출완료", "취소")
+
+# 요청은 곧바로 창고를 비우지 못한다. 자재팀 승인이 관문이다.
+#
+#   요청 ─┬─ 승인 ─→ 일부불출 ─→ 불출완료
+#         ├─ 반려          (사유 필수. 되돌릴 수 없다)
+#         └─ 취소          (요청자 스스로 거둠)
+#
+# 승인 없이 불출하면 생산이 올린 숫자가 그대로 재고를 깎는다.
+# 요청 근거(소요량·현장·재고)를 자재팀이 한 번 보고 수량을 조정할 자리가 필요하다.
+
+# 직급별 승인 한도. 금액이 크면 윗선이 봐야 한다.
+# User_tb 에 부서가 없어 직급으로만 가른다 — 있는 데이터로 세울 수 있는 선이다.
+APPROVAL_LIMIT = {"사원": 0, "주임": 0, "대리": 3000000,
+                  "과장": 10000000, "차장": 30000000, "부장": None}  # None = 무제한
+_LIMIT_DEFAULT = 0      # 모르는 직급은 권한 없음으로 본다 (열어두면 통제가 아니다)
+
+
+def approval_limit(position):
+    """직급의 승인 한도. None 이면 무제한, 0 이면 승인 권한 없음."""
+    return APPROVAL_LIMIT.get(position, _LIMIT_DEFAULT)
 
 
 def next_req_id(conn, date):
@@ -3568,13 +3594,20 @@ def request_list(conn, limit=60):
     reqs = _rows(conn, """
         SELECT r.Req_ID, r.Req_Date, r.FG_ID, f.FG_N, r.Plan_Qty, r.Work_Order,
                r.EP_ID, u.Name AS worker, u.Position AS pos, r.Status, r.Note,
+               r.Appr_EP_ID, r.Appr_Date, r.Appr_Note,
+               a.Name AS approver, a.Position AS appr_pos,
                COUNT(i.Req_num)        AS line_cnt,
                SUM(i.Req_Qty)          AS req_qty,
+               SUM(COALESCE(i.Appr_Qty, i.Req_Qty)) AS eff_qty,
+               SUM(i.Appr_Qty)         AS appr_qty,
                SUM(i.Done_Qty)         AS done_qty,
-               SUM(CASE WHEN i.Is_Manual = 'Y' THEN 1 ELSE 0 END) AS manual_cnt
+               SUM(CASE WHEN i.Is_Manual = 'Y' THEN 1 ELSE 0 END) AS manual_cnt,
+               SUM(CASE WHEN i.Appr_Qty IS NOT NULL
+                         AND i.Appr_Qty <> i.Req_Qty THEN 1 ELSE 0 END) AS cut_cnt
           FROM Disburse_Req_tb r
           LEFT JOIN FG_tb f   ON r.FG_ID = f.FG_ID
           LEFT JOIN User_tb u ON r.EP_ID = u.EP_ID
+          LEFT JOIN User_tb a ON r.Appr_EP_ID = a.EP_ID
           LEFT JOIN Disburse_Req_Item_tb i ON i.Req_ID = r.Req_ID
          GROUP BY r.Req_ID
          ORDER BY r.Req_Date DESC, r.Req_ID DESC
@@ -3591,32 +3624,51 @@ def request_list(conn, limit=60):
           LEFT JOIN Safe_tb s  ON i.P_ID = s.P_ID
          ORDER BY i.Req_ID, i.Req_num
     """):
-        r["left_qty"] = max((r["Req_Qty"] or 0) - (r["Done_Qty"] or 0), 0)
+        # 불출 가능량의 기준은 승인 수량이다. 아직 미승인이면 요청 수량으로 본다.
+        r["eff_qty"] = r["Req_Qty"] if r["Appr_Qty"] is None else r["Appr_Qty"]
+        r["cut"] = r["Appr_Qty"] is not None and r["Appr_Qty"] != r["Req_Qty"]
+        r["left_qty"] = max((r["eff_qty"] or 0) - (r["Done_Qty"] or 0), 0)
         r["short"] = max(r["left_qty"] - r["stock"], 0)
-        r["amount"] = int(round((r["Req_Qty"] or 0) * (r["P_Price"] or 0)))
+        r["amount"] = int(round((r["eff_qty"] or 0) * (r["P_Price"] or 0)))
+        r["req_amount"] = int(round((r["Req_Qty"] or 0) * (r["P_Price"] or 0)))
         items.setdefault(r["Req_ID"], []).append(r)
     for r in reqs:
         r["items"] = items.get(r["Req_ID"], [])
         r["left_qty"] = sum(x["left_qty"] for x in r["items"])
         r["amount"] = sum(x["amount"] for x in r["items"])
+        r["req_amount"] = sum(x["req_amount"] for x in r["items"])
         r["short_cnt"] = sum(1 for x in r["items"] if x["short"] > 0)
-        r["pct"] = _pct(r["done_qty"] or 0, r["req_qty"] or 0)
+        r["cut_cnt"] = sum(1 for x in r["items"] if x["cut"])
+        r["pct"] = _pct(r["done_qty"] or 0, r["eff_qty"] or 0)
     return reqs
 
 
 def open_requests(conn):
-    """아직 다 불출되지 않은 요청. 불출 처리 화면이 쓴다."""
+    """불출 처리 화면이 집어갈 요청.
+
+    '요청' 상태는 여기 오지 않는다 — 승인을 거쳐야 창고가 열린다.
+    """
     return [r for r in request_list(conn)
-            if r["Status"] in ("요청", "일부불출") and r["left_qty"] > 0]
+            if r["Status"] in ("승인", "일부불출") and r["left_qty"] > 0]
 
 
 def _refresh_req_status(conn, rid):
-    """요청 품목의 불출 누계로 요청서 상태를 다시 매긴다."""
+    """요청 품목의 불출 누계로 요청서 상태를 다시 매긴다.
+
+    완료 판정 기준은 요청 수량이 아니라 **승인 수량**이다. 자재팀이 깎은 만큼만
+    나가면 그 요청은 끝난 것이고, 요청 수량을 기준으로 삼으면 영원히 미완으로 남는다.
+    """
     row = conn.execute(
-        "SELECT SUM(Req_Qty), SUM(Done_Qty) FROM Disburse_Req_Item_tb WHERE Req_ID = ?",
-        (rid,)).fetchone()
-    req, done = (row[0] or 0), (row[1] or 0)
-    st = "불출완료" if done >= req else ("일부불출" if done > 0 else "요청")
+        "SELECT SUM(COALESCE(Appr_Qty, Req_Qty)), SUM(Done_Qty),"
+        "       SUM(CASE WHEN Appr_Qty IS NULL THEN 0 ELSE 1 END)"
+        "  FROM Disburse_Req_Item_tb WHERE Req_ID = ?", (rid,)).fetchone()
+    eff, done, appr = (row[0] or 0), (row[1] or 0), (row[2] or 0)
+    if done > 0 and done >= eff:
+        st = "불출완료"
+    elif done > 0:
+        st = "일부불출"
+    else:
+        st = "승인" if appr else "요청"
     conn.execute("UPDATE Disburse_Req_tb SET Status = ? WHERE Req_ID = ?", (st, rid))
     return st
 
@@ -3626,8 +3678,8 @@ def cancel_request(conn, rid, ep_id=None):
     r = conn.execute("SELECT Status FROM Disburse_Req_tb WHERE Req_ID = ?", (rid,)).fetchone()
     if r is None:
         return None, ["등록되지 않은 요청번호입니다: %s" % (rid or "(빈값)")]
-    if r["Status"] == "취소":
-        return None, ["이미 취소된 요청입니다."]
+    if r["Status"] in ("취소", "반려"):
+        return None, ["이미 %s된 요청입니다." % r["Status"]]
     done = conn.execute(
         "SELECT COALESCE(SUM(Done_Qty),0) FROM Disburse_Req_Item_tb WHERE Req_ID = ?",
         (rid,)).fetchone()[0]
@@ -3636,6 +3688,222 @@ def cancel_request(conn, rid, ep_id=None):
     with conn:
         conn.execute("UPDATE Disburse_Req_tb SET Status = '취소' WHERE Req_ID = ?", (rid,))
     return {"Req_ID": rid, "Status": "취소"}, []
+# ── 불출 승인 ───────────────────────────────────────────────
+#
+# 생산이 올린 요청을 자재팀이 한 번 보고 통과시키는 자리다.
+# 여기가 없으면 생산이 입력한 숫자가 검토 없이 그대로 창고를 깎는다.
+#
+# 승인자는 라인별로 수량을 깎을 수 있다(부분 승인). 요청보다 늘리지는 못한다 —
+# 늘려야 하면 근거(BOM 소요량·현장 보유)가 바뀐 것이므로 새 요청으로 올려야 한다.
+#
+# 통제 두 가지
+#   자기결재 금지  요청자와 승인자가 같을 수 없다
+#   금액 한도      직급별 한도를 넘으면 윗선이 처리한다 (APPROVAL_LIMIT)
+
+
+def _approver(conn, ep_id, amount=None):
+    """승인자 검증 — 등록 여부 · 승인 권한 · 금액 한도."""
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["승인자를 선택하세요."]
+    w = conn.execute(
+        "SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?", (ep_id,)).fetchone()
+    if w is None:
+        return None, ["등록되지 않은 담당자입니다: %s" % ep_id]
+    lim = approval_limit(w["Position"])
+    if lim == 0:
+        return None, ["%s %s 직급은 불출 승인 권한이 없습니다." % (w["Name"], w["Position"])]
+    if lim is not None and amount is not None and amount > lim:
+        return None, ["%s %s의 승인 한도(%s원)를 넘습니다. 승인 금액 %s원 — 상위 직급이 처리해야 합니다."
+                      % (w["Name"], w["Position"], format(lim, ","), format(int(amount), ","))]
+    return {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"],
+            "limit": lim}, []
+
+
+def _req_for_approval(conn, rid):
+    """승인 대상 요청서를 꺼낸다. 이미 처리된 건은 여기서 막는다."""
+    rid = str(rid or "").strip()
+    r = conn.execute("""
+        SELECT r.*, f.FG_N, u.Name AS worker, u.Position AS pos
+          FROM Disburse_Req_tb r
+          LEFT JOIN FG_tb f   ON r.FG_ID = f.FG_ID
+          LEFT JOIN User_tb u ON r.EP_ID = u.EP_ID
+         WHERE r.Req_ID = ?
+    """, (rid,)).fetchone()
+    if r is None:
+        return None, ["등록되지 않은 요청번호입니다: %s" % (rid or "(빈값)")]
+    if r["Status"] != "요청":
+        return None, ["%s 상태의 요청은 승인 대상이 아닙니다: %s" % (r["Status"], rid)]
+    return dict(r), []
+
+
+def preview_approval(conn, rid, ep_id, lines=None, note=None):
+    """승인 미리보기 — 라인별 승인 수량을 확정하고 금액·한도를 검증한다.
+
+    lines 는 {Req_num: 승인수량}. 주지 않은 라인은 요청 수량 그대로 승인한다.
+    approve_request 가 저장 직전에 이 함수를 다시 불러 재검증한다.
+    """
+    req, errors = _req_for_approval(conn, rid)
+    if errors:
+        return None, errors
+
+    want = {}
+    for k, v in (lines or {}).items():
+        try:
+            want[int(k)] = int(v)
+        except (TypeError, ValueError):
+            return None, ["승인 수량이 숫자가 아닙니다: %s" % k]
+
+    rows = _rows(conn, f"""
+        WITH stock AS ({STOCK_SQL})
+        SELECT i.*, p.P_N, p.Spec, p.P_Price, s.Sf_Lv AS grade, s.Sf_Num AS safe_qty,
+               COALESCE(st.stock, 0) AS stock
+          FROM Disburse_Req_Item_tb i
+          JOIN Product_tb p   ON i.P_ID = p.P_ID
+          LEFT JOIN stock st  ON i.P_ID = st.P_ID
+          LEFT JOIN Safe_tb s ON i.P_ID = s.P_ID
+         WHERE i.Req_ID = ?
+         ORDER BY i.Req_num
+    """, (rid,))
+    if not rows:
+        return None, ["품목이 없는 요청입니다: %s" % rid]
+
+    known = {r["Req_num"] for r in rows}
+    for n in want:
+        if n not in known:
+            return None, ["요청에 없는 라인 번호입니다: #%d" % n]
+
+    items, amount, cut_cnt, short_cnt = [], 0, 0, 0
+    for r in rows:
+        q = want.get(r["Req_num"], r["Req_Qty"])
+        if q < 0:
+            return None, ["승인 수량은 음수일 수 없습니다: #%d %s" % (r["Req_num"], r["P_ID"])]
+        if q > r["Req_Qty"]:
+            return None, ["요청 수량보다 많이 승인할 수 없습니다: #%d %s (요청 %s / 승인 %s)"
+                          % (r["Req_num"], r["P_ID"],
+                             format(r["Req_Qty"], ","), format(q, ","))]
+        amt = int(round(q * (r["P_Price"] or 0)))
+        short = max(q - r["stock"], 0)
+        cut = q != r["Req_Qty"]
+        cut_cnt += 1 if cut else 0
+        short_cnt += 1 if short > 0 else 0
+        amount += amt
+        items.append({
+            "Req_num": r["Req_num"], "P_ID": r["P_ID"], "P_N": r["P_N"],
+            "Spec": r["Spec"], "grade": r["grade"], "price": r["P_Price"],
+            "need_qty": r["Need_Qty"], "site_qty": r["Site_Qty"],
+            "stock_at_req": r["Stock_Qty"], "stock": r["stock"],
+            "pkg": r["Pkg_Unit"], "manual": r["Is_Manual"] == "Y",
+            "req_qty": r["Req_Qty"], "appr_qty": q, "cut": cut,
+            "diff": q - r["Req_Qty"], "short": short, "amount": amt,
+            "safe_qty": r["safe_qty"],
+            "below_safe": bool(r["safe_qty"] and r["stock"] - q < r["safe_qty"]),
+        })
+
+    if amount <= 0 or not any(it["appr_qty"] > 0 for it in items):
+        return None, ["승인 수량이 전부 0 입니다. 전량 거절이면 반려로 처리하세요."]
+
+    appr, errors = _approver(conn, ep_id, amount)
+    if errors:
+        return None, errors
+    if appr["EP_ID"] == req["EP_ID"]:
+        return None, ["요청자 본인은 승인할 수 없습니다: %s %s (자기결재 금지)"
+                      % (req["worker"] or "", req["pos"] or "")]
+
+    return {
+        "Req_ID": req["Req_ID"], "Req_Date": req["Req_Date"],
+        "FG_ID": req["FG_ID"], "FG_N": req["FG_N"], "Plan_Qty": req["Plan_Qty"],
+        "Work_Order": req["Work_Order"], "Note": req["Note"],
+        "requester": {"EP_ID": req["EP_ID"], "Name": req["worker"], "Position": req["pos"]},
+        "approver": appr, "appr_note": (note or "").strip() or None,
+        "items": items, "line_cnt": len(items),
+        "req_qty": sum(it["req_qty"] for it in items),
+        "appr_qty": sum(it["appr_qty"] for it in items),
+        "req_amount": sum(int(round(it["req_qty"] * (it["price"] or 0))) for it in items),
+        "amount": amount, "cut_cnt": cut_cnt, "short_cnt": short_cnt,
+        "Status": "승인",
+    }, []
+
+
+def approve_request(conn, date, rid, ep_id, lines=None, note=None):
+    """불출 승인 — 라인별 승인 수량을 확정하고 요청서를 승인 상태로 넘긴다."""
+    plan, errors = preview_approval(conn, rid, ep_id, lines, note)
+    if errors:
+        return None, errors
+    with conn:                                   # 요청서와 라인이 함께 넘어간다
+        for it in plan["items"]:
+            conn.execute(
+                "UPDATE Disburse_Req_Item_tb SET Appr_Qty = ?"
+                " WHERE Req_ID = ? AND Req_num = ?",
+                (it["appr_qty"], rid, it["Req_num"]))
+        conn.execute(
+            "UPDATE Disburse_Req_tb"
+            "   SET Status = ?, Appr_EP_ID = ?, Appr_Date = ?, Appr_Note = ?"
+            " WHERE Req_ID = ?",
+            ("승인", plan["approver"]["EP_ID"], date, plan["appr_note"], rid))
+    plan["Appr_Date"] = date
+    return plan, []
+
+
+def reject_request(conn, date, rid, ep_id, reason=None):
+    """불출 반려. 사유 없이는 반려하지 않는다 — 생산이 무엇을 고쳐 올릴지 알아야 한다."""
+    req, errors = _req_for_approval(conn, rid)
+    if errors:
+        return None, errors
+    reason = (reason or "").strip()
+    if not reason:
+        return None, ["반려 사유를 입력하세요. 생산이 무엇을 고쳐 다시 올릴지 알 수 없습니다."]
+
+    appr, errors = _approver(conn, ep_id)        # 반려는 금액 한도를 보지 않는다
+    if errors:
+        return None, errors
+    if appr["EP_ID"] == req["EP_ID"]:
+        return None, ["요청자 본인은 반려할 수 없습니다. 본인 요청은 취소로 거두세요."]
+
+    with conn:
+        conn.execute(
+            "UPDATE Disburse_Req_tb"
+            "   SET Status = ?, Appr_EP_ID = ?, Appr_Date = ?, Appr_Note = ?"
+            " WHERE Req_ID = ?",
+            ("반려", appr["EP_ID"], date, reason, rid))
+    return {"Req_ID": rid, "Status": "반려", "approver": appr,
+            "Appr_Date": date, "reason": reason,
+            "requester": {"EP_ID": req["EP_ID"], "Name": req["worker"],
+                          "Position": req["pos"]}}, []
+
+
+def approval_queue(conn):
+    """승인 화면 데이터 — 대기 목록 · 처리 이력 · 승인 가능한 담당자."""
+    reqs = request_list(conn)
+    waiting = [r for r in reqs if r["Status"] == "요청"]
+    decided = [r for r in reqs if r["Appr_EP_ID"]]
+
+    # 승인 권한이 있는 담당자만 내려보낸다. 한도를 함께 줘서 화면이 미리 거른다.
+    approvers = []
+    for u in _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name"):
+        lim = approval_limit(u["Position"])
+        if lim == 0:
+            continue
+        approvers.append({"EP_ID": u["EP_ID"], "Name": u["Name"],
+                          "Position": u["Position"], "limit": lim})
+    approvers.sort(key=lambda a: (a["limit"] is not None, -(a["limit"] or 0)))
+
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    # 승인일은 기준일 다음 날이다. 요청일보다 앞서면 결재선 날짜가 거꾸로 붙는다.
+    entry = max(_add_days(base, 1), max((r["Req_Date"] for r in waiting), default=""))
+    return {
+        "base": base, "entry": entry,
+        "waiting": waiting, "decided": decided[:40], "approvers": approvers,
+        "limits": [{"pos": k, "limit": v} for k, v in APPROVAL_LIMIT.items()],
+        "wait_cnt": len(waiting),
+        "wait_amt": sum(r["amount"] for r in waiting),
+        "wait_line": sum(r["line_cnt"] or 0 for r in waiting),
+        "short_cnt": sum(1 for r in waiting if r["short_cnt"]),
+        "appr_cnt": sum(1 for r in reqs if r["Status"] in ("승인", "일부불출", "불출완료")),
+        "rej_cnt": sum(1 for r in reqs if r["Status"] == "반려"),
+    }
+
+
 # ── 입고 클레임 (불량 · 반품 · 대체) ─────────────────────────
 #
 # 물건이 실제로 창고에 왔으면 일단 입고한다. 불량이라고 LOT 을 안 만들면

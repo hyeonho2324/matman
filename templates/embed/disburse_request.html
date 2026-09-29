@@ -145,6 +145,8 @@ let who  = WORKERS.length ? WORKERS[0].EP_ID : '';
 let note = '';
 let busy = false;
 
+const ST_CLS = {'요청':'bac', '승인':'bac', '반려':'bdn',
+                '일부불출':'bwn', '불출완료':'bok', '취소':'bmu'};
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
@@ -232,7 +234,7 @@ function drawList(){
         + '<div class="it-s">부품 ' + r.part_cnt + '종 · 대당 ' + won(r.unit_cost) + '원 · 생산가능 ' + nf(r.can_make) + '대</div>'
         + '</div>';
     }
-    const cls = r.Status==='불출완료' ? 'bok' : (r.Status==='취소' ? 'bmu' : (r.Status==='일부불출' ? 'bwn' : 'bac'));
+    const cls = ST_CLS[r.Status] || 'bac';
     return '<div class="it ' + (sel===r.Req_ID?'on':'') + '" data-id="' + r.Req_ID + '" onclick="pick(this.dataset.id)">'
       + '<div class="it-h"><span class="rid">' + r.Req_ID + '</span>'
       +   '<span class="bg ' + cls + '">' + r.Status + '</span></div>'
@@ -406,12 +408,19 @@ function sync(){
 function drawReq(){
   const r = REQUESTS.filter(function(x){ return x.Req_ID === sel; })[0];
   if(!r) return;
-  const cls = r.Status==='불출완료' ? 'a-ok' : (r.Status==='취소' ? 'a-wn' : 'a-ac');
+  const cls = r.Status==='불출완료' ? 'a-ok'
+            : (r.Status==='취소' || r.Status==='반려' ? 'a-wn' : 'a-ac');
   document.getElementById('right').innerHTML =
     '<div class="alert ' + cls + '"><i class="ti ti-clipboard-list"></i> '
   +   '<b>' + r.Req_ID + '</b> · ' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대 · '
   +   '작업지시 ' + esc(r.Work_Order||'-') + ' · ' + r.Req_Date + ' · '
   +   esc(r.worker||'-') + ' ' + esc(r.pos||'') + ' · <b>' + r.Status + '</b>'
+  +   (r.Appr_EP_ID
+        ? ' · ' + (r.Status==='반려' ? '반려' : '승인') + ' ' + esc(r.approver||'')
+          + ' ' + esc(r.appr_pos||'') + ' ' + esc(r.Appr_Date||'')
+          + (r.cut_cnt ? ' (' + r.cut_cnt + '개 라인 조정)' : '')
+          + (r.Appr_Note ? ' — ' + esc(r.Appr_Note) : '')
+        : ' · 승인 대기')
   +   (r.Note ? '<br>메모: ' + esc(r.Note) : '')
   + '</div>'
 
@@ -444,8 +453,10 @@ function drawReq(){
         + '<td class="num">' + nf(i.Need_Qty) + '</td>'
         + '<td class="num">' + nf(i.Site_Qty || 0) + '</td>'
         + '<td class="num"><b>' + nf(i.Req_Qty) + '</b>'
-        +   (i.Pkg_Unit && i.Req_Qty % i.Pkg_Unit === 0
-              ? '<div class="sub">' + (i.Req_Qty/i.Pkg_Unit) + '박스</div>' : '') + '</td>'
+        +   (i.Appr_Qty != null && i.cut
+              ? '<div class="sub" style="color:var(--wn)">승인 ' + nf(i.Appr_Qty) + '</div>'
+              : (i.Pkg_Unit && i.Req_Qty % i.Pkg_Unit === 0
+                   ? '<div class="sub">' + (i.Req_Qty/i.Pkg_Unit) + '박스</div>' : '')) + '</td>'
         + '<td class="num">' + nf(i.Done_Qty) + '</td>'
         + '<td class="num">' + nf(i.left_qty) + '</td>'
         + '<td class="num">' + nf(i.stock) + '</td>'

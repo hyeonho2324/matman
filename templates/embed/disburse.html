@@ -205,6 +205,7 @@ function drawList(){
         +   '<span class="bg ' + cls + '">' + r.Status + '</span></div>'
         + '<div class="it-n">' + esc(r.FG_N||'-') + ' ' + nf(r.Plan_Qty) + '대</div>'
         + '<div class="it-s">' + r.Req_Date + ' · ' + r.line_cnt + '품목 · 잔여 ' + nf(r.left_qty) + '개'
+        +   (r.cut_cnt ? ' · 승인 조정 ' + r.cut_cnt : '')
         +   (r.short_cnt ? ' · <span style="color:#9B1C1C">부족 ' + r.short_cnt + '</span>' : '') + '</div>'
         + '<div class="bar"><i style="width:' + (r.pct||0) + '%"></i></div>'
         + '</div>';
@@ -531,7 +532,9 @@ function drawReq(){
   +     '<div class="c-s">' + (blocked ? '재고 0 · 발주 필요' : '없음') + '</div></div>'
   +   '<div class="card"><div class="c-l"><i class="ti ti-progress"></i>요청 잔여</div>'
   +     '<div class="c-v">' + nf(r.left_qty) + '<small>개</small></div>'
-  +     '<div class="c-s">요청 ' + nf(r.req_qty) + ' · 불출 ' + nf(r.done_qty) + '</div></div>'
+  +     '<div class="c-s">' + (r.cut_cnt ? '승인 ' + nf(r.eff_qty) + ' (요청 ' + nf(r.req_qty) + ')'
+                                            : '요청 ' + nf(r.req_qty))
+  +       ' · 불출 ' + nf(r.done_qty) + '</div></div>'
   + '</div>'
 
   + '<div class="actbar"><label>담당자</label>'
@@ -549,7 +552,7 @@ function drawReq(){
   + '<div class="sec"><div class="sech"><i class="ti ti-list-check"></i>'
   +   '<span class="sech-t">요청 품목</span>'
   +   '<span class="sech-m">체크한 품목만 불출됩니다 · 수량은 재고 한도까지 조절할 수 있습니다</span></div>'
-  +   '<table><thead><tr><th style="width:30px"></th><th>자재</th><th class="num">요청</th>'
+  +   '<table><thead><tr><th style="width:30px"></th><th>자재</th><th class="num">승인</th>'
   +     '<th class="num">불출</th><th class="num">잔여</th><th class="num">현재고</th>'
   +     '<th class="num">이번 불출</th><th>상태</th></tr></thead><tbody>'
   +   items.map(function(i){
@@ -562,7 +565,8 @@ function drawReq(){
         + '<td><span class="pid">' + i.P_ID + '</span>'
         +   (i.grade ? ' <span class="gr gr' + i.grade + '">' + i.grade + '</span>' : '')
         +   '<div class="sub">' + esc((i.P_N||'').slice(0,16)) + '</div></td>'
-        + '<td class="num">' + nf(i.Req_Qty) + '</td>'
+        + '<td class="num">' + nf(i.eff_qty)
+        +   (i.cut ? '<div class="sub">요청 ' + nf(i.Req_Qty) + '</div>' : '') + '</td>'
         + '<td class="num">' + nf(i.Done_Qty) + '</td>'
         + '<td class="num"><b>' + nf(i.left_qty) + '</b></td>'
         + '<td class="num">' + nf(i.stock) + '</td>'

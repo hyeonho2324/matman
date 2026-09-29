@@ -29,7 +29,7 @@ python app.py
 | /disburse | 불출 처리 ✎ |
 | /tx-history | 입출고 이력 |
 | /picking | 피킹리스트 ★ |
-| /approval | 불출 승인 워크플로우 |
+| /approval | 불출 승인 ✎ |
 | /scanner | 바코드/QR 스캐너 |
 | /purchase | 구매 발주 ✎ |
 | /suppliers | 협력사 |
@@ -44,7 +44,9 @@ python app.py
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
-✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 요청 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
+✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 승인(`Appr_Qty`·`Status`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 요청 → 승인 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
+
+> 승인되지 않은 요청은 불출 처리 화면에 내려가지 않습니다. 요청자 본인은 승인할 수 없고, 직급별 금액 한도(대리 300만 / 과장 1,000만 / 차장 3,000만 / 부장 무제한)를 넘으면 윗선이 처리합니다.
 
 ## 프로젝트 구조
 ```

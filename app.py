@@ -461,9 +461,21 @@ def _ctx_disburse_request():
         conn.close()
 
 
+def _ctx_approval():
+    """불출 승인 화면 — 승인 대기 요청 · 처리 이력 · 승인 권한자.
+
+    승인은 요청 데이터만 보면 되므로 workbench 공용 조회를 쓰지 않는다.
+    """
+    conn = db.connect()
+    try:
+        return db.approval_queue(conn)
+    finally:
+        conn.close()
+
+
 def _ctx_workbench():
-    """입고/불출/승인/스캐너 공용 참조 데이터.
-    네 화면이 같은 조회를 하므로 한 번만 읽어 재사용한다."""
+    """입고/불출/스캐너 공용 참조 데이터.
+    세 화면이 같은 조회를 하므로 한 번만 읽어 재사용한다."""
     conn = db.connect()
     try:
         return db.workbench(conn)
@@ -714,6 +726,56 @@ def api_request_cancel():
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
 # Lot_tb 와 Transaction_tb 를 한 트랜잭션에 함께 쓴다.
 
+@app.route("/api/request/approve/preview", methods=["POST"])
+def api_request_approve_preview():
+    """승인 전 미리보기 — 라인별 조정 수량과 승인 금액·한도를 확인한다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_approval(
+            conn, body.get("Req_ID"), body.get("EP_ID"),
+            body.get("lines") or {}, body.get("note"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/request/approve", methods=["POST"])
+def api_request_approve():
+    """불출 승인. 승인된 요청만 불출 처리 화면으로 내려간다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.approve_request(
+            conn, _entry_date(body), body.get("Req_ID"), body.get("EP_ID"),
+            body.get("lines") or {}, body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/request/reject", methods=["POST"])
+def api_request_reject():
+    """불출 반려. 사유가 없으면 받지 않는다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        res, errors = db.reject_request(
+            conn, _entry_date(body), body.get("Req_ID"), body.get("EP_ID"),
+            body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": res})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/inbound/preview", methods=["POST"])
 def api_inbound_preview():
     """등록 전 미리보기 — 판정·배정 창고·정산 금액을 보여준다."""
@@ -769,10 +831,10 @@ EMBED_CONTEXT = {
     "simulator":    _ctx_simulator,
     "picking":      _ctx_picking,
     "disburse_request": _ctx_disburse_request,
-    # 입출고 작업 화면 4종은 같은 참조 데이터를 공유한다
+    "approval":     _ctx_approval,
+    # 입출고 작업 화면 3종은 같은 참조 데이터를 공유한다
     "inbound":      _ctx_workbench,
     "disburse":     _ctx_workbench,
-    "approval":     _ctx_workbench,
     "scanner":      _ctx_workbench,
 }
 

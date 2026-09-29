@@ -21,14 +21,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .kv{font-size:18px;font-weight:500;line-height:1.1}
 .ks{font-size:10px;color:var(--txt3);margin-top:3px}
 .kv.dn{color:var(--dn)}.kv.wn{color:var(--wn)}.kv.ok{color:var(--ok)}
-.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
-.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
-.pill:hover{background:var(--s2)}
-.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
-.cnt{font-size:11px;color:var(--txt3)}
+/* 승인자 바 */
+.who{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.who label{font-size:11px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+select,input,textarea{font-family:inherit;font-size:12px;color:var(--txt);background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:4px 7px}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--acc)}
+.lim{font-size:10px;color:var(--txt3);margin-left:auto;display:flex;align-items:center;gap:5px}
+.lim b{color:var(--txt2);white-space:nowrap}
+.tabs{display:flex;gap:0;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;padding:0 8px}
+.tab{padding:7px 13px;font-size:12px;cursor:pointer;color:var(--txt3);border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--txt2)}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500}
+.tab .n{font-size:10px;background:var(--s2);border-radius:99px;padding:0 5px;color:var(--txt3)}
+.tab.on .n{background:var(--bg-ac);color:var(--acc)}
 .listwrap{flex:1;overflow:auto;min-height:0;padding:12px 14px}
 .row{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;margin-bottom:9px;overflow:hidden}
-.rh{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:0.5px solid var(--border)}
+.row.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--bg-ac)}
+.rh{display:flex;align-items:center;gap:9px;padding:9px 12px;cursor:pointer}
+.rh:hover{background:var(--s1)}
 .tid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
 .rt{flex:1;min-width:0}
 .rt-n{font-size:12px;font-weight:500}
@@ -37,27 +47,81 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .amt small{display:block;font-size:10px;font-weight:400;color:var(--txt3)}
 .gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
 .grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
-.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500;white-space:nowrap}
 .bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
-.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}.bok{background:var(--bg-ok);color:#1D6E52}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
+.bok{background:var(--bg-ok);color:#1D6E52}.bac{background:var(--bg-ac);color:#185FA5}
 /* 결재선 */
-.line{display:flex;align-items:center;padding:9px 12px;background:var(--s1);gap:0}
+.line{display:flex;align-items:center;padding:9px 12px;background:var(--s1);gap:0;border-top:0.5px solid var(--border)}
 .st{flex:1;display:flex;align-items:center;gap:7px;min-width:0}
 .sd{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;flex-shrink:0}
 .sd.ok{background:var(--ok)}
+.sd.now{background:var(--acc)}
+.sd.no{background:var(--dn)}
 .sd.wait{background:var(--s2);color:var(--txt3);border:1px dashed var(--border-s)}
 .sl{font-size:10px;line-height:1.4;min-width:0}
 .sl b{display:block;font-size:11px}
 .sl span{color:var(--txt3)}
 .sarw{color:var(--border-s);margin:0 6px;font-size:13px}
-.need{padding:7px 12px;font-size:10px;color:var(--txt3);line-height:1.6;border-top:0.5px solid var(--border)}
-.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+/* 라인 테이블 */
+.tw{border-top:0.5px solid var(--border);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{background:var(--s1);padding:6px 8px;text-align:left;font-weight:500;color:var(--txt3);font-size:10px;white-space:nowrap;border-bottom:0.5px solid var(--border);position:sticky;top:0}
+td{padding:5px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.zero td{opacity:.45}
+tr.zero td:first-child{opacity:1}
+.n{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--txt2)}
+.qin{width:72px;text-align:right;font-variant-numeric:tabular-nums;padding:3px 6px;font-size:11px}
+.qin.cut{border-color:var(--wn);background:var(--bg-wn)}
+.muted{color:var(--txt3)}
+.dnq{color:var(--dn);font-weight:600}
+.okq{color:var(--ok)}
+/* 액션 */
+.act{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--s1);border-top:0.5px solid var(--border);flex-wrap:wrap}
+.sum{font-size:11px;color:var(--txt2);line-height:1.6;margin-right:auto}
+.sum b{font-size:13px}
+.btn{padding:6px 13px;border-radius:var(--r);border:0.5px solid var(--border-s);background:var(--s0);font-size:12px;cursor:pointer;font-family:inherit;color:var(--txt);display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--s2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.pri{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:500}
+.btn.pri:hover:not(:disabled){filter:brightness(1.07)}
+.btn.rej{background:var(--s0);border-color:var(--dn);color:var(--dn)}
+.btn.rej:hover:not(:disabled){background:var(--bg-dn)}
+.rejbox{padding:10px 12px;background:var(--bg-dn);border-top:0.5px solid var(--border);display:none}
+.rejbox.on{display:block}
+.rejbox textarea{width:100%;min-height:52px;resize:vertical;font-size:12px}
+.rejbox .rr{display:flex;gap:6px;margin-top:7px;align-items:center}
+.msg{padding:9px 12px;font-size:11px;line-height:1.6;border-top:0.5px solid var(--border);display:none}
+.msg.on{display:block}
+.msg.err{background:var(--bg-dn);color:#9B1C1C}
+.msg.ok{background:var(--bg-ok);color:#1D6E52}
+.msg ul{margin:3px 0 0 16px}
+.ev{padding:7px 12px;font-size:10px;color:var(--txt3);line-height:1.6;border-top:0.5px solid var(--border)}
+.ev b{color:var(--txt2)}
+.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px;line-height:1.8}
 @media(max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .kpi:nth-child(n+3){border-top:0.5px solid var(--border)}
   .line{flex-direction:column;align-items:stretch;gap:6px}
   .sarw{display:none}
   .hide-sm{display:none}
+  .lim{margin-left:0;width:100%}
+  /* 요청 헤더는 가로로 다 안 들어간다 — 제목을 한 줄 차지하게 내린다 */
+  .rh{flex-wrap:wrap;row-gap:6px}
+  .rt{flex:1 0 100%;order:1}
+  .rh > .bg{order:2}
+  .amt{order:3;margin-left:auto;text-align:right}
+  .act{flex-direction:column;align-items:stretch}
+  .act .btn{justify-content:center}
+  .sum{margin-right:0}
+}
+@media(max-width:560px){
+  /* 승인자 줄은 좁으면 셋으로 접힌다 — 라벨 / 드롭다운 / 한도 안내 */
+  .who select{flex:1 0 100%;min-width:0}
+  .who label{flex:0 0 auto}
+  .ks,.kl{word-break:keep-all}
 }
 </style>
 </head>
@@ -65,109 +129,376 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 <div class="wrap">
   <div class="topbar">
     <div class="pt"><i class="ti ti-check" style="color:var(--ok)"></i>불출 승인
-      <span class="tag">실제 DB · 불출 이력 기준 결재선</span></div>
+      <span class="tag">요청 → 승인 → 불출</span></div>
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>원본 데이터에 승인 이력 테이블이 없습니다.</b> 그래서 실제 불출 건에 대해
-    <b>금액·등급 기준으로 어떤 결재선이 필요한지</b>를 판정해 보여줍니다. 승인 버튼은 쓰기 기능이 필요해 동작하지 않습니다.
+    생산이 올린 불출 요청을 <b>자재팀이 통과시키는 관문</b>입니다. 승인된 요청만
+    불출 처리 화면으로 내려갑니다. 라인별로 <b>수량을 깎아 부분 승인</b>할 수 있고,
+    요청보다 늘리려면 근거가 바뀐 것이므로 새 요청으로 올려야 합니다.
+    <b>요청자 본인은 승인할 수 없으며</b>, 직급별 금액 한도를 넘으면 윗선이 처리합니다.
   </div>
   <div class="kpi-row" id="kpis"></div>
-  <div class="filter-bar">
-    <button class="pill on" data-f="all"  onclick="setF('all')">전체</button>
-    <button class="pill" data-f="3" onclick="setF('3')">3단계 결재</button>
-    <button class="pill" data-f="2" onclick="setF('2')">2단계</button>
-    <button class="pill" data-f="A" onclick="setF('A')">A등급 자재</button>
-    <span class="cnt" id="cnt"></span>
+  <div class="who">
+    <label><i class="ti ti-user-check"></i>승인자</label>
+    <select id="who" onchange="onWho()"></select>
+    <span class="lim" id="limtxt"></span>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-t="wait" onclick="setTab(this.dataset.t)">
+      <i class="ti ti-hourglass"></i>승인 대기<span class="n" id="n-wait"></span></button>
+    <button class="tab" data-t="done" onclick="setTab(this.dataset.t)">
+      <i class="ti ti-history"></i>처리 이력<span class="n" id="n-done"></span></button>
   </div>
   <div class="listwrap" id="list"></div>
 </div>
 <script>
-const ROWS = {{ approvals|tojson }};
-let filter='all';
+const BASE      = {{ base|tojson }};
+const ENTRY     = {{ entry|tojson }};   // 승인일 — 기준일 다음 날, 요청일보다 앞서지 않는다
+const WAITING   = {{ waiting|tojson }};
+const DECIDED   = {{ decided|tojson }};
+const APPROVERS = {{ approvers|tojson }};
+const LIMITS    = {{ limits|tojson }};
+const K = {wait_cnt:{{ wait_cnt|tojson }}, wait_amt:{{ wait_amt|tojson }},
+           wait_line:{{ wait_line|tojson }}, short_cnt:{{ short_cnt|tojson }},
+           appr_cnt:{{ appr_cnt|tojson }}, rej_cnt:{{ rej_cnt|tojson }}};
+
+let tab = 'wait';
+let open = null;          // 펼친 요청번호
+let QTY  = {};            // Req_ID -> {Req_num: 승인수량}
+let busy = false;
+
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 
-// 결재선 판정 — 금액과 자재 등급으로 필요한 단계를 정한다
-function chain(r){
-  const a = r.amount || 0;
-  if(a >= 50000000 || r.grade === 'A')
-    return {n:3, why: (a>=50000000 ? '5천만원 이상' : 'A등급 자재'),
-            steps:['담당자','팀장','부서장']};
-  if(a >= 10000000)
-    return {n:2, why:'1천만원 이상', steps:['담당자','팀장']};
-  return {n:1, why:'1천만원 미만', steps:['담당자']};
+function approver(){ return APPROVERS.filter(a => a.EP_ID === document.getElementById('who').value)[0] || null; }
+
+// 승인 금액 = 라인별 (승인수량 x 단가) 합계. 서버가 저장 직전에 다시 계산한다.
+function qmap(r){
+  if(!QTY[r.Req_ID]){
+    const m = {};
+    r.items.forEach(function(i){ m[i.Req_num] = i.Req_Qty; });
+    QTY[r.Req_ID] = m;
+  }
+  return QTY[r.Req_ID];
+}
+function sumOf(r){
+  const m = qmap(r);
+  let qty=0, amt=0, cut=0, zero=0, short=0;
+  r.items.forEach(function(i){
+    const q = Math.max(Number(m[i.Req_num]) || 0, 0);
+    qty += q; amt += Math.round(q * (i.P_Price || 0));
+    if(q !== i.Req_Qty) cut++;
+    if(q === 0) zero++;
+    if(q > i.stock) short++;
+  });
+  return {qty:qty, amt:amt, cut:cut, zero:zero, short:short};
 }
 
-function view(){
-  return ROWS.filter(function(r){
-    const c = chain(r);
-    if(filter==='3' && c.n!==3) return false;
-    if(filter==='2' && c.n!==2) return false;
-    if(filter==='A' && r.grade!=='A') return false;
-    return true;
-  });
+function setQ(rid, num, v){
+  const r = rows().filter(x => x.Req_ID === rid)[0];
+  if(!r) return;
+  const it = r.items.filter(x => x.Req_num === Number(num))[0];
+  let q = Math.floor(Number(v));
+  if(!isFinite(q) || q < 0) q = 0;
+  if(q > it.Req_Qty) q = it.Req_Qty;      // 요청보다 많이 승인할 수 없다
+  qmap(r)[num] = q;
+  render();
+}
+function resetQ(rid){ delete QTY[rid]; render(); }
+function zeroShort(rid){
+  const r = rows().filter(x => x.Req_ID === rid)[0];
+  const m = qmap(r);
+  // 재고가 모자란 라인을 재고만큼으로 내린다 — 승인해도 못 나가는 수량을 남기지 않는다
+  r.items.forEach(function(i){ if(i.Req_Qty > i.stock) m[i.Req_num] = Math.max(i.stock, 0); });
+  render();
+}
+
+function rows(){ return tab === 'wait' ? WAITING : DECIDED; }
+function setTab(t){
+  tab = t; open = null;
+  const ts = document.querySelectorAll('.tab');
+  for(let i=0;i<ts.length;i++) ts[i].classList.toggle('on', ts[i].dataset.t === t);
+  render();
+}
+function toggle(rid){ open = (open === rid ? null : rid); render(); }
+function onWho(){ render(); }
+
+function stBadge(s){
+  const m = {'요청':'bwn','승인':'bac','반려':'bdn','일부불출':'bwn','불출완료':'bok','취소':'bmu'};
+  return '<span class="bg ' + (m[s]||'bmu') + '">' + esc(s) + '</span>';
+}
+
+// 결재선 — 이제 데이터로 채워진다
+function chain(r){
+  const req = '<div class="st"><div class="sd ok"><i class="ti ti-check"></i></div>'
+    + '<div class="sl"><b>요청</b><span>' + esc(r.worker||'-') + ' ' + esc(r.pos||'')
+    + ' · ' + esc(r.Req_Date) + '</span></div></div>';
+  let mid, out;
+  if(r.Status === '반려'){
+    mid = '<div class="st"><div class="sd no"><i class="ti ti-x"></i></div>'
+      + '<div class="sl"><b>반려</b><span>' + esc(r.approver||'-') + ' ' + esc(r.appr_pos||'')
+      + ' · ' + esc(r.Appr_Date||'') + '</span></div></div>';
+    out = '<div class="st"><div class="sd wait">-</div>'
+      + '<div class="sl"><b>불출</b><span>진행하지 않음</span></div></div>';
+  }else if(r.Appr_EP_ID){
+    mid = '<div class="st"><div class="sd ok"><i class="ti ti-check"></i></div>'
+      + '<div class="sl"><b>승인</b><span>' + esc(r.approver||'-') + ' ' + esc(r.appr_pos||'')
+      + ' · ' + esc(r.Appr_Date||'')
+      + (r.cut_cnt ? ' · ' + r.cut_cnt + '개 라인 조정' : '') + '</span></div></div>';
+    const done = r.Status === '불출완료';
+    out = '<div class="st"><div class="sd ' + (done?'ok':(r.done_qty?'now':'wait')) + '">'
+      + (done ? '<i class="ti ti-check"></i>' : '3') + '</div>'
+      + '<div class="sl"><b>불출</b><span>' + nf(r.done_qty||0) + ' / ' + nf(r.eff_qty||0)
+      + '개 · ' + r.pct + '%</span></div></div>';
+  }else{
+    mid = '<div class="st"><div class="sd now">2</div>'
+      + '<div class="sl"><b>승인</b><span>대기 중</span></div></div>';
+    out = '<div class="st"><div class="sd wait">3</div>'
+      + '<div class="sl"><b>불출</b><span>승인 후 진행</span></div></div>';
+  }
+  return '<div class="line">' + req + '<span class="sarw">&rarr;</span>' + mid
+       + '<span class="sarw">&rarr;</span>' + out + '</div>';
+}
+
+function itemTable(r, editable){
+  const m = qmap(r);
+  return '<div class="tw"><table><thead><tr>'
+    + '<th>#</th><th>품번</th><th>품명</th><th class="n">소요량</th>'
+    + '<th class="n">현장</th><th class="n">창고재고</th><th class="n">요청</th>'
+    + '<th class="n">' + (editable ? '승인 수량' : '승인') + '</th>'
+    + '<th class="n hide-sm">금액</th><th>비고</th>'
+    + '</tr></thead><tbody>'
+    + r.items.map(function(i){
+        const q = editable ? (Number(m[i.Req_num]) || 0)
+                           : (i.Appr_Qty == null ? null : i.Appr_Qty);
+        const cut = q != null && q !== i.Req_Qty;
+        const short = q != null && q > i.stock;
+        const note = [];
+        if(q === 0)        note.push('<span class="bg bmu">제외</span>');
+        else if(cut)       note.push('<span class="bg bwn">조정 ' + nf(q - i.Req_Qty) + '</span>');
+        if(short)          note.push('<span class="bg bdn">재고 ' + nf(q - i.stock) + ' 부족</span>');
+        if(i.Is_Manual==='Y') note.push('<span class="bg bmu">직접입력</span>');
+        if(!editable && i.Done_Qty) note.push('<span class="bg bok">불출 ' + nf(i.Done_Qty) + '</span>');
+        return '<tr class="' + (q === 0 ? 'zero' : '') + '">'
+          + '<td class="muted">' + i.Req_num + '</td>'
+          + '<td class="mono">' + esc(i.P_ID) + '</td>'
+          + '<td>' + esc(i.P_N)
+          +   (i.grade ? ' <span class="gr gr'+i.grade+'">'+i.grade+'</span>' : '') + '</td>'
+          + '<td class="n muted">' + nf(i.Need_Qty) + '</td>'
+          + '<td class="n muted">' + nf(i.Site_Qty) + '</td>'
+          + '<td class="n ' + (short ? 'dnq' : '') + '">' + nf(i.stock) + '</td>'
+          + '<td class="n">' + nf(i.Req_Qty) + '</td>'
+          + '<td class="n">' + (editable
+              ? '<input class="qin ' + (cut ? 'cut' : '') + '" type="number" min="0" step="1"'
+                + ' max="' + i.Req_Qty + '" value="' + q + '"'
+                + ' data-rid="' + esc(r.Req_ID) + '" data-num="' + i.Req_num + '"'
+                + ' onchange="setQ(this.dataset.rid, this.dataset.num, this.value)">'
+              : (q == null ? '<span class="muted">-</span>'
+                           : '<b class="' + (q ? '' : 'muted') + '">' + nf(q) + '</b>')) + '</td>'
+          + '<td class="n hide-sm muted">' + (q == null ? '-' : nf(Math.round(q * (i.P_Price||0)))) + '</td>'
+          + '<td>' + (note.join(' ') || '<span class="muted">-</span>') + '</td>'
+          + '</tr>';
+      }).join('')
+    + '</tbody></table></div>';
+}
+
+function actions(r){
+  const s = sumOf(r);
+  const a = approver();
+  const errs = [];
+  if(!a)                        errs.push('승인자를 선택하세요.');
+  else if(a.EP_ID === r.EP_ID)  errs.push('요청자 본인은 승인할 수 없습니다 (자기결재 금지). 다른 승인자를 고르세요.');
+  else if(a.limit != null && s.amt > a.limit)
+    errs.push(a.Name + ' ' + a.Position + '의 승인 한도 ' + won(a.limit) + '원을 넘습니다 ('
+              + won(s.amt) + '원). 상위 직급이 처리해야 합니다.');
+  if(s.qty <= 0)                errs.push('승인 수량이 전부 0 입니다. 전량 거절이면 반려로 처리하세요.');
+
+  const rid = esc(r.Req_ID);
+  return '<div class="act">'
+    + '<div class="sum">승인 <b>' + nf(s.qty) + '</b>개 · <b>' + won(s.amt) + '</b>원'
+    +   '<span class="muted"> / 요청 ' + nf(r.req_qty) + '개 · ' + won(r.req_amount) + '원</span>'
+    +   (s.cut ? ' <span class="bg bwn">' + s.cut + '개 라인 조정</span>' : '')
+    +   (s.zero ? ' <span class="bg bmu">' + s.zero + '개 제외</span>' : '')
+    +   (s.short ? ' <span class="bg bdn">재고 부족 ' + s.short + '</span>' : '')
+    +   '<br><span class="muted">승인일 ' + esc(ENTRY) + ' · 승인 후 불출 처리 화면에 나타납니다</span>'
+    + '</div>'
+    + (s.short ? '<button class="btn" data-rid="' + rid + '" onclick="zeroShort(this.dataset.rid)">'
+        + '<i class="ti ti-arrow-bar-to-down"></i>재고만큼 내리기</button>' : '')
+    + '<button class="btn" data-rid="' + rid + '" onclick="resetQ(this.dataset.rid)">'
+    +   '<i class="ti ti-rotate"></i>요청대로</button>'
+    + '<button class="btn rej" data-rid="' + rid + '" onclick="openRej(this.dataset.rid)">'
+    +   '<i class="ti ti-x"></i>반려</button>'
+    + '<button class="btn pri" data-rid="' + rid + '" onclick="doApprove(this.dataset.rid)"'
+    +   (errs.length || busy ? ' disabled' : '') + '><i class="ti ti-check"></i>승인</button>'
+    + '</div>'
+    + (errs.length ? '<div class="msg err on"><b>승인할 수 없습니다</b><ul>'
+        + errs.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul></div>' : '')
+    + '<div class="rejbox" id="rej-' + rid + '">'
+    +   '<div style="font-size:11px;margin-bottom:5px">반려 사유 <b>(필수)</b>'
+    +     ' — 생산이 무엇을 고쳐 다시 올릴지 알아야 합니다</div>'
+    +   '<textarea id="rejtxt-' + rid + '" placeholder="예) 현장 보유분으로 우선 소화 가능. 재고 확인 후 다시 요청 바랍니다."></textarea>'
+    +   '<div class="rr">'
+    +     '<button class="btn rej" data-rid="' + rid + '" onclick="doReject(this.dataset.rid)"'
+    +       (busy ? ' disabled' : '') + '><i class="ti ti-x"></i>반려 확정</button>'
+    +     '<button class="btn" data-rid="' + rid + '" onclick="closeRej(this.dataset.rid)">닫기</button>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="msg" id="msg-' + rid + '"></div>';
 }
 
 function render(){
-  const all = ROWS.map(chain);
-  const n3 = all.filter(function(c){return c.n===3;}).length;
-  const n2 = all.filter(function(c){return c.n===2;}).length;
   document.getElementById('kpis').innerHTML =
-    '<div class="kpi"><div class="kl"><i class="ti ti-file-text"></i>불출 건</div>'
-  +   '<div class="kv">' + ROWS.length + '<span style="font-size:11px;color:var(--txt3)">건</span></div>'
-  +   '<div class="ks">금액 상위 기준</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-3"></i>3단계 결재</div>'
-  +   '<div class="kv dn">' + n3 + '<span style="font-size:11px">건</span></div>'
-  +   '<div class="ks">5천만원↑ 또는 A등급</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>2단계 결재</div>'
-  +   '<div class="kv wn">' + n2 + '<span style="font-size:11px">건</span></div>'
-  +   '<div class="ks">1천만원 이상</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-coin"></i>총 불출 금액</div>'
-  +   '<div class="kv">' + won(ROWS.reduce(function(a,r){return a+(r.amount||0);},0))
-  +     '<span style="font-size:11px;color:var(--txt3)">원</span></div>'
-  +   '<div class="ks">상위 ' + ROWS.length + '건 합계</div></div>';
+    '<div class="kpi"><div class="kl"><i class="ti ti-hourglass"></i>승인 대기</div>'
+  +   '<div class="kv ' + (K.wait_cnt ? 'wn' : '') + '">' + K.wait_cnt
+  +     '<span style="font-size:11px;color:var(--txt3)">건</span></div>'
+  +   '<div class="ks">품목 ' + nf(K.wait_line) + '라인</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-coin"></i>대기 금액</div>'
+  +   '<div class="kv">' + won(K.wait_amt) + '<span style="font-size:11px;color:var(--txt3)">원</span></div>'
+  +   '<div class="ks">요청 수량 기준</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-alert-triangle"></i>재고 부족 포함</div>'
+  +   '<div class="kv ' + (K.short_cnt ? 'dn' : 'ok') + '">' + K.short_cnt
+  +     '<span style="font-size:11px;color:var(--txt3)">건</span></div>'
+  +   '<div class="ks">요청량이 현재고를 넘는 라인이 있는 요청</div></div>'
+  + '<div class="kpi"><div class="kl"><i class="ti ti-checks"></i>처리 완료</div>'
+  +   '<div class="kv ok">' + K.appr_cnt + '<span style="font-size:11px;color:var(--txt3)">건</span></div>'
+  +   '<div class="ks">반려 ' + K.rej_cnt + '건</div></div>';
 
-  const r = view();
-  document.getElementById('cnt').textContent = r.length + '건';
+  document.getElementById('n-wait').textContent = WAITING.length;
+  document.getElementById('n-done').textContent = DECIDED.length;
+
+  const a = approver();
+  document.getElementById('limtxt').innerHTML = a
+    ? '<i class="ti ti-shield-check"></i>승인 한도 <b>'
+      + (a.limit == null ? '무제한' : won(a.limit) + '원') + '</b>'
+      + '<span style="color:var(--txt3)"> · 직급별: '
+      + LIMITS.map(l => esc(l.pos) + ' ' + (l.limit == null ? '무제한' : (l.limit ? won(l.limit) : '권한없음'))).join(' / ')
+      + '</span>'
+    : '<i class="ti ti-alert-circle"></i>승인 권한이 있는 담당자를 고르세요 (사원·주임은 권한 없음)';
+
+  const rs = rows();
   const el = document.getElementById('list');
-  if(!r.length){ el.innerHTML='<div class="empty">조건에 맞는 건이 없습니다.</div>'; return; }
-
-  el.innerHTML = r.map(function(x){
-    const c = chain(x);
-    const steps = c.steps.map(function(s,i){
-      const done = (i===0);      // 실제 데이터로 확인 가능한 건 담당자 처리뿐이다
-      return (i? '<span class="sarw">→</span>' : '')
-        + '<div class="st"><div class="sd ' + (done?'ok':'wait') + '">'
-        + (done ? '<i class="ti ti-check"></i>' : (i+1)) + '</div>'
-        + '<div class="sl"><b>' + s + '</b>'
-        + (done ? '<span>' + esc(x.worker||'-') + ' ' + esc(x.pos||'') + ' · ' + x.T_Date + '</span>'
-                : '<span>데이터 없음</span>') + '</div></div>';
-    }).join('');
-    return '<div class="row">'
-      + '<div class="rh"><span class="tid">' + x.T_ID + '</span>'
-      +   '<div class="rt"><div class="rt-n">' + esc(x.P_N)
-      +     (x.grade ? ' <span class="gr gr'+x.grade+'">'+x.grade+'</span>' : '') + '</div>'
-      +     '<div class="rt-s">' + x.P_ID + ' · ' + esc(x.Spec||'') + ' · '
-      +       esc(x.loc_name||'-') + ' · LOT ' + x.Lot_ID + '</div></div>'
-      +   '<span class="bg ' + (c.n===3?'bdn':(c.n===2?'bwn':'bmu')) + '">' + c.n + '단계</span>'
-      +   '<div class="amt">' + won(x.amount) + '원<small>' + nf(x.T_Num) + '개</small></div></div>'
-      + '<div class="line">' + steps + '</div>'
-      + '<div class="need">결재 단계 판정 근거: <b>' + c.why + '</b>. '
-      +   '담당자 처리는 <code>Transaction_tb.EP_ID</code> 로 확인되지만, '
-      +   '상위 결재 이력은 원본 데이터에 없습니다.</div>'
+  if(!rs.length){
+    el.innerHTML = tab === 'wait'
+      ? '<div class="empty"><i class="ti ti-checks" style="font-size:26px;color:var(--ok)"></i>'
+        + '<br>승인 대기 중인 요청이 없습니다.<br>'
+        + '<span style="font-size:11px">불출 요청 화면에서 새 요청을 올리면 여기로 들어옵니다.</span></div>'
+      : '<div class="empty">아직 승인·반려한 요청이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = rs.map(function(r){
+    const on = open === r.Req_ID;
+    const editable = r.Status === '요청';
+    return '<div class="row ' + (on ? 'sel' : '') + '">'
+      + '<div class="rh" data-rid="' + esc(r.Req_ID) + '" onclick="toggle(this.dataset.rid)">'
+      +   '<i class="ti ' + (on ? 'ti-chevron-down' : 'ti-chevron-right') + '" style="color:var(--txt3)"></i>'
+      +   '<span class="tid">' + esc(r.Req_ID) + '</span>'
+      +   '<div class="rt"><div class="rt-n">' + esc(r.FG_N || r.FG_ID || '-')
+      +     ' <span class="muted" style="font-weight:400;font-size:11px">' + nf(r.Plan_Qty) + '대 생산분</span></div>'
+      +     '<div class="rt-s">' + esc(r.Work_Order || '-') + ' · ' + esc(r.worker || '-') + ' '
+      +       esc(r.pos || '') + ' · ' + esc(r.Req_Date) + ' · ' + r.line_cnt + '개 품목'
+      +       (r.Note ? ' · ' + esc(r.Note) : '') + '</div></div>'
+      +   (r.short_cnt ? '<span class="bg bdn">재고부족 ' + r.short_cnt + '</span> ' : '')
+      +   (r.cut_cnt ? '<span class="bg bwn">조정 ' + r.cut_cnt + '</span> ' : '')
+      +   stBadge(r.Status)
+      +   '<div class="amt">' + won(r.amount) + '원<small>' + nf(r.eff_qty) + '개</small></div>'
+      + '</div>'
+      + chain(r)
+      + (on ? itemTable(r, editable)
+             + (r.Appr_Note ? '<div class="ev"><b>'
+                 + (r.Status === '반려' ? '반려 사유' : '승인 의견') + '</b> · '
+                 + esc(r.approver || '') + ' ' + esc(r.appr_pos || '') + ' · '
+                 + esc(r.Appr_Date || '') + '<br>' + esc(r.Appr_Note) + '</div>' : '')
+             + (editable ? actions(r) : '')
+        : '')
       + '</div>';
   }).join('');
 }
 
-function setF(f){
-  filter=f;
-  const ps=document.querySelectorAll('.pill');
-  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
-  render();
+function openRej(rid){ document.getElementById('rej-' + rid).classList.add('on');
+                       document.getElementById('rejtxt-' + rid).focus(); }
+function closeRej(rid){ document.getElementById('rej-' + rid).classList.remove('on'); }
+
+function say(rid, cls, html){
+  const m = document.getElementById('msg-' + rid);
+  if(!m) return;
+  m.className = 'msg on ' + cls;
+  m.innerHTML = html;
 }
-render();
+
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                             body: JSON.stringify(body)});
+  return await r.json();
+}
+
+async function doApprove(rid){
+  if(busy) return;
+  const r = WAITING.filter(x => x.Req_ID === rid)[0];
+  const a = approver();
+  if(!r || !a) return;
+  busy = true; render();
+  try{
+    const d = await post('/api/request/approve',
+      {Req_ID: rid, EP_ID: a.EP_ID, lines: qmap(r), date: ENTRY});
+    if(!d.ok){
+      busy = false; render();
+      say(rid, 'err', '<b>승인하지 못했습니다</b><ul>'
+        + d.errors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>');
+      return;
+    }
+    const p = d.plan;
+    say(rid, 'ok', '<b><i class="ti ti-check"></i> 승인 완료</b> — ' + esc(p.Req_ID)
+      + ' · ' + esc(p.approver.Name) + ' ' + esc(p.approver.Position)
+      + ' · 승인 ' + nf(p.appr_qty) + '개 ' + won(p.amount) + '원'
+      + (p.cut_cnt ? ' (' + p.cut_cnt + '개 라인 조정)' : '')
+      + '<br>불출 처리 화면에서 이어서 처리하세요. 잠시 후 목록을 새로 고칩니다.');
+    setTimeout(() => location.reload(), 1400);
+  }catch(e){
+    busy = false; render();
+    say(rid, 'err', '서버에 연결하지 못했습니다: ' + esc(e.message || e));
+  }
+}
+
+async function doReject(rid){
+  if(busy) return;
+  const a = approver();
+  const reason = (document.getElementById('rejtxt-' + rid).value || '').trim();
+  if(!a){ say(rid, 'err', '승인자를 선택하세요.'); return; }
+  if(!reason){ say(rid, 'err', '반려 사유를 입력하세요.'); return; }
+  busy = true;
+  try{
+    const d = await post('/api/request/reject',
+      {Req_ID: rid, EP_ID: a.EP_ID, reason: reason, date: ENTRY});
+    if(!d.ok){
+      busy = false; render();
+      say(rid, 'err', '<b>반려하지 못했습니다</b><ul>'
+        + d.errors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>');
+      return;
+    }
+    say(rid, 'ok', '<b>반려 처리했습니다</b> — ' + esc(rid) + ' · '
+      + esc(d.result.approver.Name) + ' ' + esc(d.result.approver.Position)
+      + '<br>잠시 후 목록을 새로 고칩니다.');
+    setTimeout(() => location.reload(), 1400);
+  }catch(e){
+    busy = false; render();
+    say(rid, 'err', '서버에 연결하지 못했습니다: ' + esc(e.message || e));
+  }
+}
+
+(function init(){
+  const sel = document.getElementById('who');
+  sel.innerHTML = '<option value="">담당자 선택</option>'
+    + APPROVERS.map(a => '<option value="' + esc(a.EP_ID) + '">' + esc(a.Name) + ' ' + esc(a.Position)
+        + ' (한도 ' + (a.limit == null ? '무제한' : won(a.limit) + '원') + ')</option>').join('');
+  // 대기 건을 전부 처리할 수 있는 사람을 미리 골라 둔다 — 한 번에 막히지 않게
+  const need = WAITING.reduce((m, r) => Math.max(m, r.amount || 0), 0);
+  const fit = APPROVERS.filter(a => a.limit == null || a.limit >= need);
+  if(fit.length) sel.value = fit[fit.length - 1].EP_ID;
+  if(WAITING.length === 1) open = WAITING[0].Req_ID;
+  render();
+})();
 </script>
 </body>
 </html>
