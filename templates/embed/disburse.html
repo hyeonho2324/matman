@@ -31,7 +31,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .qtybar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--s1);border:0.5px solid var(--border);border-radius:8px;margin-bottom:14px;flex-wrap:wrap}
 .qtybar label{font-size:11px;font-weight:500}
 input[type=range]{accent-color:var(--acc);width:220px;height:18px}
-.qv{font-size:17px;font-weight:700;color:var(--acc);min-width:64px;text-align:right}
+.qv{font-size:17px;font-weight:700;color:var(--acc);min-width:74px;text-align:right;font-family:inherit;background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:2px 6px;outline:none}
+.qv:focus{border-color:var(--acc);box-shadow:0 0 0 2px var(--bg-ac)}
+/* 스피너를 늘 띄워 둔다 — 마우스로도 1개씩 올리고 내릴 수 있게 */
+.qv::-webkit-outer-spin-button,.qv::-webkit-inner-spin-button{opacity:1}
 .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .card{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px}
 .c-l{font-size:10px;color:var(--txt3);margin-bottom:4px;display:flex;align-items:center;gap:4px}
@@ -230,6 +233,24 @@ function drawList(){
 
 function pick(pid){ sel = pid; drawList(); draw(true); }
 
+// 슬라이더와 직접 입력이 같은 값을 가리키게 한다.
+// 슬라이더로는 재고를 넘길 수 없지만 직접 입력은 넘길 수 있어 여기서 잘라 준다.
+function qtyFromRange(){
+  const q = document.getElementById('qv');
+  if(document.activeElement !== q) q.value = document.getElementById('qty').value;
+  draw(false);
+}
+function qtyFromInput(){
+  const r = document.getElementById('qty'), q = document.getElementById('qv');
+  let v = parseInt(q.value, 10);
+  if(isNaN(v)) v = 0;
+  v = Math.min(Math.max(v, 0), +r.max);      // 0 ~ 현재고
+  r.value = v;
+  // 범위를 벗어났을 때만 고쳐 쓴다. 입력 중에 매번 덮으면 커서가 튄다.
+  if(String(v) !== q.value) q.value = v;
+  draw(false);
+}
+
 function draw(resetQty){
   const it = ITEMS.filter(function(x){return x.P_ID===sel;})[0];
   if(!it) return;
@@ -239,8 +260,11 @@ function draw(resetQty){
   if(resetQty){
     r.innerHTML = '<div class="qtybar"><label>불출 수량</label>'
       + '<input type="range" id="qty" min="0" max="' + it.stock + '" value="'
-      + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="draw(false)">'
-      + '<span class="qv" id="qv">0</span><span style="font-size:11px;color:var(--txt3)">개</span>'
+      + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '" oninput="qtyFromRange()">'
+      + '<input type="number" class="qv" id="qv" min="0" step="1" max="' + it.stock + '"'
+      +   ' value="' + Math.min(Math.max(Math.round(it.stock*0.3),1), it.stock) + '"'
+      +   ' oninput="qtyFromInput()" onblur="qtyFromInput()">'
+      + '<span style="font-size:11px;color:var(--txt3)">개</span>'
       + '<span style="font-size:10px;color:var(--txt3);margin-left:auto">보유 ' + nf(it.stock)
       + '개 · LOT ' + lots.length + '개</span>'
       + '<div class="actbar"><label>담당자</label>'
@@ -255,7 +279,6 @@ function draw(resetQty){
       + '</div></div><div id="out"></div>';
   }
   const qty = +document.getElementById('qty').value;
-  document.getElementById('qv').textContent = nf(qty);
 
   // FIFO 배분
   let left = qty; const alloc = [];
