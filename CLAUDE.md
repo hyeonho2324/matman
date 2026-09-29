@@ -120,8 +120,8 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | Safe_tb | 200 | P_ID(PK), Lead_Time, Sf_Lv, Sf_Num, Price/Sub/Impact/Supply/Usage_Score | CSV |
 | Update_Log_tb | 200 | P_ID+Updated_Date(PK), Next_Date, **Old/New_Lv, Old/New_Num, Old/New_Usage, EP_ID, Note** | CSV |
 | Purchase_Change_tb | 0 | Chg_ID(PK), H_ID+Purchase_num, Ord/In_P_ID, Ord/In_Qty, Ord/In_Amt, Diff_Amt, Chg_Type, Settle, Reason, Chg_Date, EP_ID, Lot_ID | **신설** |
-| Disburse_Req_tb | 1 | Req_ID(PK), Req_Date, FG_ID, Plan_Qty, Work_Order, EP_ID, Status, Note, **Appr_EP_ID, Appr_Date, Appr_Note** | **신설** |
-| Disburse_Req_Item_tb | 10 | Req_ID+Req_num(PK), P_ID, Need_Qty, **Site_Qty**, Stock_Qty, Req_Qty, Pkg_Unit, Is_Manual, **Appr_Qty**, Done_Qty | **신설** |
+| Disburse_Req_tb | 2 | Req_ID(PK), Req_Date, FG_ID, Plan_Qty, Work_Order, EP_ID, Status, Note, **Appr_EP_ID, Appr_Date, Appr_Note** | **신설** |
+| Disburse_Req_Item_tb | 18 | Req_ID+Req_num(PK), P_ID, Need_Qty, **Site_Qty**, Stock_Qty, Req_Qty, Pkg_Unit, Is_Manual, **Appr_Qty**, Done_Qty | **신설** |
 | Inbound_Claim_tb | 1 | Claim_ID(PK), Lot_ID, H_ID, P_ID, Claim_Qty, Claim_Type, Resolution, Status, T_ID, New_Lot_ID, Amount, Reason, Claim_Date, Done_Date, EP_ID | **신설** |
 | Safe_Override_tb | 0 | Ovr_ID(PK), P_ID, Ovr_Lv, Min_Qty, Calc_Lv, Calc_Num, Reason_Cd, Reason, Start/End_Date, Status, EP_ID, Off_Date, Off_Note | **신설** |
 | Production_tb | 4,535 | Prod_ID(PK), FG_ID, P_ID, Lot_ID, Prod_Date, Prod_Qty, EP_ID, **Work_Order**, Note | CSV |
@@ -312,7 +312,7 @@ A등급 = 30일     B등급 = 90일    C등급 = 180일
 | **불출 처리** | `embed/disburse.html` | 탭 2개. **요청 불출** 탭에서 요청서를 고르면 **품목 전체를 체크박스로 골라 한 번에** 내보낸다(재고 부족분은 가능한 만큼, 재고 0은 체크 차단). **직접 불출** 탭은 요청 없는 단건. 배분은 언제나 **FIFO**. 불출 후 안전재고 미달 경고.<br>**[불출 등록]** 시 LOT 마다 거래를 남겨 재고를 실제로 차감(쓰기) |
 | **불출 승인** | `embed/approval.html` | 탭 2개. **승인 대기** 탭에서 요청을 펼쳐 라인별 승인 수량을 조정하고 **승인 / 반려**(쓰기). 요청 근거(소요량·현장·창고재고)를 나란히 보여주고 재고 부족 라인은 한 번에 재고만큼 내릴 수 있다.<br>**자기결재 금지** · **직급별 금액 한도**. **처리 이력** 탭은 결재선 3단(요청→승인→불출)을 실데이터로 그린다 |
 | **스캐너** | `embed/scanner.html` | LOT번호·품번 입력 → 재고·위치·이력 즉시 조회. 스캔 이력 사이드바 |
-| **피킹리스트** | `embed/picking.html` | 생산 세트 수 슬라이더 → BOM 소요량 산출 → **FIFO로 LOT 자동 지정**.<br>창고 구역 순 정렬(동선), LOT 분할·재고부족 표시, 체크박스 진행관리 |
+| **피킹리스트** | `embed/picking.html` | **승인된 불출 요청 한 건 = 지시서 한 장**. FIFO 로 LOT 자동 지정, **창고 구역 → 소분류 구간** 동선 자동 설계.<br>체크박스 진행관리 · 재고 부족 별도 표 · **A4 인쇄**(목록·버튼 빠지고 서명란이 붙는다) · 지시서별 CSV |
 | **발주 시뮬레이터** | `embed/simulator.html` | 실제 품목 200종을 **검색**(품번·품명·규격·협력사·긴급도)해 선택 → 발주수량·발주시점·리드타임·일평균사용량 슬라이더 조절.<br>180일 재고 추이를 **발주 有/無 두 선으로 비교**, 결품 시점·안전재고 미달일수·비용 산출 |
 | **안전재고 일괄 갱신** | `embed/wizard.html` | SAFE_STOCK_DESIGN 의 갱신 절차를 **5단계 마법사**로 재현.<br>대상선정(199종) → 파레토 산정(결측 70 채움) → 등급 재판정(21종 변동) → 안전재고 재계산(186종) → **DB 반영**(쓰기).<br>`Safe_tb` 의 `Sf_Lv`·`Sf_Num`·`Usage_Score` 를 갱신하고 `Update_Log_tb` 에 **변경 전/후 값**을 남긴다. **되돌리기** 가능 |
 | **월간 리포트** | `embed/report.html` | 월 선택형 종합 리포트 8개월. 입고·불출·발주·생산 4개 카드 + **전월 대비 증감률**.<br>월별 추이 차트(선택 월 강조), 불출 상위 품목 / 발주 상위 협력사 랭킹 |
@@ -1287,6 +1287,89 @@ POST /api/safety/revert    되돌리기
 > 화면에서도 부장 계정으로 199종을 실제 반영해
 > 등급 21종·수량 186종 변동(순증 4,543개)·Usage 70건 채움을 확인하고,
 > 되돌리기로 전부 원상복구했다. **검증 후 DB 는 커밋 시점과 동일하다.**
+
+### 피킹리스트 — 요청 한 건이 지시서 한 장 (`embed/picking.html`)
+
+전에는 **생산 세트 수 슬라이더**로 가상의 소요량을 뽑았다. 실제 요청과 아무 연결이 없어
+"이걸 왜 지금 집어야 하는가"를 설명하지 못했다. **승인된 불출 요청**을 기준으로 다시 짰다.
+
+```
+불출 요청 → 승인 → [피킹 지시서 출력] → 창고를 돌며 체크 → 불출 처리로 등록
+```
+
+#### ⚠️ LOT 은 요청끼리 나눠 갖는다
+
+요청마다 따로 FIFO 를 돌리면 **같은 LOT 이 두 장의 지시서에 동시에 찍힌다.**
+창고에 500개뿐인데 두 사람이 각각 500개를 집으러 가는 셈이다.
+
+```python
+reqs.sort(key=lambda r: (r["Req_Date"], r["Req_ID"]))   # 오래된 요청이 먼저 집는다
+pool = {}                                               # 자재별 잔여 LOT 을 공유
+...
+l["remain"] -= take                                     # 앞 요청이 덜어 간 만큼 빠진다
+```
+뒤에 선 요청은 앞이 가져간 만큼 빠진 상태로 계산돼 **'부족' 이 정직하게 뜬다.**
+
+> 지시서는 **계획**이지 확정이 아니다. 실제 배분은 불출 등록 시점에 서버가 FIFO 로 다시 계산한다
+> (`preview_disburse` 참조). 그래도 두 장에 같은 LOT 을 찍어 내보내는 계획은 애초에 틀린 계획이다.
+
+#### 동선 — 있는 분류를 쓰고 없는 번지를 지어내지 않는다
+
+```
+1단계  창고 구역        Location_tb (L01~L05)
+2단계  소분류 구간      P_ID 의 DetailCat → Cat_tb 에서 이름
+```
+`Location_tb` 에 **통로·랙·번지가 없다.** 그래서 구역보다 잘게는 분류로 대신한다 —
+`P_ID` 가 `대분류(1)+중분류(2)+소분류(2)+순번(4)` 이라 소분류가 같으면 같은 물건 계열이고,
+실제 선반에도 붙어 있을 순서다.
+
+```
+출발 → L03 C동(전장) → 현장 전달
+  1 LCD 30개  ›  2 커버 300개  ›  3 가스켓 200개  ›  4 기타 200개
+```
+
+> ⚠️ **이 데이터에서는 요청 하나가 늘 한 구역이다.** 완제품 15종 전부 BOM 이
+> 자기 대분류 안에만 들어 있어(FG007 → E계열 전량) 구역이 갈리지 않는다.
+> 코드는 구역 여러 곳에 걸치는 요청도 그대로 처리한다.
+
+#### 인쇄
+
+`window.print()` + `@media print` 로 **지시서 한 장만** 나간다.
+상단 바·안내문·좌측 목록·버튼(`.no-print`)은 빠지고, 화면에는 숨겨 둔 **확인 서명란**
+(피킹 담당 / 자재 확인 / 현장 인수)이 나타난다. A4 세로 12mm 여백,
+`thead` 를 `table-header-group` 으로 두어 여러 장에 걸쳐도 표 머리가 반복된다.
+
+#### 화면
+
+| 영역 | 내용 |
+|---|---|
+| 좌측 | 지시서 목록. 요청번호·완제품·줄 수·수량·구역 수 + **담은 진행률 막대** |
+| 헤더 | 완제품/생산 목표 · 작업지시 · 요청자 · 승인자 (결재 근거를 종이에 남긴다) |
+| KPI | 피킹 라인 · 담을 수량 · **동선 단계** · 재고 부족 · 진행률 |
+| 본문 | 구역별 표. 구간 구분줄 + `순번 · 품번 · 품명 · 집을 LOT(입고일·체류일) · 담을 수량 · LOT 잔량 · 담음` |
+| 부족 | **창고 재고가 모자라 다 못 담는 품목**을 별도 표로. `요청 / 담을 수 있는 양 / 부족 / 조치` |
+
+담은 표시는 **화면에만** 남는다(새로 고치면 지워진다). 재고는 불출 처리에서 등록해야 줄어든다 —
+피킹은 준비 작업이지 출고가 아니기 때문이다.
+
+#### 시연용 승인 요청
+
+```
+REQ202602090001  2026-02-09  FG007 후방카메라 완제품 60대
+작업지시 WO202602090001 · 요청 조동현 사원 · 승인 장경수 차장(한도 3,000만)
+8품목 760개 1,814만원 · 상태 승인
+→ 피킹 7줄 730개 · 동선 4단계 · 재고 부족 1종 30개
+```
+`REQ202602080001`(200대)은 **`요청` 상태로 남겨 두었다** — 불출 승인 화면의 대기 건이다.
+두 요청이 같은 자재를 보므로 **LOT 을 나눠 갖는 동작**도 함께 보인다.
+
+> ✅ **검증** — 지시서 1장 · 7줄 · 730개 · 동선 4단계(LCD 30 › 커버 300 › 가스켓 200 › 기타 200) ·
+> 부족 1종(E01010003 요청 30 · 확보 0 · 부족 30).
+> 체크 1줄 → 14% · 전체 담음 → 100%/7줄 · 해제 → 0% 전이 확인.
+> 인쇄 규칙이 `topbar·ro·side·no-print` 를 숨기고 `.sign` 을 노출하는 것,
+> 인쇄 레이아웃에서 지시서만 남고 서명란 3칸이 붙는 것 확인.
+> 승인된 요청이 없을 때는 "불출 승인에서 통과시키면 여기에 나타납니다" 안내가 뜬다.
+> 회귀 95 + 47 + 60항목 통과.
 
 ### 발주 vs 입고 대조 (`embed/purchase.html`)
 ```

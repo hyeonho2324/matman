@@ -470,10 +470,10 @@ def _ctx_simulator():
 
 
 def _ctx_picking():
+    """피킹리스트 — 승인된 불출 요청마다 지시서 한 장."""
     conn = db.connect()
     try:
-        items, base = db.picking_source(conn)
-        return {"items": items, "base": base}
+        return {"data": db.picking_lists(conn)}
     finally:
         conn.close()
 

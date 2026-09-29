@@ -16,77 +16,122 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .tag{font-size:10px;color:var(--txt3);font-weight:400}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
 .btn:hover{background:var(--s2)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btnp{background:var(--acc);color:#fff;border-color:transparent}
+.btnp:hover:not(:disabled){background:#2268bd}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
 
-.setbar{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
-.setl{font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px}
-.setv{font-size:16px;font-weight:700;color:var(--acc);min-width:42px;text-align:right}
-input[type=range]{accent-color:var(--acc);width:200px;height:18px}
-.setn{font-size:10px;color:var(--txt3);line-height:1.5}
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.side{width:296px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
+.sh{padding:8px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0}
+.sh-t{font-size:12px;font-weight:500;flex:1}
+.sh-c{font-size:10px;color:var(--txt3)}
+.slist{flex:1;overflow:auto;min-height:0}
+.rq{padding:9px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.rq:hover{background:var(--s2)}
+.rq.on{background:var(--bg-ac);border-left:3px solid var(--acc);padding-left:9px}
+.rq-h{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.rid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
+.rq-n{font-size:12px;font-weight:500}
+.rq-s{font-size:10px;color:var(--txt3);line-height:1.5;margin-top:2px}
 
-.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
-.kpi{padding:9px 14px;border-right:0.5px solid var(--border)}
+.sheet{flex:1;overflow:auto;min-height:0;background:var(--s0)}
+.sw{padding:14px}
+.hd{border:0.5px solid var(--border);border-radius:8px;overflow:hidden;background:var(--s0);margin-bottom:12px}
+.hd-t{display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.hd-t b{font-size:14px}
+.hd-g{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.hd-c{padding:8px 13px;border-right:0.5px solid var(--border)}
+.hd-c:last-child{border-right:none}
+.hd-l{font-size:10px;color:var(--txt3);margin-bottom:2px}
+.hd-v{font-size:12px;font-weight:500}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;background:var(--s0)}
+.kpi{padding:9px 13px;border-right:0.5px solid var(--border)}
 .kpi:last-child{border-right:none}
 .kl{font-size:10px;color:var(--txt3);margin-bottom:3px;display:flex;align-items:center;gap:4px}
 .kv{font-size:18px;font-weight:500;line-height:1.1}
+.kv small{font-size:11px;color:var(--txt3);font-weight:400}
 .ks{font-size:10px;color:var(--txt3);margin-top:3px}
-.kv.dn{color:var(--dn)}.kv.wn{color:var(--wn)}.kv.ok{color:var(--ok)}
+.kv.dn{color:var(--dn)}.kv.wn{color:var(--wn)}.kv.ok{color:var(--ok)}.kv.ac{color:var(--acc)}
 
-/* 동선 */
-.route{display:flex;align-items:center;gap:0;padding:9px 14px;border-bottom:0.5px solid var(--border);flex-shrink:0;overflow-x:auto}
-.rz{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);background:var(--s1);border:0.5px solid var(--border);white-space:nowrap;cursor:pointer}
-.rz:hover{background:var(--s2)}
-.rz.on{background:var(--bg-ac);border-color:rgba(42,120,214,.35)}
+.route{display:flex;align-items:center;padding:9px 12px;border:0.5px solid var(--border);border-radius:8px;margin-bottom:12px;overflow-x:auto;background:var(--s0)}
+.rz{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);background:var(--s1);border:0.5px solid var(--border);white-space:nowrap}
 .rz-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:600;color:var(--acc)}
 .rz-n{font-size:11px}
 .rz-c{font-size:10px;color:var(--txt3)}
 .rarw{color:var(--txt3);margin:0 7px;font-size:12px}
+.rstart,.rend{font-size:10px;color:var(--txt3);white-space:nowrap}
 
-.filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
-.pill{padding:3px 10px;border-radius:99px;border:0.5px solid var(--border);font-size:11px;cursor:pointer;color:var(--txt2);background:transparent;font-family:inherit}
-.pill:hover{background:var(--s2)}
-.pill.on{background:var(--bg-ac);border-color:rgba(42,120,214,.3);color:var(--acc);font-weight:500}
-.search{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--s0);border:0.5px solid var(--border);border-radius:var(--r);padding:3px 8px}
-.search input{border:none;outline:none;background:transparent;font-size:11px;font-family:inherit;width:150px;color:var(--txt)}
-.cnt{font-size:11px;color:var(--txt3)}
-
-.listwrap{flex:1;overflow:auto;min-height:0}
-/* 좁아지면 열을 숨기는 대신 가로로 넘겨 본다 — 숨기면 그 값에 닿을 길이 없다.
-   감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
-.listwrap table:not([class]){min-width:900px}
+tr.gsep td{background:var(--s1);padding:4px 10px;font-size:10px;color:var(--txt2);font-weight:500}
+tr.gsep .gn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--acc);margin-right:5px}
+tr.gsep .gq{color:var(--txt3);font-weight:400;margin-left:6px}
+.rstep{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;background:var(--s2);font-size:10px;color:var(--txt2);white-space:nowrap}
+.rsub{display:flex;align-items:center;gap:5px;padding:6px 12px 0;flex-wrap:wrap}
+.zone{border:0.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;background:var(--s0)}
+.zh{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--s1);border-bottom:0.5px solid var(--border);font-size:12px;font-weight:500}
+.zh .zc{margin-left:auto;font-size:10px;color:var(--txt3);font-weight:400}
+.tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
-thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
-thead th.num{text-align:right}
-tbody td{padding:7px 10px;border-bottom:0.5px solid var(--border);vertical-align:top}
-tbody td.num{text-align:right}
-tbody tr.zhead td{background:var(--s2);font-weight:600;font-size:11px;padding:5px 10px;position:sticky;top:29px;z-index:1}
-.seq{width:22px;height:22px;border-radius:50%;background:var(--s2);color:var(--txt3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
-.chk{width:15px;height:15px;accent-color:var(--ok);cursor:pointer}
-.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc);font-weight:500}
-.nm{font-size:12px}
-.sp{font-size:10px;color:var(--txt3);margin-top:1px}
-.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9px;font-weight:600}
+.tw table{min-width:720px}
+th{background:var(--s1);padding:6px 10px;text-align:left;font-weight:500;font-size:10px;color:var(--txt3);white-space:nowrap;border-bottom:0.5px solid var(--border)}
+th.num{text-align:right}
+td{padding:6px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+tr.done td{background:var(--bg-ok);color:var(--txt3)}
+tr.done .pid,tr.done .lid{color:var(--txt3)}
+.seq{display:inline-block;width:19px;height:19px;line-height:19px;text-align:center;border-radius:50%;background:var(--s2);font-size:10px;font-weight:600;color:var(--txt2)}
+tr.done .seq{background:var(--ok);color:#fff}
+.pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--acc)}
+.lid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--txt2)}
+.sub{font-size:10px;color:var(--txt3);margin-top:1px;white-space:normal}
+.gr{display:inline-block;width:15px;height:15px;line-height:15px;text-align:center;border-radius:3px;font-size:9px;font-weight:600}
 .grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
-.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500}
+.bg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:99px;font-size:9px;font-weight:500;white-space:nowrap}
 .bmu{background:var(--s2);color:var(--txt3);border:0.5px solid var(--border)}
 .bdn{background:var(--bg-dn);color:#9B1C1C}.bwn{background:var(--bg-wn);color:#854F0B}
-/* LOT 배분 */
-.lot{display:flex;align-items:center;gap:6px;font-size:10px;padding:2px 0}
-.lot-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt2);min-width:112px}
-.lot-d{color:var(--txt3);min-width:64px}
-.lot-q{font-weight:600;color:var(--acc);min-width:52px;text-align:right}
-.lot-r{color:var(--txt3);font-size:9px}
-.fifo1{width:15px;height:15px;border-radius:3px;background:var(--ok);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;flex-shrink:0}
-.fifo2{background:var(--wn)}
-.fifo3{background:var(--txt3)}
-.done{opacity:.45;text-decoration:line-through}
-.empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
+.bok{background:var(--bg-ok);color:#1D6E52}.bac{background:var(--bg-ac);color:#185FA5}
+.ck{width:15px;height:15px;accent-color:var(--ok);cursor:pointer}
+.qty{font-size:13px;font-weight:600}
+
+.short{border:0.5px solid rgba(224,75,74,.35);border-radius:8px;overflow:hidden;margin-bottom:10px;background:var(--bg-dn)}
+.short .zh{background:rgba(224,75,74,.12);color:#9B1C1C;border-bottom-color:rgba(224,75,74,.25)}
+.short td{border-bottom-color:rgba(224,75,74,.2)}
+
+.sign{display:none;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px}
+.sign-g{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+.sign-b{border:0.5px solid var(--border);border-radius:6px;height:54px;padding:4px 7px;font-size:10px;color:var(--txt3)}
+.note{font-size:10px;color:var(--txt3);line-height:1.7;padding:8px 12px}
+.empty{padding:44px 20px;text-align:center;color:var(--txt3);font-size:12px;line-height:1.9}
+.prog{height:4px;background:var(--s2);border-radius:99px;overflow:hidden;margin-top:5px}
+.prog i{display:block;height:100%;background:var(--ok)}
 
 @media(max-width:900px){
-  .kpi-row{grid-template-columns:repeat(3,1fr)}
-  .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
-  .search{margin-left:0;width:100%}
-  .search input{width:100%}
-  input[type=range]{width:140px}
+  .main{flex-direction:column}
+  .side{width:100%;max-height:34%;border-right:none;border-bottom:0.5px solid var(--border-s)}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .kpi:nth-child(n+3){border-top:0.5px solid var(--border)}
+  .hd-g{grid-template-columns:repeat(2,1fr)}
+  .hd-c:nth-child(n+3){border-top:0.5px solid var(--border)}
+}
+
+/* ── 인쇄 — 지시서 한 장만 나가게 한다 ─────────────────────── */
+@media print{
+  @page{size:A4;margin:12mm}
+  body{height:auto;overflow:visible;background:#fff;font-size:11px}
+  .wrap,.main{display:block;overflow:visible;height:auto}
+  .topbar,.ro,.side,.no-print{display:none !important}
+  .sheet{overflow:visible}
+  .sw{padding:0}
+  .sign{display:block}
+  .tw{overflow:visible}
+  .tw table{min-width:0}
+  .zone,.hd,.kpi-row,.route,.short{break-inside:avoid;background:#fff}
+  .zone,.short{page-break-inside:auto}
+  tr{break-inside:avoid}
+  thead{display:table-header-group}
+  .ck{width:13px;height:13px}
 }
 </style>
 </head>
@@ -94,213 +139,263 @@ tbody tr.zhead td{background:var(--s2);font-weight:600;font-size:11px;padding:5p
 <div class="wrap">
 
   <div class="topbar">
-    <div class="pt">
-      <i class="ti ti-list-check" style="color:var(--acc)"></i>피킹리스트 · FIFO 불출 지시
-      <span class="tag">실제 DB · 잔여 LOT 기준 · {{ base }}</span>
+    <div class="pt"><i class="ti ti-list-check" style="color:var(--acc)"></i>피킹리스트
+      <span class="tag">실제 DB · 승인된 불출 요청 · FIFO 자동 지정</span></div>
+    <button class="btn" id="csv" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+    <button class="btn btnp" id="prt" onclick="window.print()"><i class="ti ti-printer"></i>인쇄</button>
+  </div>
+
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>승인된 불출 요청 한 건이 지시서 한 장</b>입니다. 자재는 <b>FIFO(오래된 LOT 먼저)</b>로
+    자동 지정되고, 창고 구역 순서로 동선이 잡힙니다.
+    <b>LOT 은 요청끼리 나눠 갖습니다</b> — 요청마다 따로 계산하면 같은 LOT 이 두 장에 찍히므로,
+    오래된 요청부터 차례로 덜어 씁니다. 체크하며 담고 다 담으면 <b>불출 처리</b>에서 등록하세요.
+  </div>
+
+  <div class="main">
+    <div class="side">
+      <div class="sh"><i class="ti ti-clipboard-list"></i><span class="sh-t">피킹 지시서</span>
+        <span class="sh-c" id="cnt"></span></div>
+      <div class="slist" id="list"></div>
     </div>
-    <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
-  </div>
-
-  <div class="setbar">
-    <span class="setl"><i class="ti ti-package"></i>생산 세트 수</span>
-    <input type="range" id="sets" min="1" max="400" value="100" oninput="render()">
-    <span class="setv" id="v-sets">100</span><span style="font-size:11px;color:var(--txt3)">세트</span>
-    <span class="setn">완제품 15종을 각 1대씩 만드는 것을 1세트로 봅니다. BOM 표준 소요량 × 세트 수 = 필요량</span>
-  </div>
-
-  <div class="kpi-row" id="kpis"></div>
-  <div class="route" id="route"></div>
-
-  <div class="filter-bar">
-    <button class="pill on" data-f="all"   onclick="setF('all')">전체</button>
-    <button class="pill"    data-f="split" onclick="setF('split')">LOT 분할</button>
-    <button class="pill"    data-f="short" onclick="setF('short')">재고 부족</button>
-    <button class="pill"    data-f="todo"  onclick="setF('todo')">미완료</button>
-    <span class="cnt" id="cnt"></span>
-    <div class="search">
-      <i class="ti ti-search" style="font-size:12px;color:var(--txt3)"></i>
-      <input id="q" placeholder="품번 · 품명 · LOT" oninput="render()">
-    </div>
-  </div>
-
-  <div class="listwrap">
-    <table>
-      <thead><tr>
-        <th style="width:34px"></th>
-        <th style="width:36px">순번</th>
-        <th>자재</th>
-        <th class="num">필요</th>
-        <th>불출 LOT (FIFO 순)</th>
-        <th class="num hide-sm">부족</th>
-      </tr></thead>
-      <tbody id="tb"></tbody>
-    </table>
+    <div class="sheet" id="sheet"></div>
   </div>
 </div>
 
 <script>
-const ITEMS = {{ items|tojson }};
-let filter='all', zone=null;
-const picked = {};          // 체크한 항목
+const D       = {{ data|tojson }};
+const LISTS   = D.lists;
+let sel  = LISTS.length ? LISTS[0].Req_ID : null;
+let PICK = {};     // Req_ID -> {라인키: true}  담은 표시. 새로고침하면 지워진다.
 
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => !n ? '0' : (n>=100000000 ? (n/100000000).toFixed(2)+'억'
+            : (n>=10000 ? Math.round(n/10000).toLocaleString()+'만' : nf(n)));
 
-// 세트 수에 맞춰 FIFO 로 LOT 을 배분한다
-function build(){
-  const sets = +document.getElementById('sets').value;
-  document.getElementById('v-sets').textContent = sets;
-  return ITEMS.map(function(it){
-    const want = it.per_set * sets;
-    let left = want;
-    const alloc = [];
-    for(let i=0;i<it.lots.length && left>0;i++){
-      const l = it.lots[i];                 // 이미 입고일 오름차순 = FIFO
-      const take = Math.min(left, l.remain);
-      alloc.push({lot:l, take:take, idx:alloc.length+1});
-      left -= take;
-    }
-    return {it:it, want:want, alloc:alloc, picked:want-left, short:left,
-            Loc_ID: it.lots[0].Loc_ID, loc: it.lots[0].loc_name};
-  }).filter(function(p){ return p.want > 0; });
+// '전장-후방카메라-LCD' 에서 마지막 토막만 — 구역·완제품은 이미 위에 적혀 있다
+function shortCat(n){ const p = String(n||'').split('-'); return p[p.length-1] || n; }
+function cur(){ return LISTS.filter(function(o){ return o.Req_ID===sel; })[0] || null; }
+function key(ln){ return ln.P_ID + '|' + ln.Lot_ID; }
+function picked(o){ return PICK[o.Req_ID] || (PICK[o.Req_ID] = {}); }
+function doneCnt(o){ const m = picked(o); return o.zones.reduce(function(a,z){
+  return a + z.lines.filter(function(l){ return m[key(l)]; }).length; }, 0); }
+
+function pick(id){ sel = id; draw(); }
+function toggle(k){
+  const o = cur(); if(!o) return;
+  const m = picked(o);
+  if(m[k]) delete m[k]; else m[k] = true;
+  draw();
+}
+function checkAll(on){
+  const o = cur(); if(!o) return;
+  const m = picked(o);
+  o.zones.forEach(function(z){ z.lines.forEach(function(l){
+    if(on) m[key(l)] = true; else delete m[key(l)]; }); });
+  draw();
 }
 
-function view(all){
-  const q=(document.getElementById('q').value||'').trim().toLowerCase();
-  return all.filter(function(p){
-    if(zone && p.Loc_ID!==zone)                       return false;
-    if(filter==='split' && p.alloc.length<2)          return false;
-    if(filter==='short' && p.short<=0)                return false;
-    if(filter==='todo'  && picked[p.it.P_ID])         return false;
-    if(q){
-      const hay=(p.it.P_ID+' '+(p.it.P_N||'')+' '+(p.it.Spec||'')+' '
-                + p.alloc.map(function(a){return a.lot.Lot_ID;}).join(' ')).toLowerCase();
-      if(hay.indexOf(q)<0) return false;
-    }
-    return true;
-  });
+function drawSide(){
+  document.getElementById('cnt').textContent = LISTS.length + '장';
+  document.getElementById('list').innerHTML = LISTS.length ? LISTS.map(function(o){
+    const d = doneCnt(o), p = o.line_cnt ? Math.round(d/o.line_cnt*100) : 0;
+    return '<div class="rq ' + (sel===o.Req_ID?'on':'') + '" data-id="' + esc(o.Req_ID)
+      +   '" onclick="pick(this.dataset.id)">'
+      + '<div class="rq-h"><span class="rid">' + esc(o.Req_ID) + '</span>'
+      +   (o.short_cnt ? '<span class="bg bdn">부족 ' + o.short_cnt + '</span>' : '')
+      +   '<span class="bg ' + (o.Status==='일부불출'?'bwn':'bac') + '">' + esc(o.Status) + '</span></div>'
+      + '<div class="rq-n">' + esc(o.FG_N || o.FG_ID || '-') + ' ' + nf(o.Plan_Qty) + '대</div>'
+      + '<div class="rq-s">' + esc(o.Req_Date) + ' · ' + esc(o.worker||'-')
+      +   ' · ' + o.line_cnt + '줄 · ' + nf(o.total_qty) + '개 · 구역 ' + o.zone_cnt + '</div>'
+      + '<div class="prog"><i style="width:' + p + '%"></i></div>'
+      + '<div class="rq-s">담은 ' + d + ' / ' + o.line_cnt + ' (' + p + '%)</div>'
+      + '</div>';
+  }).join('') : '<div class="empty">승인된 요청이 없습니다.</div>';
 }
 
-function render(){
-  const all = build();
-  const r = view(all);
-
-  // KPI
-  const split = all.filter(function(p){return p.alloc.length>1;}).length;
-  const short = all.filter(function(p){return p.short>0;});
-  const totQ  = all.reduce(function(a,p){return a+p.picked;},0);
-  const totL  = all.reduce(function(a,p){return a+p.alloc.length;},0);
-  const doneN = all.filter(function(p){return picked[p.it.P_ID];}).length;
-  document.getElementById('kpis').innerHTML =
-    '<div class="kpi"><div class="kl"><i class="ti ti-list"></i>피킹 품목</div>'
-  +   '<div class="kv">' + all.length + '<span style="font-size:11px;color:var(--txt3)">종</span></div>'
-  +   '<div class="ks">완료 ' + doneN + ' / ' + all.length + '</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>불출 수량</div>'
-  +   '<div class="kv">' + nf(totQ) + '<span style="font-size:11px;color:var(--txt3)">개</span></div>'
-  +   '<div class="ks">LOT ' + totL + '건에서 출고</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-arrows-split"></i>LOT 분할</div>'
-  +   '<div class="kv ' + (split?'wn':'') + '">' + split + '<span style="font-size:11px">종</span></div>'
-  +   '<div class="ks">한 LOT으로 부족해 나눠 꺼냄</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
-  +   '<div class="kv ' + (short.length?'dn':'ok') + '">' + short.length + '<span style="font-size:11px">종</span></div>'
-  +   '<div class="ks">' + nf(short.reduce(function(a,p){return a+p.short;},0)) + '개 모자람</div></div>'
-  + '<div class="kpi"><div class="kl"><i class="ti ti-building-warehouse"></i>이동 구역</div>'
-  +   '<div class="kv">' + new Set(all.map(function(p){return p.Loc_ID;})).size
-  +     '<span style="font-size:11px;color:var(--txt3)">곳</span></div>'
-  +   '<div class="ks">구역 순으로 정렬됨</div></div>';
-
-  // 동선
-  const zs = {};
-  all.forEach(function(p){
-    const z = zs[p.Loc_ID] = zs[p.Loc_ID] || {loc:p.loc, n:0, q:0};
-    z.n++; z.q += p.picked;
-  });
-  document.getElementById('route').innerHTML = Object.keys(zs).sort().map(function(k,i){
-    const z=zs[k];
-    return (i? '<span class="rarw">→</span>' : '')
-      + '<div class="rz ' + (zone===k?'on':'') + '" onclick="setZone(\'' + k + '\')">'
-      + '<span class="rz-id">' + k + '</span><span class="rz-n">' + esc(z.loc) + '</span>'
-      + '<span class="rz-c">' + z.n + '종 · ' + nf(z.q) + '개</span></div>';
-  }).join('');
-
-  // 목록 (구역 헤더 포함)
-  document.getElementById('cnt').textContent = r.length + '종';
-  const tb = document.getElementById('tb');
-  if(!r.length){
-    tb.innerHTML = '<tr><td colspan="6"><div class="empty">조건에 맞는 항목이 없습니다.</div></td></tr>';
+function drawSheet(){
+  const box = document.getElementById('sheet');
+  const o = cur();
+  document.getElementById('prt').disabled = !o;
+  document.getElementById('csv').disabled = !o;
+  if(!o){
+    box.innerHTML = '<div class="empty">'
+      + '<i class="ti ti-clipboard-off" style="font-size:26px;display:block;margin-bottom:10px"></i>'
+      + '<b>승인된 불출 요청이 없습니다.</b><br>'
+      + '피킹 지시서는 <b>승인된 요청</b>에서만 만들어집니다.<br>'
+      + '불출 요청 화면에서 요청을 올리고, <b>불출 승인</b>에서 통과시키면 여기에 나타납니다.</div>';
     return;
   }
-  let html='', lastZ=null, seq=0;
-  r.forEach(function(p){
-    if(p.Loc_ID !== lastZ){
-      lastZ = p.Loc_ID;
-      html += '<tr class="zhead"><td colspan="6"><i class="ti ti-building-warehouse"></i> '
-            + p.Loc_ID + ' ' + esc(p.loc) + '</td></tr>';
-    }
-    seq++;
-    const done = !!picked[p.it.P_ID];
-    const lots = p.alloc.map(function(a){
-      return '<div class="lot">'
-        + '<span class="fifo' + Math.min(a.idx,3) + ' fifo1' + (a.idx>1?' fifo'+Math.min(a.idx,3):'') + '">' + a.idx + '</span>'
-        + '<span class="lot-id">' + a.lot.Lot_ID + '</span>'
-        + '<span class="lot-d">' + a.lot.Lot_Date + '</span>'
-        + '<span class="lot-q">' + nf(a.take) + '개</span>'
-        + '<span class="lot-r">잔여 ' + nf(a.lot.remain) + ' · 체류 ' + a.lot.age_days + '일</span>'
-        + '</div>';
-    }).join('');
-    html += '<tr class="' + (done?'done':'') + '">'
-      + '<td><input type="checkbox" class="chk" ' + (done?'checked':'')
-      +   ' onchange="toggle(\'' + p.it.P_ID + '\')"></td>'
-      + '<td><span class="seq">' + seq + '</span></td>'
-      + '<td><span class="pid">' + p.it.P_ID + '</span>'
-      +   (p.it.grade ? ' <span class="gr gr'+p.it.grade+'">'+p.it.grade+'</span>' : '')
-      +   '<div class="nm">' + esc(p.it.P_N) + '</div>'
-      +   '<div class="sp">' + esc(p.it.Spec) + '</div></td>'
-      + '<td class="num"><b>' + nf(p.want) + '</b>'
-      +   '<div class="sp">세트당 ' + p.it.per_set + '</div></td>'
-      + '<td>' + lots
-      +   (p.alloc.length>1 ? '<span class="bg bwn">FIFO ' + p.alloc.length + '개 분할</span>' : '') + '</td>'
-      + '<td class="num hide-sm">' + (p.short>0
-        ? '<span class="bg bdn">' + nf(p.short) + '</span>' : '-') + '</td>'
-      + '</tr>';
-  });
-  tb.innerHTML = html;
+  const m = picked(o), d = doneCnt(o), p = o.line_cnt ? Math.round(d/o.line_cnt*100) : 0;
+
+  const route = o.zones.map(function(z, i){
+    return (i ? '<span class="rarw">&rarr;</span>' : '')
+      + '<div class="rz"><span class="rz-id">' + esc(z.Loc_ID) + '</span>'
+      + '<span class="rz-n">' + esc(z.loc_name||'-') + '</span>'
+      + '<span class="rz-c">' + z.lines.length + '줄 · ' + nf(z.qty) + '개</span></div>';
+  }).join('');
+
+  // 구역 안의 소분류 구간 — 선반을 도는 순서
+  let step = 0;
+  const steps = o.zones.map(function(z){
+    return z.groups.map(function(g){
+      step++;
+      return '<span class="rstep"><b>' + step + '</b> ' + esc(shortCat(g.cat_name))
+           + ' <span style="color:var(--txt3)">' + nf(g.qty) + '개</span></span>';
+    }).join('<i class="ti ti-chevron-right" style="color:var(--border-s);font-size:11px"></i>');
+  }).join('<i class="ti ti-chevron-right" style="color:var(--border-s);font-size:11px"></i>');
+
+  const zones = o.zones.map(function(z){
+    return '<div class="zone"><div class="zh">'
+      + '<i class="ti ti-building-warehouse"></i>' + esc(z.Loc_ID) + ' ' + esc(z.loc_name||'-')
+      + '<span class="zc">' + z.lines.length + '줄 · ' + nf(z.qty) + '개</span></div>'
+      + '<div class="tw"><table><thead><tr>'
+      +   '<th style="width:34px">순</th><th>품번</th><th>품명 / 규격</th>'
+      +   '<th>집을 LOT</th><th class="num">담을 수량</th><th class="num">LOT 잔량</th>'
+      +   '<th style="width:38px">담음</th>'
+      + '</tr></thead><tbody>'
+      + z.groups.map(function(g){
+        return '<tr class="gsep"><td colspan="7">'
+          + '<span class="gn">' + esc(g.cat) + '</span>' + esc(g.cat_name)
+          + '<span class="gq">' + g.lines.length + '줄 · ' + nf(g.qty) + '개</span></td></tr>'
+        + g.lines.map(function(l){
+          const k = key(l), on = !!m[k];
+          return '<tr class="' + (on?'done':'') + '">'
+            + '<td><span class="seq">' + l.seq + '</span></td>'
+            + '<td><span class="pid">' + esc(l.P_ID) + '</span>'
+            +   (l.grade ? ' <span class="gr gr'+l.grade+'">'+l.grade+'</span>' : '') + '</td>'
+            + '<td>' + esc(l.P_N||'-') + '<div class="sub">' + esc(l.Spec||'') + '</div></td>'
+            + '<td><span class="lid">' + esc(l.Lot_ID) + '</span>'
+            +   '<div class="sub">' + esc(l.Lot_Date) + ' 입고 · 체류 ' + l.age_days + '일</div></td>'
+            + '<td class="num"><span class="qty">' + nf(l.take) + '</span></td>'
+            + '<td class="num sub" style="margin:0">' + nf(l.lot_remain) + '</td>'
+            + '<td><input class="ck" type="checkbox"' + (on?' checked':'')
+            +   ' data-k="' + esc(k) + '" onchange="toggle(this.dataset.k)"></td>'
+            + '</tr>';
+        }).join('');
+      }).join('')
+      + '</tbody></table></div></div>';
+  }).join('');
+
+  const short = o.short_lines.length
+    ? '<div class="short"><div class="zh"><i class="ti ti-alert-triangle"></i>'
+      + '창고 재고가 모자라 다 못 담는 품목<span class="zc">' + o.short_lines.length + '종 · '
+      + nf(o.short_qty) + '개 부족</span></div>'
+      + '<div class="tw"><table><thead><tr>'
+      +   '<th>품번</th><th>품명 / 규격</th><th class="num">요청</th>'
+      +   '<th class="num">담을 수 있는 양</th><th class="num">부족</th><th>조치</th>'
+      + '</tr></thead><tbody>'
+      + o.short_lines.map(function(l){
+          return '<tr><td><span class="pid">' + esc(l.P_ID) + '</span>'
+            +   (l.grade ? ' <span class="gr gr'+l.grade+'">'+l.grade+'</span>' : '') + '</td>'
+            + '<td>' + esc(l.P_N||'-') + '<div class="sub">' + esc(l.Spec||'') + '</div></td>'
+            + '<td class="num">' + nf(l.need) + '</td>'
+            + '<td class="num">' + nf(l.got) + '</td>'
+            + '<td class="num" style="color:#9B1C1C;font-weight:600">' + nf(l.shortage) + '</td>'
+            + '<td class="sub" style="margin:0">' + (l.got ? '담을 수 있는 만큼만 불출' : '발주가 먼저입니다') + '</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div></div>'
+    : '';
+
+  box.innerHTML = '<div class="sw">'
+    + '<div class="hd"><div class="hd-t">'
+    +   '<i class="ti ti-clipboard-list" style="color:var(--acc)"></i>'
+    +   '<b>피킹 지시서</b><span class="rid">' + esc(o.Req_ID) + '</span>'
+    +   '<span class="bg ' + (o.Status==='일부불출'?'bwn':'bac') + '">' + esc(o.Status) + '</span>'
+    +   (o.short_cnt ? '<span class="bg bdn">재고부족 ' + o.short_cnt + '</span>' : '')
+    +   '<span class="no-print" style="margin-left:auto;display:flex;gap:6px">'
+    +     '<button class="btn" onclick="checkAll(true)"><i class="ti ti-checks"></i>전체 담음</button>'
+    +     '<button class="btn" onclick="checkAll(false)">해제</button></span>'
+    + '</div>'
+    + '<div class="hd-g">'
+    +   '<div class="hd-c"><div class="hd-l">완제품 / 생산 목표</div><div class="hd-v">'
+    +     esc(o.FG_N || o.FG_ID || '-') + ' · ' + nf(o.Plan_Qty) + '대</div></div>'
+    +   '<div class="hd-c"><div class="hd-l">작업지시</div><div class="hd-v">'
+    +     esc(o.Work_Order||'-') + '</div></div>'
+    +   '<div class="hd-c"><div class="hd-l">요청</div><div class="hd-v">'
+    +     esc(o.worker||'-') + ' ' + esc(o.pos||'') + ' · ' + esc(o.Req_Date) + '</div></div>'
+    +   '<div class="hd-c"><div class="hd-l">승인</div><div class="hd-v">'
+    +     esc(o.approver||'-') + ' ' + esc(o.appr_pos||'') + ' · ' + esc(o.Appr_Date||'-') + '</div></div>'
+    + '</div>'
+    + (o.Note ? '<div class="note" style="border-top:0.5px solid var(--border)"><b>메모</b> ' + esc(o.Note) + '</div>' : '')
+    + '</div>'
+
+    + '<div class="kpi-row">'
+    +   '<div class="kpi"><div class="kl"><i class="ti ti-list-numbers"></i>피킹 라인</div>'
+    +     '<div class="kv">' + o.line_cnt + '<small>줄</small></div>'
+    +     '<div class="ks">' + o.item_cnt + '품목' + (o.split_cnt ? ' · LOT 분할 ' + o.split_cnt : '') + '</div></div>'
+    +   '<div class="kpi"><div class="kl"><i class="ti ti-stack-2"></i>담을 수량</div>'
+    +     '<div class="kv ac">' + nf(o.total_qty) + '<small>개</small></div>'
+    +     '<div class="ks">' + won(o.amount) + '원</div></div>'
+    +   '<div class="kpi"><div class="kl"><i class="ti ti-route"></i>동선</div>'
+    +     '<div class="kv">' + o.step_cnt + '<small>단계</small></div>'
+    +     '<div class="ks">구역 ' + o.zone_cnt + '곳 · 분류 구간 ' + o.step_cnt + '</div></div>'
+    +   '<div class="kpi"><div class="kl"><i class="ti ti-alert-triangle"></i>재고 부족</div>'
+    +     '<div class="kv ' + (o.short_cnt?'dn':'ok') + '">' + o.short_cnt + '<small>종</small></div>'
+    +     '<div class="ks">' + (o.short_cnt ? nf(o.short_qty) + '개 모자람' : '전량 확보') + '</div></div>'
+    +   '<div class="kpi"><div class="kl"><i class="ti ti-progress-check"></i>진행</div>'
+    +     '<div class="kv ' + (p===100?'ok':'') + '">' + p + '<small>%</small></div>'
+    +     '<div class="ks">담은 ' + d + ' / ' + o.line_cnt + '줄</div></div>'
+    + '</div>'
+
+    + (o.zones.length
+        ? '<div class="route" style="display:block">'
+          + '<div style="display:flex;align-items:center;overflow-x:auto">'
+          +   '<span class="rstart">출발</span><span class="rarw">&rarr;</span>'
+          +   route + '<span class="rarw">&rarr;</span><span class="rend">현장 전달</span></div>'
+          + '<div class="rsub">' + steps + '</div>'
+          + '</div>'
+        : '')
+    + zones
+    + short
+
+    + '<div class="sign"><b style="font-size:11px">확인</b>'
+    +   '<div class="sign-g">'
+    +     '<div class="sign-b">피킹 담당</div>'
+    +     '<div class="sign-b">자재 확인</div>'
+    +     '<div class="sign-b">현장 인수</div>'
+    +   '</div></div>'
+
+    + '<div class="note no-print">'
+    +   '자재는 <b>FIFO</b> — 같은 품번이면 <b>오래된 LOT 부터</b> 집습니다. '
+    +   '한 품번이 여러 LOT 에 걸치면 줄이 나뉩니다' + (o.split_cnt ? ' (이 지시서 ' + o.split_cnt + '건)' : '') + '.<br>'
+    +   '동선은 <b>창고 구역 → 구역 안의 소분류 구간</b> 순서입니다. '
+    +   '통로·랙 번지가 데이터에 없어, 없는 번지를 지어내는 대신 <b>있는 분류</b>를 씁니다 — '
+    +   '품번이 대분류+중분류+소분류+순번이라 소분류가 같으면 같은 물건 계열이고 선반에도 붙어 있습니다.<br>'
+    +   '담은 표시는 <b>이 화면에만</b> 남습니다 — 새로 고치면 지워집니다. '
+    +   '실제 재고는 <b>불출 처리</b>에서 등록해야 줄어듭니다.'
+    + '</div>'
+    + '</div>';
 }
 
-function toggle(pid){ picked[pid] = !picked[pid]; render(); }
-function setF(f){
-  filter=f;
-  const ps=document.querySelectorAll('.pill');
-  for(let i=0;i<ps.length;i++) ps[i].classList.toggle('on', ps[i].dataset.f===f);
-  render();
-}
-function setZone(z){ zone = (zone===z ? null : z); render(); }
+function draw(){ drawSide(); drawSheet(); }
 
 function dl(){
-  const all=build(), r=view(all);
-  const head=['순번','구역','창고','품번','품명','규격','등급','세트당소요','필요수량',
-              'LOT순서','LOT번호','입고일','불출수량','LOT잔여','체류일수','부족'];
-  const lines=[head.join(',')];
-  let seq=0;
-  r.forEach(function(p){
-    seq++;
-    if(!p.alloc.length){
-      lines.push([seq,p.Loc_ID,p.loc,p.it.P_ID,p.it.P_N,p.it.Spec,p.it.grade,p.it.per_set,p.want,
-                  '','','','','','',p.short].map(function(v){return '"'+(v==null?'':v)+'"';}).join(','));
-    }
-    p.alloc.forEach(function(a){
-      lines.push([seq,p.Loc_ID,p.loc,p.it.P_ID,p.it.P_N,p.it.Spec,p.it.grade,p.it.per_set,p.want,
-                  a.idx,a.lot.Lot_ID,a.lot.Lot_Date,a.take,a.lot.remain,a.lot.age_days,p.short]
-        .map(function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; }).join(','));
+  const o = cur(); if(!o) return;
+  const head = ['순번','구역','창고','구간','구간명','품번','품명','규격','등급','LOT','입고일','체류일',
+                '담을수량','LOT잔량'];
+  const lines = [head.join(',')];
+  const q = function(v){ return '"' + (v==null?'':String(v).replace(/"/g,'""')) + '"'; };
+  o.zones.forEach(function(z){
+    z.lines.forEach(function(l){
+      lines.push([l.seq,z.Loc_ID,z.loc_name,l.cat,l.cat_name,l.P_ID,l.P_N,l.Spec,l.grade,l.Lot_ID,
+                  l.Lot_Date,l.age_days,l.take,l.lot_remain].map(q).join(','));
     });
   });
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
-  a.download='피킹리스트.csv';
+  o.short_lines.forEach(function(l){
+    lines.push(['부족','','','','',l.P_ID,l.P_N,l.Spec,l.grade,'','','',
+                l.shortage + '개 부족 (요청 ' + l.need + ' · 확보 ' + l.got + ')',''].map(q).join(','));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type:'text/csv;charset=utf-8'}));
+  a.download = '피킹리스트_' + o.Req_ID + '.csv';
   a.click();
 }
 
-render();
+draw();
 </script>
 </body>
 </html>

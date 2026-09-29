@@ -2720,49 +2720,134 @@ def simulator_items(conn):
 # 정렬해 이동 동선을 줄인 피킹 지시서를 만든다.
 # 필요 수량은 화면에서 '생산 세트 수'로 조절하므로, 원재료(BOM 소요량 + 잔여 LOT)만
 # 넘기고 실제 배분은 화면에서 계산한다.
-def picking_source(conn):
+# ── 피킹 리스트 ──────────────────────────────────────────────
+#
+# 승인된 불출 요청 한 건이 피킹 지시서 한 장이 된다.
+# 자재팀이 이 종이를 들고 창고를 돌며 체크하고, 다 담으면 불출 처리로 넘어간다.
+#
+# ⚠️ LOT 은 요청끼리 나눠 갖는다.
+#    요청마다 따로 FIFO 를 돌리면 같은 LOT 이 두 장의 지시서에 동시에 찍힌다.
+#    창고에 500개뿐인데 두 사람이 각각 500개를 집으러 가는 셈이다.
+#    그래서 요청을 오래된 순으로 세우고 LOT 재고를 하나의 통에서 덜어 쓴다.
+#    뒤에 선 요청은 앞이 가져간 만큼 빠진 상태로 계산돼 '부족' 이 정직하게 뜬다.
+#
+# 동선
+#   1단계  창고 구역 (Location_tb)
+#   2단계  구역 안의 소분류 구간 (P_ID 의 DetailCat, Cat_tb 에서 이름을 가져온다)
+#
+# ⚠️ Location_tb 에 통로·랙·번지가 없다. 그래서 구역보다 잘게는 분류로 대신한다.
+#    P_ID 가 대분류(1)+중분류(2)+소분류(2)+순번(4) 이라 소분류가 같으면 같은 물건 계열이고,
+#    실제 선반에도 붙어 있을 순서다. 없는 번지를 지어내지 않고 있는 분류를 쓴다.
+#
+#    이 데이터에서는 완제품 하나의 BOM 이 한 대분류에만 들어 있어 요청 하나가
+#    늘 한 구역이다. 구역 여러 곳에 걸치는 요청이 와도 코드는 그대로 동작한다.
+
+
+def picking_lists(conn):
+    """승인된 요청마다 피킹 지시서 한 장씩."""
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    reqs = open_requests(conn)
+    reqs.sort(key=lambda r: (r["Req_Date"], r["Req_ID"]))   # 오래된 요청이 먼저 집는다
 
-    # 완제품 1세트(15종 전부 1대씩) 생산에 필요한 자재별 소요량
-    per_set = {r["P_ID"]: r["per_set"] for r in _rows(conn, """
-        SELECT P_ID, SUM(BOM_Qty) AS per_set
-          FROM BOM_tb WHERE BOM_Type = '표준' GROUP BY P_ID
-    """)}
+    # 소분류 이름 — 'E' + '01' + '01' -> '전장-후방카메라-LCD'
+    cat_name = {}
+    for r in _rows(conn, "SELECT MainCat, SubCat, DetailCat, Cat_Name FROM Cat_tb"):
+        cat_name[(r["MainCat"], r["SubCat"], r["DetailCat"])] = r["Cat_Name"]
 
-    # 잔여 LOT — 자재별 FIFO(입고일) 순
-    lots = {}
-    for r in _rows(conn, f"""
-        SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
-               l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
-               CAST(julianday(?) - julianday(l.Lot_Date) AS INT) AS age_days
-          FROM Lot_tb l
-          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
-         WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
-         ORDER BY l.P_ID, l.Lot_Date
-    """, (base,)):
-        lots.setdefault(r["P_ID"], []).append(r)
+    # 자재별 잔여 LOT 을 한 번만 읽어 요청들이 나눠 쓴다
+    pool = {}
+    loc_name = {}
+    out = []
+    for r in reqs:
+        zones, seq = {}, 0
+        tot_qty = tot_short = split = 0
+        price = {i["P_ID"]: (i["P_Price"] or 0) for i in r["items"]}
+        amount = 0
+        for it in sorted(r["items"], key=lambda x: x["P_ID"]):
+            need = it["left_qty"]
+            if need <= 0:
+                continue
+            pid = it["P_ID"]
+            if pid not in pool:
+                pool[pid] = [dict(l) for l in live_lots(conn, pid)]
+                for l in pool[pid]:
+                    loc_name[l["Loc_ID"]] = l["loc_name"]
+            left, picks = need, 0
+            for l in pool[pid]:
+                if left <= 0:
+                    break
+                take = min(left, l["remain"])
+                if take <= 0:
+                    continue
+                l["remain"] -= take
+                left -= take
+                picks += 1
+                z = zones.setdefault(l["Loc_ID"], [])
+                z.append({
+                    "cat": pid[3:5],
+                    "cat_name": cat_name.get((pid[0], pid[1:3], pid[3:5]), pid[:5]),
+                    "P_ID": pid, "P_N": it["P_N"], "Spec": it["Spec"],
+                    "grade": it["grade"], "Req_num": it["Req_num"],
+                    "Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
+                    "age_days": _days_between(l["Lot_Date"], base),
+                    "take": take, "need": need,
+                    "lot_remain": l["remain"] + take,     # 집기 전 잔량
+                })
+                tot_qty += take
+                amount += int(round(take * price.get(pid, 0)))
+            if picks > 1:
+                split += 1
+            if left > 0:
+                # 재고가 모자라 이 요청에서 못 채우는 몫
+                tot_short += left
+                zones.setdefault("__short__", []).append({
+                    "P_ID": pid, "P_N": it["P_N"], "Spec": it["Spec"],
+                    "grade": it["grade"], "Req_num": it["Req_num"],
+                    "Lot_ID": None, "Lot_Date": None, "age_days": None,
+                    "take": 0, "need": need, "got": need - left, "shortage": left,
+                })
 
-    items = []
-    for r in _rows(conn, """
-        SELECT p.P_ID, p.P_N, p.Spec, c.CP_N AS supplier, s.Sf_Lv AS grade
-          FROM Product_tb p
-          LEFT JOIN Company_tb c ON p.BRN = c.BRN
-          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
-    """):
-        pid = r["P_ID"]
-        if pid not in per_set or pid not in lots:
-            continue
-        items.append({
-            "P_ID": pid, "P_N": r["P_N"], "Spec": r["Spec"],
-            "supplier": r["supplier"], "grade": r["grade"],
-            "per_set": per_set[pid],
-            "lots": lots[pid],
-            "stock": sum(l["remain"] for l in lots[pid]),
+        zlist = []
+        for loc in sorted(k for k in zones if k != "__short__"):
+            lines = sorted(zones[loc], key=lambda x: (x["P_ID"], x["Lot_Date"]))
+            groups = []
+            for ln in lines:
+                seq += 1
+                ln["seq"] = seq
+                if not groups or groups[-1]["cat"] != ln["cat"]:
+                    groups.append({"cat": ln["cat"], "cat_name": ln["cat_name"],
+                                   "lines": [], "qty": 0})
+                groups[-1]["lines"].append(ln)
+                groups[-1]["qty"] += ln["take"]
+            zlist.append({"Loc_ID": loc, "loc_name": loc_name.get(loc, loc),
+                          "lines": lines, "groups": groups,
+                          "qty": sum(x["take"] for x in lines)})
+        short_lines = sorted(zones.get("__short__", []), key=lambda x: x["P_ID"])
+
+        out.append({
+            "Req_ID": r["Req_ID"], "Req_Date": r["Req_Date"], "Status": r["Status"],
+            "FG_ID": r["FG_ID"], "FG_N": r["FG_N"], "Plan_Qty": r["Plan_Qty"],
+            "Work_Order": r["Work_Order"], "Note": r["Note"],
+            "worker": r["worker"], "pos": r["pos"],
+            "approver": r["approver"], "appr_pos": r["appr_pos"],
+            "Appr_Date": r["Appr_Date"],
+            "zones": zlist, "short_lines": short_lines,
+            "line_cnt": seq, "item_cnt": len({x["P_ID"] for z in zlist for x in z["lines"]}),
+            "zone_cnt": len(zlist),
+            "step_cnt": sum(len(z["groups"]) for z in zlist),
+            "total_qty": tot_qty,
+            "short_qty": tot_short, "short_cnt": len(short_lines),
+            "split_cnt": split,
+            "req_qty": r["left_qty"],
+            "amount": amount,
         })
-    # 창고 구역 → 품번 순 (피킹 동선)
-    items.sort(key=lambda x: (x["lots"][0]["Loc_ID"], x["P_ID"]))
-    return items, base
+
+    return {"base": base, "lists": out,
+            "req_cnt": len(out),
+            "line_cnt": sum(o["line_cnt"] for o in out),
+            "qty": sum(o["total_qty"] for o in out),
+            "short_cnt": sum(o["short_cnt"] for o in out),
+            "workers": _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")}
 
 
 # ── 발주 시뮬레이터 ──────────────────────────────────────────
