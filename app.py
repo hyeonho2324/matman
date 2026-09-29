@@ -424,7 +424,17 @@ def _ctx_wizard():
     conn = db.connect()
     try:
         rows, base, span, due = db.wizard_data(conn)
-        return {"rows": rows, "summary": db.wizard_summary(rows, base, due), "span": span}
+        targets, _b, entry = db.safety_targets(conn)
+        skip = {r["P_ID"]: r["skip"] for r in targets}
+        for r in rows:
+            r["skip"] = skip.get(r["P_ID"])
+        return {
+            "rows": rows, "summary": db.wizard_summary(rows, base, due), "span": span,
+            "entry": entry,
+            "target_cnt": sum(1 for r in rows if not r["skip"]),
+            "runs": db.safety_runs(conn),
+            "workers": db._rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name"),
+        }
     finally:
         conn.close()
 
@@ -725,6 +735,53 @@ def api_request_cancel():
 # ── 입고 등록 API ───────────────────────────────────────────
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
 # Lot_tb 와 Transaction_tb 를 한 트랜잭션에 함께 쓴다.
+
+@app.route("/api/safety/preview", methods=["POST"])
+def api_safety_preview():
+    """안전재고 일괄 갱신 미리보기 — 대상 판정과 변경 건수 (저장 안 함)."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_safety_update(
+            conn, _entry_date(body), body.get("P_IDs"), body.get("EP_ID"), body.get("note"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/safety/apply", methods=["POST"])
+def api_safety_apply():
+    """안전재고 일괄 갱신 실행 — Safe_tb 갱신 + Update_Log_tb 이력."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.apply_safety_update(
+            conn, _entry_date(body), body.get("P_IDs"), body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/safety/revert", methods=["POST"])
+def api_safety_revert():
+    """갱신 되돌리기 — 그 실행분의 변경 전 값을 되돌린다."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        res, errors = db.revert_safety_update(
+            conn, body.get("run_date"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": res})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 @app.route("/api/request/approve/preview", methods=["POST"])
 def api_request_approve_preview():

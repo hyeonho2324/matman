@@ -298,6 +298,16 @@ CREATE TABLE Update_Log_tb (
     P_ID         TEXT NOT NULL,
     Updated_Date TEXT NOT NULL,        -- 안전재고 재계산 실행일
     Next_Date    TEXT,                 -- 다음 재계산 예정일 (A+30 B+90 C+180일)
+    -- 아래는 화면에서 실행한 갱신분만 채워진다. 원본 200행은 NULL 이다.
+    -- 무엇이 어떻게 바뀌었는지를 남겨야 되돌릴 수 있다.
+    Old_Lv       TEXT,                 -- 갱신 전 등급        New_Lv    갱신 후
+    New_Lv       TEXT,
+    Old_Num      INTEGER,              -- 갱신 전 안전재고    New_Num   갱신 후
+    New_Num      INTEGER,
+    Old_Usage    INTEGER,              -- 갱신 전 사용금액 점수
+    New_Usage    INTEGER,
+    EP_ID        TEXT,                 -- 실행자
+    Note         TEXT,
     PRIMARY KEY (P_ID, Updated_Date)
 );
 

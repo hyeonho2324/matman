@@ -49,6 +49,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .sech-t{font-size:12px;font-weight:500;flex:1}
 .sech-m{font-size:10px;color:var(--txt3)}
 .fx{padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.8;color:var(--txt2);white-space:pre-wrap;background:var(--s1);border-bottom:0.5px solid var(--border)}
+.apbox{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px}
+.aprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.aprow label{font-size:11px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+.apbox select,.apbox input{font-family:inherit;font-size:12px;color:var(--txt);background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:5px 8px}
+.apbox input[type=text]{flex:1;min-width:180px}
+.apbox select:focus,.apbox input:focus{outline:none;border-color:var(--acc)}
+.btns{background:var(--ok);color:#fff;border-color:transparent;font-weight:500}
+.btns:hover:not(:disabled){filter:brightness(1.07)}
+.btnd{border-color:var(--dn);color:var(--dn)}
+.btnd:hover:not(:disabled){background:var(--bg-dn)}
+.warn{background:var(--bg-wn);border:0.5px solid rgba(239,159,39,.35);border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.7;margin-bottom:12px;color:#7A4B08}
+.warn b{color:#5E3A06}
+.msgbox{border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.7;margin-bottom:12px;display:none}
+.msgbox.on{display:block}
+.msgbox.err{background:var(--bg-dn);color:#9B1C1C}
+.msgbox.ok{background:var(--bg-ok);color:#1D6E52}
+.msgbox ul{margin:4px 0 0 16px}
+.runrow{display:flex;align-items:center;gap:9px;padding:8px 12px;border-bottom:0.5px solid var(--border);font-size:11px;flex-wrap:wrap}
+.runrow:last-child{border-bottom:none}
+.runrow .rd{font-weight:600}
+.runrow .rs{color:var(--txt3);flex:1;min-width:140px}
 .note{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 12px}
 
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -92,7 +113,7 @@ tr:last-child td{border-bottom:none}
   <div class="topbar">
     <div class="pt">
       <i class="ti ti-wand" style="color:var(--acc)"></i>안전재고 일괄 갱신
-      <span class="tag">실제 DB · 기준일 {{ summary.base_date }} · 대상 {{ summary.total }}종</span>
+      <span class="tag">실제 DB · 기준일 {{ summary.base_date }} · 전체 {{ summary.total }}종 · 갱신 대상 {{ target_cnt }}종</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
   </div>
@@ -108,15 +129,21 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <script>
-const ROWS = {{ rows|tojson }};
-const SUM  = {{ summary|tojson }};
-const SPAN = {{ span }};
+const ROWS    = {{ rows|tojson }};
+const SUM     = {{ summary|tojson }};
+const SPAN    = {{ span }};
+const ENTRY   = {{ entry|tojson }};       // 갱신 실행일 — 기준일 다음 날
+const TARGETS = {{ target_cnt|tojson }};  // 주기가 도래해 실제로 갱신할 품목 수
+const RUNS    = {{ runs|tojson }};        // 화면에서 실행한 갱신 이력
+const WORKERS = {{ workers|tojson }};
+let busy = false;
 
 const STEPS = [
   {t:'대상 선정',   s:'재검토 기한 도래'},
   {t:'파레토 산정', s:'Usage_Score 계산'},
   {t:'등급 재판정', s:'5항목 합산'},
-  {t:'안전재고 재계산', s:'공식 적용'}
+  {t:'안전재고 재계산', s:'공식 적용'},
+  {t:'DB 반영',      s:'Safe_tb 갱신'}
 ];
 let si = 0;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
@@ -303,7 +330,7 @@ function render(){
   }
 
   // ── 4단계 : 안전재고 재계산 ──
-  else {
+  else if(si===3){
     const big = ROWS.filter(function(r){return r.ss_diff;})
                     .sort(function(a,b){return Math.abs(b.ss_diff)-Math.abs(a.ss_diff);}).slice(0,10);
     b.innerHTML =
@@ -347,10 +374,151 @@ function render(){
                  + '<td class="num"><b>'+nf(r.new_ss)+'</b></td>'
                  + '<td class="num '+(r.ss_diff>0?'up':'down')+'">'+(r.ss_diff>0?'+':'')+nf(r.ss_diff)+'</td></tr>';
           }))
-    +   '<div class="note">⚠️ 이 화면은 <b>조회 전용</b>입니다. 실제로 DB 를 수정하지 않고 '
-    +     '"적용하면 이렇게 됩니다"를 보여줍니다. 반영하려면 <code>Safe_tb</code> 와 '
-    +     '<code>Update_Log_tb</code> 쓰기 기능이 필요합니다.</div></div>';
-    msg.innerHTML = '재계산 완료. <b>' + SUM.ss_changed + '종</b>의 안전재고가 조정됩니다 (순증 ' + nf(SUM.ss_total_diff) + '개).';
+    +   '<div class="note">여기까지가 계산입니다. 다음 단계에서 <code>Safe_tb</code> 에 실제로 반영합니다.</div></div>';
+    msg.innerHTML = '재계산 완료. <b>' + SUM.ss_changed + '종</b>의 안전재고가 조정됩니다 (순증 ' + nf(SUM.ss_total_diff) + '개). 다음 단계에서 반영하세요.';
+  }
+
+  // ── 5단계 : DB 반영 ──
+  else {
+    const skipped = ROWS.filter(function(r){ return r.skip; });
+    const why = {};
+    skipped.forEach(function(r){ why[r.skip] = (why[r.skip]||0) + 1; });
+
+    b.innerHTML =
+      '<div class="stitle">5단계 · DB 반영</div>'
+    + '<div class="ssub">앞 단계의 계산 결과를 <code>Safe_tb</code> 에 씁니다. '
+    +   '변경 전 값은 <code>Update_Log_tb</code> 에 남으므로 되돌릴 수 있습니다.</div>'
+
+    + '<div class="warn"><b>⚠️ ' + TARGETS + '종을 한 번에 덮어씁니다.</b><br>'
+    +   '재검토 주기가 도래한 품목만 갱신합니다 — 주기 설계(A 30일 / B 90일 / C 180일)가 '
+    +   '살아 있어야 하기 때문입니다.'
+    +   (skipped.length
+        ? ' 제외 ' + skipped.length + '종: '
+          + Object.keys(why).map(function(k){ return esc(k) + ' ' + why[k]; }).join(' · ')
+        : '')
+    +   '<br>사람이 매기는 4개 점수(단가·대체·영향·공급)는 건드리지 않습니다. '
+    +   '자동 산정 대상은 <code>Usage_Score</code> 하나뿐입니다.</div>'
+
+    + '<div class="cards">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-target"></i>갱신 대상</div>'
+    +     '<div class="c-v ac">' + TARGETS + '<small>종</small></div>'
+    +     '<div class="c-s">전체 ' + SUM.total + '종 중</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-shuffle"></i>등급 변동</div>'
+    +     '<div class="c-v">' + SUM.grade_changed + '<small>종</small></div>'
+    +     '<div class="c-s">상향 ' + SUM.grade_up + ' · 하향 ' + SUM.grade_down + '</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-refresh"></i>수량 변동</div>'
+    +     '<div class="c-v">' + SUM.ss_changed + '<small>종</small></div>'
+    +     '<div class="c-s">순증 ' + nf(SUM.ss_total_diff) + '개</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-calendar-plus"></i>실행일</div>'
+    +     '<div class="c-v" style="font-size:14px">' + ENTRY + '</div>'
+    +     '<div class="c-s">다음 예정일 = 실행일 + 등급별 주기</div></div>'
+    + '</div>'
+
+    + '<div class="msgbox" id="apmsg"></div>'
+
+    + '<div class="apbox">'
+    +   '<div class="aprow"><label><i class="ti ti-user"></i>실행 담당자</label>'
+    +     '<select id="who">' + WORKERS.map(function(w){
+            return '<option value="' + esc(w.EP_ID) + '">' + esc(w.Name) + ' '
+                 + esc(w.Position||'') + '</option>'; }).join('') + '</select>'
+    +     '<label><i class="ti ti-note"></i>메모</label>'
+    +     '<input type="text" id="note" placeholder="예) 2026년 1분기 정기 갱신" '
+    +       'value="정기 갱신 · 기준일 ' + SUM.base_date + '"></div>'
+    +   '<div class="aprow" style="margin-bottom:0">'
+    +     '<button class="btn btns" id="apply" onclick="doApply()"'
+    +       (TARGETS ? '' : ' disabled') + '>'
+    +       '<i class="ti ti-database-import"></i>' + TARGETS + '종 반영</button>'
+    +     '<span class="note" style="padding:0">실행일 ' + ENTRY + ' 로 기록됩니다. '
+    +       '같은 날 두 번 실행할 수는 없습니다.</span></div>'
+    + '</div>'
+
+    + '<div class="sec"><div class="sech"><i class="ti ti-history"></i>'
+    +   '<span class="sech-t">갱신 이력</span>'
+    +   '<span class="sech-m">화면에서 실행한 것만 — 원본 200행은 변경 전 값이 없어 되돌릴 수 없습니다</span></div>'
+    +   (RUNS.length
+        ? RUNS.map(function(r, idx){
+            return '<div class="runrow">'
+              + '<span class="rd">' + esc(r.run_date) + '</span>'
+              + '<span class="rs">' + esc(r.worker||'-') + ' ' + esc(r.pos||'') + ' · '
+              +   r.cnt + '종 · 등급 ' + r.grade_changed + ' · 수량 ' + r.ss_changed
+              +   ' (순증 ' + nf(r.ss_total_diff) + ') · Usage 채움 ' + r.usage_filled
+              +   (r.note ? ' · ' + esc(r.note) : '') + '</span>'
+              + (idx === 0
+                  ? '<button class="btn btnd" data-d="' + esc(r.run_date) + '"'
+                    + ' onclick="doRevert(this.dataset.d)">'
+                    + '<i class="ti ti-arrow-back-up"></i>되돌리기</button>'
+                  : '<span class="note" style="padding:0">최근 것부터 되돌립니다</span>')
+              + '</div>';
+          }).join('')
+        : '<div class="empty">아직 실행한 갱신이 없습니다.</div>')
+    + '</div>';
+
+    msg.innerHTML = TARGETS
+      ? '<b>' + TARGETS + '종</b>을 반영할 준비가 됐습니다. 담당자를 고르고 [반영] 을 누르세요.'
+      : '갱신할 대상이 없습니다. 재검토 주기가 도래한 품목이 없거나 이미 오늘 갱신했습니다.';
+  }
+}
+
+function say(cls, html){
+  const m = document.getElementById('apmsg');
+  if(!m) return;
+  m.className = 'msgbox on ' + cls;
+  m.innerHTML = html;
+}
+function errList(errs){
+  return '<ul>' + errs.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
+}
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(body)});
+  return await r.json();
+}
+
+async function doApply(){
+  if(busy) return;
+  busy = true;
+  const btn = document.getElementById('apply');
+  if(btn){ btn.disabled = true; }
+  const body = {EP_ID: document.getElementById('who').value,
+                note: document.getElementById('note').value,
+                date: ENTRY};
+  try{
+    const d = await post('/api/safety/apply', body);
+    if(!d.ok){
+      busy = false; if(btn) btn.disabled = false;
+      say('err', '<b>반영하지 못했습니다</b>' + errList(d.errors));
+      return;
+    }
+    const p = d.plan;
+    say('ok', '<b><i class="ti ti-check"></i> 반영 완료</b> — ' + p.cnt + '종 · '
+      + '등급 변동 ' + p.grade_changed + ' · 수량 변동 ' + p.ss_changed
+      + ' (순증 ' + nf(p.ss_total_diff) + '개) · Usage 채움 ' + p.usage_filled
+      + '<br>실행자 ' + esc(p.worker.Name) + ' ' + esc(p.worker.Position) + ' · ' + esc(p.date)
+      + '<br>안전재고 화면의 미달 판정이 새 기준으로 바뀝니다. 잠시 후 새로 고칩니다.');
+    setTimeout(function(){ location.reload(); }, 1800);
+  }catch(e){
+    busy = false; if(btn) btn.disabled = false;
+    say('err', '서버에 연결하지 못했습니다: ' + esc(e.message || e));
+  }
+}
+
+async function doRevert(runDate){
+  if(busy) return;
+  busy = true;
+  try{
+    const d = await post('/api/safety/revert',
+      {run_date: runDate, EP_ID: document.getElementById('who').value});
+    if(!d.ok){
+      busy = false;
+      say('err', '<b>되돌리지 못했습니다</b>' + errList(d.errors));
+      return;
+    }
+    say('ok', '<b>' + esc(runDate) + ' 갱신을 되돌렸습니다</b> — ' + d.result.cnt + '종이 '
+      + '갱신 전 값으로 돌아갔습니다. 잠시 후 새로 고칩니다.');
+    setTimeout(function(){ location.reload(); }, 1600);
+  }catch(e){
+    busy = false;
+    say('err', '서버에 연결하지 못했습니다: ' + esc(e.message || e));
   }
 }
 

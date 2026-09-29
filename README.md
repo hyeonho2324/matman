@@ -40,11 +40,11 @@ python app.py
 | /forecast | 수요 예측 |
 | /simulator | 발주 시뮬레이터 ★ |
 | /report | 월간 리포트 |
-| /wizard | 안전재고 일괄 갱신 |
+| /wizard | 안전재고 일괄 갱신 ✎ |
 | /users | 사용자 관리 |
 
 ★ = 완전 인터랙티브 (4단계)
-✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 승인(`Appr_Qty`·`Status`) · 불출 등록(`Transaction_tb`). 발주 → 입고 → 불출 요청 → 승인 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
+✎ = DB 쓰기 — 발주 등록 · 입고 등록(`Lot_tb`·`Transaction_tb`) · 불출 요청(`Disburse_Req_tb`) · 불출 승인(`Appr_Qty`·`Status`) · 불출 등록(`Transaction_tb`) · 안전재고 갱신(`Safe_tb`·`Update_Log_tb`). 발주 → 입고 → 불출 요청 → 승인 → 불출 한 바퀴가 실제로 돌아갑니다. 나머지는 조회 전용입니다.
 
 > 승인되지 않은 요청은 불출 처리 화면에 내려가지 않습니다. 요청자 본인은 승인할 수 없고, 직급별 금액 한도(대리 300만 / 과장 1,000만 / 차장 3,000만 / 부장 무제한)를 넘으면 윗선이 처리합니다.
 

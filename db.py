@@ -132,6 +132,15 @@ def safety_stock_list(conn):
                        AVG(julianday(l.Lot_Date) - julianday(h.P_Date)) AS lt_real
                   FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
                  GROUP BY l.P_ID
+             ),
+             -- ⚠️ 갱신을 한 번 실행하면 한 품번에 이력이 여러 행 생긴다.
+             --    Update_Log_tb 를 그대로 조인하면 200종이 400종으로 불어난다.
+             --    (원본 데이터가 품번당 1행뿐이라 드러나지 않던 함정)
+             last_log AS (
+                SELECT P_ID, Updated_Date, Next_Date
+                  FROM Update_Log_tb l
+                 WHERE Updated_Date = (SELECT MAX(Updated_Date) FROM Update_Log_tb x
+                                        WHERE x.P_ID = l.P_ID)
              )
         SELECT s.P_ID,
                p.P_N, p.Spec, p.P_Price, p.MinOrderQty, p.PkgUnit,
@@ -162,7 +171,7 @@ def safety_stock_list(conn):
           LEFT JOIN stock st  ON s.P_ID = st.P_ID
           LEFT JOIN used u    ON s.P_ID = u.P_ID
           LEFT JOIN lead ld   ON s.P_ID = ld.P_ID
-          LEFT JOIN Update_Log_tb ul ON s.P_ID = ul.P_ID
+          LEFT JOIN last_log ul ON s.P_ID = ul.P_ID
          ORDER BY (COALESCE(st.stock, 0) - s.Sf_Num) ASC
     """)
 
@@ -2208,6 +2217,186 @@ def wizard_summary(rows, base, due):
     }
 
 
+# ── 안전재고 일괄 갱신 (여섯 번째 쓰기 기능) ────────────────
+#
+# wizard_data() 가 "적용하면 이렇게 된다" 를 계산해 왔다. 여기서 실제로 적용한다.
+#
+#   Safe_tb        Sf_Lv (재판정 등급) · Sf_Num (재계산 안전재고) · Usage_Score (파레토)
+#   Update_Log_tb  실행일 · 다음 예정일 · 변경 전/후 값 · 실행자
+#
+# ⚠️ 200행을 한 번에 덮어쓰는 유일한 기능이다. 그래서 두 가지를 지킨다.
+#   ① 주기가 도래한 품목만 건드린다. 재검토 주기 설계(A30/B90/C180)가 살아 있어야 한다
+#   ② 변경 전 값을 Update_Log_tb 에 남긴다 — 남기지 않으면 되돌릴 방법이 없다
+#
+# 사람이 매기는 4개 점수(단가·대체·영향·공급)는 건드리지 않는다.
+# 자동 산정 대상은 Usage_Score 하나뿐이다 (SAFE_STOCK_DESIGN 참조).
+
+
+def safety_targets(conn, date=None):
+    """갱신 대상과 제외 사유. 화면과 API 가 같은 판정을 쓴다."""
+    rows, base, span, _due = wizard_data(conn)
+    date = date or _add_days(base, 1)
+    done = {r["P_ID"] for r in _rows(
+        conn, "SELECT P_ID FROM Update_Log_tb WHERE Updated_Date = ?", (date,))}
+
+    out = []
+    for r in rows:
+        r = dict(r)
+        if r["P_ID"] in done:
+            r["skip"] = "오늘 이미 갱신됨"        # 같은 날 두 번 돌리면 이력이 덮인다
+        elif not r["due"]:
+            r["skip"] = "재검토 주기 미도래"
+        elif r["new_ss"] is None:
+            r["skip"] = "재계산 불가 (불출 이력 또는 리드타임 없음)"
+        else:
+            r["skip"] = None
+        r["changed"] = bool(r["grade_changed"] or r["ss_diff"]
+                            or r["usage_filled"] or r["usage_changed"])
+        r["next_date_new"] = _add_days(date, REVIEW_CYCLE_DAYS.get(r["new_grade"], 90))
+        out.append(r)
+    return out, base, date
+
+
+def preview_safety_update(conn, date, pids=None, ep_id=None, note=None):
+    """갱신 미리보기 — 대상 판정과 변경 건수. apply 가 저장 직전에 다시 부른다.
+
+    pids 를 주면 그중 대상인 것만 처리한다(화면에서 일부를 제외할 수 있다).
+    주지 않으면 대상 전체다.
+    """
+    targets, base, date = safety_targets(conn, date)
+    by_id = {r["P_ID"]: r for r in targets}
+
+    if pids is not None:
+        pids = [str(x or "").strip() for x in pids]
+        if not pids:
+            return None, ["갱신할 품목을 하나 이상 고르세요."]
+        unknown = [x for x in pids if x not in by_id]
+        if unknown:
+            return None, ["등록되지 않은 품번입니다: %s" % ", ".join(unknown[:5])]
+        picked = [by_id[x] for x in dict.fromkeys(pids)]
+        blocked = [r for r in picked if r["skip"]]
+        if blocked:
+            return None, ["갱신 대상이 아닌 품목이 있습니다: %s"
+                          % ", ".join("%s(%s)" % (r["P_ID"], r["skip"]) for r in blocked[:5])]
+        items = picked
+    else:
+        items = [r for r in targets if not r["skip"]]
+
+    if not items:
+        return None, ["갱신할 대상이 없습니다. 재검토 주기가 도래한 품목이 없거나 이미 갱신했습니다."]
+
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["실행 담당자를 선택하세요."]
+    row = conn.execute(
+        "SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?", (ep_id,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 담당자입니다: %s" % ep_id]
+    w = {"EP_ID": row["EP_ID"], "Name": row["Name"], "Position": row["Position"]}
+
+    gc = [r for r in items if r["grade_changed"]]
+    up = [r for r in gc if "CBA".index(r["new_grade"]) > "CBA".index(r["old_grade"])]
+    ss = [r for r in items if r["ss_diff"]]
+    return {
+        "date": date, "base": base,
+        "worker": w, "note": (note or "").strip() or None,
+        "items": items, "cnt": len(items),
+        "skipped": len(targets) - len(items),
+        "changed": len([r for r in items if r["changed"]]),
+        "grade_changed": len(gc), "grade_up": len(up), "grade_down": len(gc) - len(up),
+        "usage_filled": len([r for r in items if r["usage_filled"]]),
+        "usage_changed": len([r for r in items if r["usage_changed"]]),
+        "ss_changed": len(ss),
+        "ss_up": len([r for r in ss if r["ss_diff"] > 0]),
+        "ss_down": len([r for r in ss if r["ss_diff"] < 0]),
+        "ss_total_diff": sum(r["ss_diff"] for r in items),
+        "grade_dist_old": {g: len([r for r in items if r["old_grade"] == g]) for g in "ABC"},
+        "grade_dist_new": {g: len([r for r in items if r["new_grade"] == g]) for g in "ABC"},
+    }, []
+
+
+def apply_safety_update(conn, date, pids=None, ep_id=None, note=None):
+    """안전재고 일괄 갱신 실행. Safe_tb 갱신 + Update_Log_tb 이력."""
+    plan, errors = preview_safety_update(conn, date, pids, ep_id, note)
+    if errors:
+        return None, errors
+    date = plan["date"]
+    with conn:                                   # 전부 성공 아니면 전부 실패
+        for r in plan["items"]:
+            conn.execute(
+                "UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ?, Usage_Score = ? WHERE P_ID = ?",
+                (r["new_grade"], r["new_ss"], r["new_usage"], r["P_ID"]))
+            conn.execute(
+                "INSERT INTO Update_Log_tb"
+                " (P_ID, Updated_Date, Next_Date, Old_Lv, New_Lv, Old_Num, New_Num,"
+                "  Old_Usage, New_Usage, EP_ID, Note)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (r["P_ID"], date, r["next_date_new"], r["old_grade"], r["new_grade"],
+                 r["old_ss"], r["new_ss"], r["old_usage"], r["new_usage"],
+                 plan["worker"]["EP_ID"], plan["note"]))
+    return plan, []
+
+
+def safety_runs(conn):
+    """화면에서 실행한 갱신 이력. 되돌리기 대상 목록이기도 하다.
+
+    원본 200행은 EP_ID 가 비어 있어 여기 잡히지 않는다 — 되돌릴 근거(변경 전 값)가 없다.
+    """
+    return _rows(conn, """
+        SELECT l.Updated_Date AS run_date, l.EP_ID, u.Name AS worker, u.Position AS pos,
+               MAX(l.Note) AS note,
+               COUNT(*) AS cnt,
+               SUM(CASE WHEN l.Old_Lv <> l.New_Lv THEN 1 ELSE 0 END) AS grade_changed,
+               SUM(CASE WHEN COALESCE(l.Old_Num,0) <> COALESCE(l.New_Num,0)
+                        THEN 1 ELSE 0 END) AS ss_changed,
+               SUM(COALESCE(l.New_Num,0) - COALESCE(l.Old_Num,0)) AS ss_total_diff,
+               SUM(CASE WHEN l.Old_Usage IS NULL AND l.New_Usage IS NOT NULL
+                        THEN 1 ELSE 0 END) AS usage_filled
+          FROM Update_Log_tb l
+          LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
+         WHERE l.EP_ID IS NOT NULL
+         GROUP BY l.Updated_Date, l.EP_ID
+         ORDER BY l.Updated_Date DESC
+    """)
+
+
+def revert_safety_update(conn, run_date, ep_id=None):
+    """갱신 되돌리기 — 그 실행분의 '변경 전' 값을 Safe_tb 에 되돌리고 이력을 지운다.
+
+    200행을 한 번에 덮는 기능이라 되돌릴 길을 함께 둔다.
+    ⚠️ 그 뒤에 더 최근 갱신이 있으면 되돌리지 않는다. 중간 이력을 빼면
+       Safe_tb 가 어느 실행 결과인지 설명할 수 없게 된다.
+    """
+    run_date = str(run_date or "").strip()
+    rows = _rows(conn, "SELECT * FROM Update_Log_tb"
+                       " WHERE Updated_Date = ? AND EP_ID IS NOT NULL", (run_date,))
+    if not rows:
+        return None, ["되돌릴 갱신 이력이 없습니다: %s" % (run_date or "(빈값)")]
+
+    later = conn.execute(
+        "SELECT MIN(Updated_Date) FROM Update_Log_tb"
+        " WHERE EP_ID IS NOT NULL AND Updated_Date > ?", (run_date,)).fetchone()[0]
+    if later:
+        return None, ["이후에 %s 갱신이 있어 되돌릴 수 없습니다. 최근 것부터 되돌리세요." % later]
+
+    if ep_id is not None and str(ep_id).strip():
+        # 199행을 되돌리는 일이라 아무나 못 하게 한다. 불출 승인과 같은 직급 기준을 쓴다.
+        w, errors = _approver(conn, ep_id, what="안전재고 되돌리기")
+        if errors:
+            return None, errors
+    else:
+        return None, ["되돌리기 담당자를 선택하세요."]
+
+    with conn:
+        for r in rows:
+            conn.execute(
+                "UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ?, Usage_Score = ? WHERE P_ID = ?",
+                (r["Old_Lv"], r["Old_Num"], r["Old_Usage"], r["P_ID"]))
+        conn.execute("DELETE FROM Update_Log_tb WHERE Updated_Date = ? AND EP_ID IS NOT NULL",
+                     (run_date,))
+    return {"run_date": run_date, "cnt": len(rows), "worker": w}, []
+
+
 # ── 발주 시뮬레이터 ──────────────────────────────────────────
 # 실제 품목 데이터를 주고, 발주량·발주시점·리드타임을 바꿔가며
 # 향후 재고 추이가 어떻게 달라지는지 화면에서 계산한다.
@@ -3701,8 +3890,11 @@ def cancel_request(conn, rid, ep_id=None):
 #   금액 한도      직급별 한도를 넘으면 윗선이 처리한다 (APPROVAL_LIMIT)
 
 
-def _approver(conn, ep_id, amount=None):
-    """승인자 검증 — 등록 여부 · 승인 권한 · 금액 한도."""
+def _approver(conn, ep_id, amount=None, what="불출 승인"):
+    """승인자 검증 — 등록 여부 · 승인 권한 · 금액 한도.
+
+    안전재고 되돌리기도 같은 직급 기준을 쓴다. what 으로 문구만 바꾼다.
+    """
     ep_id = str(ep_id or "").strip()
     if not ep_id:
         return None, ["승인자를 선택하세요."]
@@ -3712,7 +3904,7 @@ def _approver(conn, ep_id, amount=None):
         return None, ["등록되지 않은 담당자입니다: %s" % ep_id]
     lim = approval_limit(w["Position"])
     if lim == 0:
-        return None, ["%s %s 직급은 불출 승인 권한이 없습니다." % (w["Name"], w["Position"])]
+        return None, ["%s %s 직급은 %s 권한이 없습니다." % (w["Name"], w["Position"], what)]
     if lim is not None and amount is not None and amount > lim:
         return None, ["%s %s의 승인 한도(%s원)를 넘습니다. 승인 금액 %s원 — 상위 직급이 처리해야 합니다."
                       % (w["Name"], w["Position"], format(lim, ","), format(int(amount), ","))]
