@@ -193,7 +193,7 @@ function drawList(){
       '<button class="btn" style="padding:2px 8px;font-size:10px" onclick="openClaimForm()">'
       + '<i class="ti ti-plus"></i>불량 접수</button>';
     document.getElementById('list').innerHTML = CLAIMS.length ? CLAIMS.map(function(k){
-      return '<div class="it ' + (selClaim===k.Claim_ID?'on':'') + '" data-id="' + k.Claim_ID
+      return '<div class="po ' + (selClaim===k.Claim_ID?'on':'') + '" data-id="' + k.Claim_ID
         + '" onclick="pickClaim(this.dataset.id)">'
         + '<div class="po-h"><span class="hid">' + k.Claim_ID + '</span>' + resBadge(k) + '</div>'
         + '<div class="po-s"><span class="pid">' + k.P_ID + '</span> ' + esc((k.P_N||'').slice(0,12))
