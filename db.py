@@ -2858,6 +2858,7 @@ def picking_lists(conn):
 
     return {"base": base, "lists": out,
             "req_cnt": len(out),
+            "wait_appr": wait_approval_cnt(conn),
             "line_cnt": sum(o["line_cnt"] for o in out),
             "qty": sum(o["total_qty"] for o in out),
             "short_cnt": sum(o["short_cnt"] for o in out),
@@ -3076,6 +3077,7 @@ def workbench(conn):
     subs = sub_products(conn) if pending else []
     # 생산에서 올라온 불출 요청 — 불출 처리 화면이 골라 소비한다
     open_reqs = open_requests(conn)
+    wait_appr = wait_approval_cnt(conn)     # 승인 관문에 걸려 여기 안 오는 요청
     # 입고 클레임 (불량·반품·대체) — 입고 화면의 '불량·반품' 탭이 쓴다
     claims = claim_list(conn)
     claim_sum = claim_summary(conn)
@@ -3095,6 +3097,7 @@ def workbench(conn):
         "pending": pending,
         "subs": subs,
         "open_reqs": open_reqs,
+        "wait_appr": wait_appr,
         "claims": claims,
         "claim_sum": claim_sum,
     }
@@ -4218,6 +4221,15 @@ def request_list(conn, limit=60):
         r["cut_cnt"] = sum(1 for x in r["items"] if x["cut"])
         r["pct"] = _pct(r["done_qty"] or 0, r["eff_qty"] or 0)
     return reqs
+
+
+def wait_approval_cnt(conn):
+    """승인 대기(= 요청 상태) 건수.
+
+    불출 처리·피킹 화면이 '왜 요청 현황보다 적게 보이는가' 를 설명하는 데 쓴다.
+    """
+    return conn.execute(
+        "SELECT COUNT(*) FROM Disburse_Req_tb WHERE Status = '요청'").fetchone()[0]
 
 
 def open_requests(conn):

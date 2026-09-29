@@ -203,7 +203,11 @@ function checkAll(on){
 }
 
 function drawSide(){
-  document.getElementById('cnt').textContent = LISTS.length + '장';
+  document.getElementById('cnt').innerHTML = LISTS.length + '장'
+    + (D.wait_appr
+        ? ' <span title="승인을 거쳐야 지시서가 나옵니다" style="color:var(--wn)">'
+          + '· 승인 대기 ' + D.wait_appr + '</span>'
+        : '');
   document.getElementById('list').innerHTML = LISTS.length ? LISTS.map(function(o){
     const d = doneCnt(o), p = o.line_cnt ? Math.round(d/o.line_cnt*100) : 0;
     return '<div class="rq ' + (sel===o.Req_ID?'on':'') + '" data-id="' + esc(o.Req_ID)
@@ -230,7 +234,10 @@ function drawSheet(){
       + '<i class="ti ti-clipboard-off" style="font-size:26px;display:block;margin-bottom:10px"></i>'
       + '<b>승인된 불출 요청이 없습니다.</b><br>'
       + '피킹 지시서는 <b>승인된 요청</b>에서만 만들어집니다.<br>'
-      + '불출 요청 화면에서 요청을 올리고, <b>불출 승인</b>에서 통과시키면 여기에 나타납니다.</div>';
+      + (D.wait_appr
+          ? '<b>승인 대기 ' + D.wait_appr + '건</b>을 불출 승인 화면에서 통과시키면 여기에 나타납니다.'
+          : '불출 요청 화면에서 요청을 올리고, <b>불출 승인</b>에서 통과시키면 여기에 나타납니다.')
+      + '</div>';
     return;
   }
   const m = picked(o), d = doneCnt(o), p = o.line_cnt ? Math.round(d/o.line_cnt*100) : 0;

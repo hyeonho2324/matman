@@ -149,6 +149,7 @@ const LOTS  = {{ scan_lots|tojson }};
 const WORKERS = {{ workers|tojson }};
 // 생산에서 올라온 불출 요청 (미완료분). 고르면 그 자재·잔여수량이 채워진다.
 const OPEN_REQS = {{ open_reqs|tojson }};
+const WAIT_APPR = {{ wait_appr|tojson }};   // 승인 대기라 여기 안 오는 요청 수
 let mode = 'req';           // 'req' = 요청 일괄 불출 · 'direct' = 요청 없는 단건 불출
 let selReq = null;          // 선택된 요청서
 let B = {};                 // 요청 라인별 {on, qty}
@@ -177,7 +178,10 @@ function setMode(m){
     if(selReq) pickReq(selReq);
     else document.getElementById('right').innerHTML =
       '<div class="empty"><i class="ti ti-clipboard-off" style="font-size:22px;display:block;margin-bottom:8px"></i>'
-      + '처리할 불출 요청이 없습니다.<br>불출 요청 화면에서 요청을 등록하면 여기에 나타납니다.<br>'
+      + (WAIT_APPR
+          ? '<b>승인 대기 ' + WAIT_APPR + '건</b>이 있습니다.<br>'
+            + '불출 승인 화면에서 통과시키면 여기에 나타납니다.<br>'
+          : '처리할 불출 요청이 없습니다.<br>불출 요청 화면에서 요청을 등록하면 여기에 나타납니다.<br>')
       + '요청 없이 내보내려면 <b>직접 불출</b> 탭을 쓰세요.</div>';
   }else{
     drawList();
@@ -199,7 +203,11 @@ function drawList(){
   if(mode === 'req'){
     const rows = OPEN_REQS.filter(function(r){
       return !q || (r.Req_ID+' '+(r.Work_Order||'')+' '+(r.FG_N||'')).toLowerCase().indexOf(q)>=0; });
-    document.getElementById('cnt').textContent = rows.length + '건';
+    document.getElementById('cnt').innerHTML = rows.length + '건'
+      + (mode==='req' && WAIT_APPR
+          ? ' <span title="승인을 거쳐야 불출할 수 있습니다" style="color:var(--wn)">'
+            + '· 승인 대기 ' + WAIT_APPR + '</span>'
+          : '');
     document.getElementById('list').innerHTML = rows.length ? rows.map(function(r){
       const cls = r.Status==='일부불출' ? 'bwn' : 'bac';
       return '<div class="it ' + (selReq===r.Req_ID?'on':'') + '" data-id="' + r.Req_ID

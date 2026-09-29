@@ -219,7 +219,21 @@ function drawList(){
     rows = REQUESTS.filter(function(r){
       return !qs || (r.Req_ID + ' ' + (r.Work_Order||'') + ' ' + (r.FG_N||'')).toLowerCase().indexOf(qs) >= 0; });
   }
-  document.getElementById('cnt').textContent = rows.length + (mode==='new' ? '종' : '건');
+  if(mode === 'new'){
+    document.getElementById('cnt').textContent = rows.length + '종';
+  }else{
+    // 요청 현황은 '전체' 다. 불출 처리·피킹은 승인된 것만 보이므로 건수가 다르다.
+    const wait = REQUESTS.filter(function(x){ return x.Status === '요청'; }).length;
+    const live = REQUESTS.filter(function(x){
+      return x.Status === '승인' || x.Status === '일부불출'; }).length;
+    const done = REQUESTS.filter(function(x){ return x.Status === '불출완료'; }).length;
+    document.getElementById('cnt').innerHTML = rows.length + '건'
+      + (wait ? ' <span style="color:var(--wn)" title="불출 승인에서 통과시켜야 불출·피킹에 나타납니다">'
+                + '· 승인대기 ' + wait + '</span>' : '')
+      + (live ? ' <span style="color:var(--acc)" title="불출 처리·피킹 지시서에 나타나는 건수">'
+                + '· 진행 ' + live + '</span>' : '')
+      + (done ? ' <span style="color:var(--txt3)">· 완료 ' + done + '</span>' : '');
+  }
 
   if(!rows.length){
     document.getElementById('list').innerHTML = '<div class="empty">해당 항목이 없습니다.</div>';
@@ -422,6 +436,13 @@ function drawReq(){
           + (r.Appr_Note ? ' — ' + esc(r.Appr_Note) : '')
         : ' · 승인 대기')
   +   (r.Note ? '<br>메모: ' + esc(r.Note) : '')
+  +   '<br>' + (r.Status === '요청'
+        ? '승인 전이라 <b>불출 처리·피킹 지시서에는 나오지 않습니다.</b> 불출 승인에서 통과시키세요.'
+        : (r.Status === '반려' || r.Status === '취소'
+            ? '종결된 요청이라 불출 처리·피킹에 나오지 않습니다.'
+            : (r.left_qty > 0
+                ? '불출 처리와 피킹 지시서에 <b>잔여 ' + nf(r.left_qty) + '개</b>로 나타납니다.'
+                : '잔여가 없어 불출 처리·피킹에서 내려갔습니다.')))
   + '</div>'
 
   + '<div class="kpi-row">'
