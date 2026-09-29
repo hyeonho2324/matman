@@ -82,7 +82,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .po-dup{font-size:10px;color:#854F0B}
 @media(max-width:700px){
   .po-steps{width:100%;margin-left:0;order:3}
-  .po-tb .hide-s{display:none}
+
   /* 품명 열을 줄여 '권장 발주'까지 화면에 들어오게 한다 (품명은 줄바꿈) */
   .po-tb th,.po-tb td{padding:5px 4px}
   .po-tb td:nth-child(2){max-width:132px}
@@ -118,6 +118,10 @@ select{padding:3px 8px;border-radius:var(--r);border:0.5px solid var(--border);f
 
 .main{flex:1;display:flex;overflow:hidden;min-height:0}
 .listwrap{flex:1;overflow:auto;min-width:0}
+/* 좁아지면 열을 숨기는 대신 가로로 넘겨 본다 — 숨기면 그 값에 닿을 길이 없다.
+   감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
+.listwrap table:not([class]){min-width:820px}
+.po-tb{min-width:700px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
 thead th:hover{background:var(--s2)}
@@ -182,7 +186,6 @@ tbody tr.on{background:var(--bg-ac)}
   .detail{width:100%;max-height:48%;border-left:none;border-top:0.5px solid var(--border-s)}
   .search{margin-left:0;width:100%}
   .search input{width:100%}
-  .hide-sm{display:none}
   svg{height:72px}
 }
 </style>

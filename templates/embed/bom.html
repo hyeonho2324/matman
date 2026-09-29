@@ -55,6 +55,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .sb-v.dn{color:var(--dn)}.sb-v.ok{color:var(--ok)}
 
 .tblwrap{flex:1;overflow:auto;min-height:0}
+/* 좁아지면 열을 숨기는 대신 가로로 넘겨 본다 — 숨기면 그 값에 닿을 길이 없다.
+   감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
+.tblwrap table:not([class]){min-width:820px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
 thead th.num{text-align:right}
@@ -82,7 +85,6 @@ tbody tr.altrow td{color:var(--txt3);font-size:11px}
   .main{flex-direction:column}
   .fglist{width:100%;max-height:33%;border-right:none;border-bottom:0.5px solid var(--border-s)}
   .sumbox{margin-left:0;width:100%}
-  .hide-sm{display:none}
 }
 </style>
 </head>

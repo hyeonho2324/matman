@@ -50,6 +50,9 @@ input[type=range]{accent-color:var(--acc);width:200px;height:18px}
 .cnt{font-size:11px;color:var(--txt3)}
 
 .listwrap{flex:1;overflow:auto;min-height:0}
+/* 좁아지면 열을 숨기는 대신 가로로 넘겨 본다 — 숨기면 그 값에 닿을 길이 없다.
+   감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
+.listwrap table:not([class]){min-width:900px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;z-index:2}
 thead th.num{text-align:right}
@@ -83,7 +86,6 @@ tbody tr.zhead td{background:var(--s2);font-weight:600;font-size:11px;padding:5p
   .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
   .search{margin-left:0;width:100%}
   .search input{width:100%}
-  .hide-sm{display:none}
   input[type=range]{width:140px}
 }
 </style>

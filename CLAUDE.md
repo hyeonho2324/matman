@@ -1502,6 +1502,32 @@ static/vendor/fonts/tabler-icons.woff2  851KB
 > 아이콘은 5,610종 전부 들어 있다. 쓰는 것만 추려내면 훨씬 작아지지만,
 > 나중에 아이콘을 하나 추가할 때 조용히 깨지므로 전체를 그대로 둔다.
 
+### ⚠️ 좁은 화면에서 열을 숨기지 않는다 (2026-09-29)
+
+목록 화면 15개가 `@media(max-width:820px)`(일부 900·700px)에서 `.hide-sm{display:none}` 으로
+열을 감추고 있었다. **감추면 그 값에 닿을 방법이 아예 없다** — 가로 스크롤바도 없었다.
+창을 세로로 길게 쓰면(폭 ~1080px, 사이드바 220px 제외) 그대로 걸린다.
+
+```css
+/* 전 */  @media(max-width:820px){ .hide-sm{display:none} }   ← 분류·협력사·재고금액이 사라짐
+/* 후 */  .listwrap table:not([class]){min-width:820px}       ← 넘치면 가로로 넘겨 본다
+```
+
+감싸는 컨테이너(`.listwrap` · `.tblwrap` · `.tw` · `.po-body` · `#m-body`)에는 **이미
+`overflow:auto` 가 있었다.** 표가 `width:100%` 라 줄어들 뿐이어서 스크롤바가 안 생겼던 것이다.
+표에 `min-width` 만 주면 된다.
+
+| 항목 | 내용 |
+|---|---|
+| **min-width 값** | 그 화면이 원래 '좁다' 고 판단하던 폭(=숨김 breakpoint)을 그대로 쓴다. 820px 11개 · 900px 3개(`approval`·`picking`·`stock_map`) · 700px 1개(`purchase` 의 `.po-tb`) |
+| **선택자** | `table:not([class])` — 목록 표는 클래스가 없고, 상세·모달 표는 전부 클래스가 있다(`lt`·`lt2`·`cmp`·`it`·`po-tb`). 옆 패널의 좁은 표까지 늘리지 않는다 |
+| **넓은 화면은 그대로** | `width:100%` 가 살아 있어 1400px 에서는 컨테이너를 꽉 채우고 가로 스크롤이 생기지 않는다 |
+
+> ✅ **검증** — 15개 화면 × 폭 375·700·820·900px 전수.
+> `hide-*` 로 `display:none` 이 걸린 요소 **0개**, 모든 표에 가로 스크롤 컨테이너 존재
+> (`listwrap` 12 · `tblwrap` 2 · `tw` 1). 1400px 에서는 표가 컨테이너를 꽉 채우고 스크롤 없음.
+> 모달 표(`.lt2`)도 10열 전부 표시되고 `#m-body` 가 가로 스크롤된다.
+
 ### embed 파일 작성 규칙
 1. 독립 HTML 파일 (DOCTYPE부터 시작)
 2. CSS 변수는 `:root`에 직접 정의 (base.html 미상속)

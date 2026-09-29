@@ -35,6 +35,9 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--acc)}
 .tab .n{font-size:10px;background:var(--s2);border-radius:99px;padding:0 5px;color:var(--txt3)}
 .tab.on .n{background:var(--bg-ac);color:var(--acc)}
 .listwrap{flex:1;overflow:auto;min-height:0;padding:12px 14px}
+/* 좁아지면 열을 숨기는 대신 가로로 넘겨 본다 — 숨기면 그 값에 닿을 길이 없다.
+   감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
+.listwrap table:not([class]){min-width:900px}
 .row{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;margin-bottom:9px;overflow:hidden}
 .row.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--bg-ac)}
 .rh{display:flex;align-items:center;gap:9px;padding:9px 12px;cursor:pointer}
@@ -106,7 +109,6 @@ tr.zero td:first-child{opacity:1}
   .kpi:nth-child(n+3){border-top:0.5px solid var(--border)}
   .line{flex-direction:column;align-items:stretch;gap:6px}
   .sarw{display:none}
-  .hide-sm{display:none}
   .lim{margin-left:0;width:100%}
   /* 요청 헤더는 가로로 다 안 들어간다 — 제목을 한 줄 차지하게 내린다 */
   .rh{flex-wrap:wrap;row-gap:6px}
