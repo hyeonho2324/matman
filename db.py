@@ -2744,6 +2744,211 @@ def override_list(conn, date=None):
     }
 
 
+# ── 생산 실적 등록 (여덟 번째 쓰기 기능) ────────────────────
+#
+# 흐름이 불출에서 끊겨 있었다. 창고에서 현장으로는 나가는데,
+# 현장이 그걸 써서 완제품을 만들었다는 기록을 넣을 데가 없었다.
+#
+#   불출 요청 → 승인 → 피킹 → 불출 → [생산 실적] → 완제품
+#
+# ⚠️ 투입은 '현장에 나가 있는 LOT' 에서만 나온다.
+#    창고 재고에서 바로 투입하면 불출 기록 없이 재고가 줄어 흐름이 깨진다.
+#    현장 보유 = 불출 − 생산 투입 − 반납 (LOT 단위로도 음수 0건인 것을 확인했다)
+#
+# ⚠️ 생산일은 LOT 입고일·불출일보다 앞설 수 없다.
+#    원본 4,535행 중 1,224행(27%)이 입고일보다 앞선 생산일이다. 그건 손대지 않지만
+#    (문서화된 수치가 전부 흔들린다) 새로 들어오는 실적은 여기서 막는다.
+
+PROD_ID_PRE = "PR"
+
+
+def next_prod_id(conn, date):
+    """Prod_ID 채번 — PR + YYYYMMDD + 4자리."""
+    pre = PROD_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Prod_ID) FROM Production_tb WHERE Prod_ID LIKE ?", (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, int(last[-4:]) + 1 if last else 1)
+
+
+# LOT 단위 현장 보유. 창고 재고(LOT_DELTA)와 달리 '현장에 나가 있는 양' 이다.
+SITE_LOT_SQL = """
+    SELECT l.Lot_ID, l.P_ID, l.Lot_Date,
+           COALESCE(o.q, 0) - COALESCE(u.q, 0) - COALESCE(r.q, 0) AS site,
+           o.last_out
+      FROM Lot_tb l
+      LEFT JOIN (SELECT t.Lot_ID, SUM(t.T_Num) q, MAX(t.T_Date) last_out
+                   FROM Transaction_tb t WHERE {demand} GROUP BY t.Lot_ID) o ON o.Lot_ID = l.Lot_ID
+      LEFT JOIN (SELECT Lot_ID, SUM(Prod_Qty) q
+                   FROM Production_tb GROUP BY Lot_ID) u ON u.Lot_ID = l.Lot_ID
+      LEFT JOIN (SELECT t.Lot_ID, SUM(t.T_Num) q FROM Transaction_tb t
+                  WHERE t.T_Type IN ({ret}) GROUP BY t.Lot_ID) r ON r.Lot_ID = l.Lot_ID
+"""
+
+
+def site_lots(conn, pid=None):
+    """현장에 나가 있는 LOT 을 FIFO(입고일) 순으로. 투입은 여기서만 뽑는다."""
+    sql = SITE_LOT_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+    sql = ("SELECT * FROM (%s) WHERE site > 0 %s ORDER BY Lot_Date, Lot_ID"
+           % (sql, "AND P_ID = ?" if pid else ""))
+    return _rows(conn, sql, (pid,) if pid else ())
+
+
+def production_source(conn):
+    """생산 실적 등록 화면의 기준 데이터."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+
+    site = {}
+    for r in site_lots(conn):
+        site.setdefault(r["P_ID"], []).append(dict(r))
+
+    # 완제품별로 현장 보유만으로 몇 대까지 만들 수 있는지
+    bom = {}
+    for r in _rows(conn, "SELECT FG_ID, P_ID, BOM_Qty FROM BOM_tb WHERE BOM_Type = '표준'"):
+        bom.setdefault(r["FG_ID"], []).append(r)
+
+    fgs = []
+    for f in _rows(conn, "SELECT FG_ID, FG_N, Unit FROM FG_tb ORDER BY FG_ID"):
+        lines = bom.get(f["FG_ID"], [])
+        cap, short = None, 0
+        for b in lines:
+            have = sum(l["site"] for l in site.get(b["P_ID"], []))
+            n = have // b["BOM_Qty"] if b["BOM_Qty"] else 0
+            if n <= 0:
+                short += 1
+            cap = n if cap is None else min(cap, n)
+        fgs.append({"FG_ID": f["FG_ID"], "FG_N": f["FG_N"], "Unit": f["Unit"],
+                    "line_cnt": len(lines), "capacity": cap or 0, "short_cnt": short})
+
+    # 불출이 끝난 작업지시 — 실적을 붙일 자리
+    wos = _rows(conn, """
+        SELECT r.Work_Order, r.Req_ID, r.FG_ID, f.FG_N, r.Plan_Qty, r.Status,
+               SUM(i.Done_Qty) AS done_qty,
+               (SELECT COUNT(*) FROM Production_tb p WHERE p.Work_Order = r.Work_Order) AS prod_rows
+          FROM Disburse_Req_tb r
+          LEFT JOIN FG_tb f ON r.FG_ID = f.FG_ID
+          LEFT JOIN Disburse_Req_Item_tb i ON i.Req_ID = r.Req_ID
+         WHERE r.Status IN ('일부불출', '불출완료')
+         GROUP BY r.Req_ID
+         ORDER BY r.Req_Date DESC
+    """)
+    return {"base": base, "entry": _add_days(base, 1), "fgs": fgs, "work_orders": wos,
+            "workers": _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")}
+
+
+def production_plan(conn, fg_id, qty):
+    """완제품 N대를 만들 때 현장에서 무엇을 얼마나 빼야 하는지 (FIFO)."""
+    fg_id = str(fg_id or "").strip()
+    fg = conn.execute("SELECT FG_ID, FG_N, Unit FROM FG_tb WHERE FG_ID = ?", (fg_id,)).fetchone()
+    if fg is None:
+        return None, ["등록되지 않은 완제품입니다: %s" % (fg_id or "(빈값)")]
+    try:
+        qty = int(qty or 0)
+    except (TypeError, ValueError):
+        return None, ["생산 수량이 숫자가 아닙니다."]
+    if qty <= 0:
+        return None, ["생산 수량은 1 이상이어야 합니다."]
+
+    lines = _rows(conn, """
+        SELECT b.P_ID, b.BOM_Qty, p.P_N, p.Spec, s.Sf_Lv AS grade
+          FROM BOM_tb b
+          JOIN Product_tb p ON b.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s ON b.P_ID = s.P_ID
+         WHERE b.FG_ID = ? AND b.BOM_Type = '표준'
+         ORDER BY b.P_ID
+    """, (fg_id,))
+    if not lines:
+        return None, ["BOM 이 등록되지 않은 완제품입니다: %s" % fg_id]
+
+    items, short = [], 0
+    for b in lines:
+        need = b["BOM_Qty"] * qty
+        lots, left = [], need
+        for l in site_lots(conn, b["P_ID"]):
+            if left <= 0:
+                break
+            take = min(left, l["site"])
+            lots.append({"Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
+                         "site": l["site"], "last_out": l["last_out"], "take": take})
+            left -= take
+        if left > 0:
+            short += 1
+        items.append({
+            "P_ID": b["P_ID"], "P_N": b["P_N"], "Spec": b["Spec"], "grade": b["grade"],
+            "bom_qty": b["BOM_Qty"], "need": need,
+            "site": sum(l["site"] for l in site_lots(conn, b["P_ID"])),
+            "alloc": lots, "lot_cnt": len(lots),
+            "shortage": left,
+        })
+    return {"FG_ID": fg["FG_ID"], "FG_N": fg["FG_N"], "Unit": fg["Unit"],
+            "qty": qty, "items": items, "line_cnt": len(items),
+            "short_cnt": short,
+            "total_qty": sum(sum(a["take"] for a in i["alloc"]) for i in items)}, []
+
+
+def preview_production(conn, date, fg_id, qty, ep_id, wo=None, note=None):
+    """등록 전 검증. create_production 이 저장 직전에 다시 부른다."""
+    plan, errors = production_plan(conn, fg_id, qty)
+    if errors:
+        return None, errors
+
+    w = conn.execute("SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?",
+                     (str(ep_id or "").strip(),)).fetchone()
+    if not str(ep_id or "").strip():
+        return None, ["생산 담당자를 선택하세요."]
+    if w is None:
+        return None, ["등록되지 않은 담당자입니다: %s" % ep_id]
+
+    if plan["short_cnt"]:
+        bad = [i["P_ID"] for i in plan["items"] if i["shortage"]][:5]
+        return None, ["현장에 자재가 모자랍니다: %s%s. 불출을 먼저 하세요."
+                      % (", ".join(bad), " 외" if plan["short_cnt"] > 5 else "")]
+
+    # ⚠️ 생산일이 입고일·불출일보다 앞설 수 없다
+    for i in plan["items"]:
+        for a in i["alloc"]:
+            if a["Lot_Date"] and date < a["Lot_Date"]:
+                return None, ["생산일(%s)이 %s 입고일(%s)보다 앞섭니다."
+                              % (date, a["Lot_ID"], a["Lot_Date"])]
+            if a["last_out"] and date < a["last_out"]:
+                return None, ["생산일(%s)이 %s 불출일(%s)보다 앞섭니다. 현장에 오기 전입니다."
+                              % (date, a["Lot_ID"], a["last_out"])]
+
+    wo = str(wo or "").strip() or None
+    if wo:
+        row = conn.execute(
+            "SELECT FG_ID FROM Disburse_Req_tb WHERE Work_Order = ?", (wo,)).fetchone()
+        if row and row["FG_ID"] and row["FG_ID"] != plan["FG_ID"]:
+            return None, ["작업지시 %s 는 %s 용입니다. 완제품이 다릅니다." % (wo, row["FG_ID"])]
+
+    plan["Work_Order"] = wo
+    plan["worker"] = {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}
+    plan["note"] = (note or "").strip() or None
+    plan["date"] = date
+    plan["row_cnt"] = sum(i["lot_cnt"] for i in plan["items"])
+    return plan, []
+
+
+def create_production(conn, date, fg_id, qty, ep_id, wo=None, note=None):
+    """생산 실적 등록. 자재 x LOT 마다 Production_tb 에 한 행."""
+    plan, errors = preview_production(conn, date, fg_id, qty, ep_id, wo, note)
+    if errors:
+        return None, errors
+    with conn:                                   # 전부 성공 아니면 전부 실패
+        if not plan["Work_Order"]:
+            plan["Work_Order"] = next_wo_id(conn, date)
+        for i in plan["items"]:
+            for a in i["alloc"]:
+                pid = next_prod_id(conn, date)
+                conn.execute(
+                    "INSERT INTO Production_tb"
+                    " (Prod_ID, FG_ID, P_ID, Lot_ID, Prod_Date, Prod_Qty, EP_ID, Work_Order, Note)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (pid, plan["FG_ID"], i["P_ID"], a["Lot_ID"], date, a["take"],
+                     plan["worker"]["EP_ID"], plan["Work_Order"], plan["note"]))
+                a["Prod_ID"] = pid
+    return plan, []
+
+
 # ── 발주 시뮬레이터 ──────────────────────────────────────────
 # 실제 품목 데이터를 주고, 발주량·발주시점·리드타임을 바꿔가며
 # 향후 재고 추이가 어떻게 달라지는지 화면에서 계산한다.

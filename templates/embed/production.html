@@ -104,6 +104,44 @@ tbody tr.on{background:var(--bg-ac)}
   .search input{width:100%}
   svg{height:72px}
 }
+/* ── 생산 실적 등록 ───────────────────────────────────────── */
+.pvl{position:fixed;inset:0;background:rgba(26,25,23,.42);display:none;align-items:center;justify-content:center;padding:20px;z-index:60}
+.pvl.on{display:flex}
+.pbox{background:var(--s0);border-radius:12px;width:100%;max-width:880px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.22)}
+.ph{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.ph-t{font-size:14px;font-weight:600;flex:1}
+.px{border:none;background:none;cursor:pointer;color:var(--txt3);font-size:16px;padding:2px 6px}
+.px:hover{color:var(--txt)}
+.pb{flex:1;overflow:auto;min-height:0;padding:14px 16px}
+.pf{display:flex;align-items:center;gap:8px;padding:11px 16px;border-top:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.pf .m{flex:1;font-size:11px;color:var(--txt3);line-height:1.5}
+.btnp{background:var(--acc);color:#fff;border-color:transparent}
+.btnp:hover:not(:disabled){background:#2268bd}
+.btnp:disabled{opacity:.45;cursor:not-allowed}
+.frow{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+.frow label{font-size:11px;color:var(--txt3);width:74px;flex-shrink:0}
+.pbox select,.pbox input,.pbox textarea{font-family:inherit;font-size:12px;color:var(--txt);background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:5px 8px}
+.pbox select:focus,.pbox input:focus,.pbox textarea:focus{outline:none;border-color:var(--acc)}
+.pbox select{flex:1;min-width:0}
+.pbox input[type=number]{width:110px;text-align:right;font-variant-numeric:tabular-nums}
+.pbox input[type=text]{flex:1;min-width:140px}
+.cap{font-size:11px;color:var(--txt3)}
+.cap b{color:var(--acc);font-size:13px}
+.pmsg{border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.7;margin-top:10px;display:none}
+.pmsg.on{display:block}
+.pmsg.err{background:var(--bg-dn);color:#9B1C1C}
+.pmsg.ok{background:var(--bg-ok);color:#1D6E52}
+.pmsg ul{margin:3px 0 0 16px}
+.psum{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:10px 0}
+.pc{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:9px 11px}
+.pc-l{font-size:10px;color:var(--txt3);margin-bottom:2px}
+.pc-v{font-size:17px;font-weight:600}
+.pc-s{font-size:10px;color:var(--txt3);margin-top:2px}
+.ptb{border:0.5px solid var(--border);border-radius:8px;overflow:auto;max-height:44vh}
+.ptb table{min-width:640px}
+.lid2{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--txt2)}
+.pnote{font-size:10px;color:var(--txt3);line-height:1.7;margin-top:9px}
+@media(max-width:700px){ .psum{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
 <body>
@@ -115,6 +153,7 @@ tbody tr.on{background:var(--bg-ac)}
       <span class="tag">실제 DB · 작업지시 {{ summary.wo_cnt }}건 · {{ summary.date_from }} ~ {{ summary.date_to }}</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+    <button class="btn btnp" onclick="pOpen()"><i class="ti ti-plus"></i>생산 실적 등록</button>
   </div>
 
   <div class="kpi-row" id="kpis"></div>
@@ -170,6 +209,22 @@ tbody tr.on{background:var(--bg-ac)}
   </div>
 </div>
 
+<!-- 생산 실적 등록 -->
+<div class="pvl" id="pvl">
+  <div class="pbox">
+    <div class="ph"><i class="ti ti-tool" style="color:var(--acc)"></i>
+      <span class="ph-t">생산 실적 등록</span>
+      <button class="px" onclick="pClose()"><i class="ti ti-x"></i></button></div>
+    <div class="pb" id="pbody"></div>
+    <div class="pf">
+      <span class="m" id="pfm"></span>
+      <button class="btn" onclick="pClose()">닫기</button>
+      <button class="btn btnp" id="pgo" onclick="pSubmit()">
+        <i class="ti ti-check"></i>등록</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const ORD   = {{ orders|tojson }};
 const PRODS = {{ prods|tojson }};   // P_ID → {P_N, Spec}
@@ -181,6 +236,12 @@ const SUM = {{ summary|tojson }};
 const PBASE = ORD.map(function(o){return o.date||'';}).filter(Boolean).sort().slice(-1)[0] || '';
 
 let filter='all', sortKey='date', sortAsc=false, sel=null;
+
+// ── 생산 실적 등록 ───────────────────────────────────────────
+// 투입은 '현장에 나가 있는 LOT' 에서만 뽑는다. 창고에서 바로 빼면 불출 기록 없이
+// 재고가 줄어 흐름이 깨진다. 서버가 같은 규칙으로 다시 계산한다.
+const SRC = {{ src|tojson }};
+let pPlan = null, pBusy = false;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
@@ -353,6 +414,159 @@ function sortBy(k){
   if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=false; }
   render();
 }
+function pOpen(){
+  document.getElementById('pvl').classList.add('on');
+  pPlan = null;
+  pDraw();
+}
+function pClose(){ document.getElementById('pvl').classList.remove('on'); }
+
+function pVal(id){ const e = document.getElementById(id); return e ? e.value : ''; }
+
+function pDraw(){
+  const fgs = SRC.fgs;
+  document.getElementById('pbody').innerHTML =
+    '<div class="frow"><label>완제품</label>'
+  +   '<select id="p-fg" onchange="pPlanNow()">'
+  +     fgs.map(function(f){
+        return '<option value="' + esc(f.FG_ID) + '"' + (f.capacity ? '' : ' disabled') + '>'
+          + esc(f.FG_ID) + ' ' + esc(f.FG_N||'') + ' — 현장 보유로 '
+          + (f.capacity ? nf(f.capacity) + '대 가능' : '생산 불가 (자재 ' + f.short_cnt + '종 없음)')
+          + '</option>'; }).join('')
+  +   '</select></div>'
+  + '<div class="frow"><label>생산 대수</label>'
+  +   '<input type="number" id="p-qty" min="1" step="1" value="10" oninput="pPlanNow()">'
+  +   '<span class="cap" id="p-cap"></span></div>'
+  + '<div class="frow"><label>작업지시</label>'
+  +   '<select id="p-wo">'
+  +     '<option value="">자동 채번 (WO + 날짜 + 순번)</option>'
+  +     SRC.work_orders.map(function(w){
+        return '<option value="' + esc(w.Work_Order) + '">' + esc(w.Work_Order) + ' · '
+          + esc(w.FG_N||w.FG_ID||'') + ' ' + nf(w.Plan_Qty) + '대'
+          + (w.prod_rows ? ' (실적 ' + w.prod_rows + '행 있음)' : '') + '</option>'; }).join('')
+  +   '</select></div>'
+  + '<div class="frow"><label>담당자</label>'
+  +   '<select id="p-ep">' + SRC.workers.map(function(w){
+        return '<option value="' + esc(w.EP_ID) + '">' + esc(w.Name) + ' '
+          + esc(w.Position||'') + '</option>'; }).join('') + '</select></div>'
+  + '<div class="frow"><label>메모</label>'
+  +   '<input type="text" id="p-note" placeholder="예) 2라인 주간조"></div>'
+  + '<div id="p-plan"></div>'
+  + '<div class="pmsg" id="p-msg"></div>';
+  pPlanNow();
+}
+
+async function pPlanNow(){
+  const fg = pVal('p-fg'), qty = parseInt(pVal('p-qty'), 10);
+  const cap = (SRC.fgs.filter(function(f){ return f.FG_ID === fg; })[0] || {}).capacity || 0;
+  const capEl = document.getElementById('p-cap');
+  if(capEl) capEl.innerHTML = '대 · 현장 보유로 최대 <b>' + nf(cap) + '</b>대';
+  const box = document.getElementById('p-plan');
+  if(!box) return;
+  if(!fg || !qty || qty <= 0){ box.innerHTML = ''; pPlan = null; pFoot(); return; }
+
+  const r = await fetch('/api/production/plan', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({FG_ID:fg, qty:qty})});
+  const d = await r.json();
+  if(!d.ok){ box.innerHTML = ''; pPlan = null; pSay('err', pErr(d.errors)); pFoot(); return; }
+  pPlan = d.plan;
+  pSay('', '');
+
+  box.innerHTML =
+    '<div class="psum">'
+  +   '<div class="pc"><div class="pc-l">투입 자재</div><div class="pc-v">' + pPlan.line_cnt
+  +     '<small style="font-size:11px;color:var(--txt3)">종</small></div>'
+  +     '<div class="pc-s">BOM 표준</div></div>'
+  +   '<div class="pc"><div class="pc-l">투입 수량</div><div class="pc-v">' + nf(pPlan.total_qty)
+  +     '<small style="font-size:11px;color:var(--txt3)">개</small></div>'
+  +     '<div class="pc-s">현장에서 빠진다</div></div>'
+  +   '<div class="pc"><div class="pc-l">기록 행</div><div class="pc-v">'
+  +     pPlan.items.reduce(function(a,i){ return a + i.lot_cnt; }, 0)
+  +     '<small style="font-size:11px;color:var(--txt3)">행</small></div>'
+  +     '<div class="pc-s">자재 x LOT</div></div>'
+  +   '<div class="pc"><div class="pc-l">현장 부족</div>'
+  +     '<div class="pc-v" style="color:' + (pPlan.short_cnt ? 'var(--dn)' : 'var(--ok)') + '">'
+  +     pPlan.short_cnt + '<small style="font-size:11px;color:var(--txt3)">종</small></div>'
+  +     '<div class="pc-s">' + (pPlan.short_cnt ? '불출이 먼저입니다' : '전량 확보') + '</div></div>'
+  + '</div>'
+  + '<div class="ptb"><table><thead><tr>'
+  +   '<th>품번</th><th>품명</th><th class="num">1대당</th><th class="num">소요</th>'
+  +   '<th>투입 LOT</th><th class="num">투입</th><th class="num">현장 보유</th>'
+  + '</tr></thead><tbody>'
+  + pPlan.items.map(function(i){
+      if(!i.alloc.length)
+        return '<tr><td><span class="pid">' + esc(i.P_ID) + '</span></td>'
+          + '<td>' + esc(i.P_N||'-') + '</td>'
+          + '<td class="num">' + nf(i.bom_qty) + '</td>'
+          + '<td class="num">' + nf(i.need) + '</td>'
+          + '<td colspan="3" style="color:var(--dn)">현장에 없습니다 — 불출이 먼저입니다</td></tr>';
+      return i.alloc.map(function(a, k){
+        return '<tr>'
+          + (k ? '<td></td><td></td><td></td><td></td>'
+               : '<td><span class="pid">' + esc(i.P_ID) + '</span></td>'
+                 + '<td>' + esc(i.P_N||'-') + '</td>'
+                 + '<td class="num">' + nf(i.bom_qty) + '</td>'
+                 + '<td class="num">' + nf(i.need)
+                 + (i.lot_cnt > 1 ? '<div style="font-size:9px;color:var(--txt3)">LOT '
+                     + i.lot_cnt + '개</div>' : '') + '</td>')
+          + '<td><span class="lid2">' + esc(a.Lot_ID) + '</span>'
+          +   '<div style="font-size:9px;color:var(--txt3)">' + esc(a.Lot_Date) + ' 입고'
+          +   (a.last_out ? ' · ' + esc(a.last_out) + ' 불출' : '') + '</div></td>'
+          + '<td class="num"><b>' + nf(a.take) + '</b></td>'
+          + '<td class="num" style="color:var(--txt3)">' + nf(a.site) + '</td>'
+          + '</tr>';
+      }).join('');
+    }).join('')
+  + '</tbody></table></div>'
+  + '<div class="pnote">투입은 <b>현장에 나가 있는 LOT</b> 에서만 뽑습니다 — 창고 재고에서 바로 빼면 '
+  +   '불출 기록 없이 재고가 줄어 흐름이 깨집니다. 같은 자재가 여러 LOT 에 걸치면 <b>FIFO</b> 로 나뉩니다.<br>'
+  +   '생산일은 <b>' + esc(SRC.entry) + '</b> 로 기록됩니다. LOT 입고일·불출일보다 앞선 날짜는 서버가 막습니다.</div>';
+  pFoot();
+}
+
+function pFoot(){
+  const ok = pPlan && !pPlan.short_cnt;
+  document.getElementById('pgo').disabled = !ok || pBusy;
+  document.getElementById('pfm').innerHTML = pPlan
+    ? (pPlan.short_cnt
+        ? '<b style="color:var(--dn)">현장에 없는 자재가 ' + pPlan.short_cnt + '종</b> 있어 등록할 수 없습니다.'
+        : esc(pPlan.FG_N||'') + ' ' + nf(pPlan.qty) + '대 · 투입 ' + nf(pPlan.total_qty) + '개')
+    : '완제품과 생산 대수를 정하세요.';
+}
+
+function pErr(errs){ return '<b>등록할 수 없습니다</b><ul>'
+  + errs.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>'; }
+function pSay(cls, html){
+  const m = document.getElementById('p-msg');
+  if(!m) return;
+  if(!html){ m.className = 'pmsg'; m.innerHTML = ''; return; }
+  m.className = 'pmsg on ' + cls; m.innerHTML = html;
+}
+
+async function pSubmit(){
+  if(pBusy || !pPlan) return;
+  pBusy = true; pFoot();
+  const body = {FG_ID: pVal('p-fg'), qty: parseInt(pVal('p-qty'), 10),
+                EP_ID: pVal('p-ep'), Work_Order: pVal('p-wo'),
+                note: pVal('p-note'), date: SRC.entry};
+  try{
+    const r = await fetch('/api/production', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if(!d.ok){ pBusy = false; pFoot(); pSay('err', pErr(d.errors)); return; }
+    const p = d.plan;
+    pSay('ok', '<b><i class="ti ti-check"></i> 등록 완료</b> — 작업지시 ' + esc(p.Work_Order)
+      + ' · ' + esc(p.FG_N||'') + ' ' + nf(p.qty) + '대 · 투입 ' + nf(p.total_qty) + '개 · '
+      + p.row_cnt + '행<br>현장 보유가 그만큼 줄었습니다. 잠시 후 목록을 새로 고칩니다.');
+    setTimeout(function(){ location.reload(); }, 1600);
+  }catch(e){
+    pBusy = false; pFoot();
+    pSay('err', '서버에 연결하지 못했습니다: ' + esc(e.message || e));
+  }
+}
+
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') pClose(); });
+
 function dl(){
   const r=view();
   const head=['생산일','작업지시','완제품코드','완제품명','추정생산대수','투입자재종수','자재비','BOM일치','대체품','불일치','담당자'];

@@ -339,6 +339,7 @@ def _ctx_suppliers(period=""):
 
 
 def _ctx_production():
+    """생산 실적 — 조회(작업지시 대조) + 등록(현장 보유에서 투입)."""
     conn = db.connect()
     try:
         orders = db.production_orders(conn)
@@ -347,6 +348,7 @@ def _ctx_production():
             "prods": db.prod_products(conn),
             "monthly": db.production_monthly(conn),
             "summary": db.production_summary(orders),
+            "src": db.production_source(conn),
         }
     finally:
         conn.close()
@@ -766,6 +768,50 @@ def api_request_cancel():
 # ── 입고 등록 API ───────────────────────────────────────────
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막.
 # Lot_tb 와 Transaction_tb 를 한 트랜잭션에 함께 쓴다.
+
+@app.route("/api/production/plan", methods=["POST"])
+def api_production_plan():
+    """완제품 + 생산 대수 → 현장 보유에서 뺄 자재·LOT (저장 안 함)."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.production_plan(conn, body.get("FG_ID"), body.get("qty"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/production/preview", methods=["POST"])
+def api_production_preview():
+    """등록 전 검증 — 현장 부족·생산일 역전을 여기서 잡는다 (저장 안 함)."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_production(
+            conn, _entry_date(body), body.get("FG_ID"), body.get("qty"),
+            body.get("EP_ID"), body.get("Work_Order"), body.get("note"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/production", methods=["POST"])
+def api_production_create():
+    """생산 실적 등록 — 자재 x LOT 마다 Production_tb 한 행."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_production(
+            conn, _entry_date(body), body.get("FG_ID"), body.get("qty"),
+            body.get("EP_ID"), body.get("Work_Order"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
 
 @app.route("/api/override/preview", methods=["POST"])
 def api_override_preview():
