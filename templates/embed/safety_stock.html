@@ -61,7 +61,7 @@ tbody tr.on{background:var(--bg-ac)}
 .dh-t{font-size:12px;font-weight:500;margin-bottom:3px}
 .dh-s{font-size:10px;color:var(--txt3);line-height:1.5}
 .dbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
-.pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden;flex:0 0 auto}
 .pnh{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s2)}
 .pnh-t{font-size:11px;font-weight:500;flex:1}
 .ir{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:0.5px solid var(--border);font-size:11px}
@@ -77,6 +77,8 @@ tbody tr.on{background:var(--bg-ac)}
 .sc-v{width:13px;text-align:right;font-weight:500;font-size:10px;color:var(--txt3)}
 .sum{padding:7px 10px;background:var(--bg-ac);display:flex;justify-content:space-between;align-items:center;font-size:11px}
 .sum b{font-size:14px}
+.fxbtn{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;border:0.5px solid var(--border-s);background:var(--s0);color:var(--txt3);font-size:9px;font-family:inherit;cursor:pointer}
+.fxbtn:hover{background:var(--s1);color:var(--txt2)}
 .fx{padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.7;color:var(--txt2);background:var(--s1);border-bottom:0.5px solid var(--border);white-space:pre-wrap;word-break:break-all}
 .note{padding:7px 10px;font-size:10px;color:var(--txt3);line-height:1.6}
 .empty{padding:40px 20px;text-align:center;color:var(--txt3);font-size:12px}
@@ -105,7 +107,8 @@ tbody tr.on{background:var(--bg-ac)}
   .kpi-row{grid-template-columns:repeat(3,1fr)}
   .kpi:nth-child(n+4){border-top:0.5px solid var(--border)}
   .main{flex-direction:column}
-  .detail{width:100%;max-height:46%;border-left:none;border-top:0.5px solid var(--border-s)}
+  /* 46% 는 상세가 169px 밖에 안 보인다. 패널이 5개로 늘어 더 좁아졌다. */
+  .detail{width:100%;max-height:60%;border-left:none;border-top:0.5px solid var(--border-s)}
   .search{margin-left:0;width:100%}
   .search input{width:100%}
   .hide-sm{display:none}
@@ -199,6 +202,9 @@ const OVR     = {{ override|tojson }};
 const WORKERS = {{ workers|tojson }};
 const REASONS = OVR.reasons;
 let filter='all', sortKey='diff', sortAsc=true, sel=null, ovbusy=false;
+// 공식 칸은 기본으로 접는다 — 상세 패널이 길어져 아래 내용이 밀린다.
+// 한 번 펼치면 다른 품목을 눌러도 펼친 상태를 유지한다.
+let fxOpen = false;
 const nf = n => (n==null ? '-' : Number(n).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -314,8 +320,10 @@ function pick(pid){
   + '</div>'
 
   + '<div class="pn">'
-  +   '<div class="pnh"><i class="ti ti-math-function"></i><span class="pnh-t">안전재고 공식 대입</span></div>'
-  +   '<div class="fx">' + esc(formula) + '</div>'
+  +   '<div class="pnh"><i class="ti ti-math-function"></i><span class="pnh-t">안전재고 공식 대입</span>'
+  +     '<button class="fxbtn" id="fxtog" onclick="toggleFx()">' + fxLabel() + '</button></div>'
+  +   '<div class="fx" id="fxbox"' + (fxOpen ? '' : ' style="display:none"') + '>'
+  +     esc(formula) + '</div>'
   +   '<div class="ir"><span class="ik">현재 등록된 안전재고</span><span class="iv">' + nf(x.safe_qty) + '</span></div>'
   +   '<div class="ir"><span class="ik">최근 불출실적 기준 재계산</span><span class="iv">' + nf(ss) + '</span></div>'
   +   '<div class="ir"><span class="ik">괴리</span><span class="iv ' + (dev>=50?'short':'okv') + '">'
@@ -468,6 +476,19 @@ async function ovRelease(oid){
       + ' · 안전재고 ' + nf(d.result.back_num) + '개로 복귀<br>잠시 후 새로 고칩니다.');
     setTimeout(function(){ location.reload(); }, 1400);
   }catch(e){ ovbusy = false; ovSay('err', '서버에 연결하지 못했습니다: ' + esc(e.message||e)); }
+}
+
+function fxLabel(){
+  return '<i class="ti ' + (fxOpen ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i>'
+       + (fxOpen ? '접기' : '공식 보기');
+}
+// 다시 그리지 않고 표시만 바꾼다 — 아래 수동 조정 칸에 입력하던 내용이 날아가면 안 된다.
+function toggleFx(){
+  fxOpen = !fxOpen;
+  const box = document.getElementById('fxbox');
+  const btn = document.getElementById('fxtog');
+  if(box) box.style.display = fxOpen ? '' : 'none';
+  if(btn) btn.innerHTML = fxLabel();
 }
 
 function setF(f){
