@@ -129,10 +129,14 @@ tbody tr.on{background:var(--bg-ac)}
 .btnfull{width:100%;border-radius:0;border-left:none;border-right:none;border-bottom:none;justify-content:center;padding:8px}
 
 .tl{margin-top:14px}
-.tlh{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--s1);border:0.5px solid var(--border);border-radius:8px 8px 0 0;font-size:11px;font-weight:500;cursor:pointer}
-.tlh:hover{background:var(--s2)}
-.tlh .lid{margin-right:auto}
-.tlb{border:0.5px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:4px 0;margin-bottom:8px}
+.lt2 tr.lotrow{cursor:pointer}
+.lt2 tr.lotrow:hover > td{background:var(--s1)}
+.lt2 tr.lotrow.open > td{background:var(--bg-ac)}
+.lt2 tr.evtr > td{padding:0;border-bottom:0.5px solid var(--border)}
+.tlb{padding:3px 0 7px}
+.tlw{display:flex;align-items:center;gap:5px}
+.tlw .cv{color:var(--txt3);font-size:11px;width:11px;flex-shrink:0}
+.evn{font-size:9px;color:var(--txt3);white-space:nowrap}
 .ev{display:grid;grid-template-columns:78px 20px 1fr auto;align-items:start;gap:8px;padding:5px 10px;font-size:11px}
 .ev:hover{background:var(--s1)}
 .ev-d{color:var(--txt3);font-size:10px;padding-top:1px}
@@ -452,18 +456,22 @@ function pidClick(ev, pid){
 }
 
 let EV = null;          // 현재 모달의 이벤트 타임라인 (열 때마다 서버에서 받는다)
+let EVBY = {};          // Lot_ID -> 이벤트 묶음
 let EVOPEN = {};        // LOT 별 펼침 상태
+// 모달이 그리고 있는 자재. LOT 표를 다시 그릴 때 쓴다.
+let MLOTS = [], MPID = null, MVIOL = 0;
 
 // 전 자재 이벤트를 화면에 미리 실으면 응답이 수 MB 가 된다.
 // 모달을 열 때 그 자재만 받아 온다.
 async function loadEvents(pid){
-  EV = null; EVOPEN = {};
+  EV = null; EVBY = {}; EVOPEN = {};
   try{
     const r = await fetch('/api/lot-events?P_ID=' + encodeURIComponent(pid));
     const d = await r.json();
     if(d.ok) EV = d.data;
   }catch(e){ EV = null; }
-  drawTimeline();
+  if(EV) EV.lots.forEach(function(l){ EVBY[l.Lot_ID] = l; });
+  drawLots();
   const v = document.getElementById('mk-ev'), t = document.getElementById('mk-ev-s');
   if(v && EV){
     v.textContent = EV.event_cnt;
@@ -474,60 +482,109 @@ async function loadEvents(pid){
   }else if(v){ v.textContent = '-'; t.textContent = '불러오지 못함'; }
 }
 
-function toggleEv(lot){ EVOPEN[lot] = !EVOPEN[lot]; drawTimeline(); }
+function toggleEv(lot){ EVOPEN[lot] = !EVOPEN[lot]; drawLots(); }
 function toggleAllEv(on){
-  if(!EV) return;
-  EV.lots.forEach(function(l){ EVOPEN[l.Lot_ID] = on; });
-  drawTimeline();
+  MLOTS.forEach(function(l){ EVOPEN[l.Lot_ID] = on; });
+  drawLots();
 }
 
 const EVICON = {order:'ti-file-text', in:'ti-arrow-bar-to-down', out:'ti-arrow-bar-up',
                 bad:'ti-alert-octagon', move:'ti-arrows-exchange',
                 prod:'ti-settings-automation', claim:'ti-message-report'};
 
-function drawTimeline(){
-  const box = document.getElementById('m-tl');
+// LOT 한 건의 이벤트 묶음. 표의 행 아래에 끼워 넣는다.
+function evBlock(lotId){
+  if(!EV) return '<div class="tlb" style="padding:8px 12px;color:var(--txt3);font-size:10px">'
+                 + '이벤트를 불러오는 중입니다...</div>';
+  const l = EVBY[lotId];
+  if(!l || !l.events.length)
+    return '<div class="tlb" style="padding:8px 12px;color:var(--txt3);font-size:10px">'
+         + '기록된 이벤트가 없습니다.</div>';
+  return '<div class="tlb">' + l.events.map(function(e){
+      return '<div class="ev">'
+        + '<span class="ev-d">' + (e.date||'-') + '</span>'
+        + '<span class="ev-i k-' + e.tone + '"><i class="ti ' + (EVICON[e.tone]||'ti-point') + '"></i></span>'
+        + '<span><span class="ev-t">' + esc(e.title) + '</span>'
+        +   (e.desc ? '<div class="ev-s">' + esc(e.desc) + '</div>' : '')
+        +   (e.warn ? '<div class="ev-w"><i class="ti ti-alert-triangle"></i> ' + esc(e.warn) + '</div>' : '')
+        +   '</span>'
+        + '<span class="ev-q">' + (e.qty==null ? '' : nf(e.qty))
+        +   (e.ref ? '<div class="ev-s" style="text-align:right">' + esc(e.ref) + '</div>' : '')
+        +   '</span></div>';
+    }).join('') + '</div>';
+}
+
+// LOT 표를 그린다. 예전에는 표 아래에 LOT 목록을 한 번 더 그렸는데,
+// 같은 LOT 을 두 곳에서 나열하게 되어 표 안으로 접어 넣었다.
+function drawLots(){
+  const box = document.getElementById('m-body');
   if(!box) return;
-  if(!EV){ box.innerHTML = '<div class="tl" style="color:var(--txt3);font-size:11px;padding:10px 0">이벤트를 불러오는 중입니다...</div>'; return; }
-  if(!EV.lots.length){ box.innerHTML = '<div class="tl" style="color:var(--txt3);font-size:11px;padding:10px 0">LOT 이력이 없습니다.</div>'; return; }
+
+  const chips = !EV ? '<span class="tlchip">이벤트 불러오는 중...</span>'
+    : Object.keys(EV.kinds).map(function(k){
+        return '<span class="tlchip">' + esc(k) + ' ' + EV.kinds[k] + '</span>'; }).join('')
+      + (EV.warn_cnt ? '<span class="tlchip" style="background:var(--bg-dn);color:#9B1C1C">'
+          + '시간 역전 ' + EV.warn_cnt + '</span>' : '');
+
+  const rows = MLOTS.map(function(l){
+    const isLive = l.remain > 0;
+    const cls = !l.fifo_ok ? 'viol' : (isLive ? 'live' : '');
+    const e = EVBY[l.Lot_ID];
+    const on = !!EVOPEN[l.Lot_ID];
+    return '<tr class="lotrow ' + cls + (on ? ' open' : '') + '"'
+      +   ' data-lot="' + l.Lot_ID + '" onclick="toggleEv(this.dataset.lot)">'
+      + '<td><span class="sq ' + cls + '">' + l.fifo_seq + '</span></td>'
+      + '<td><div class="tlw"><i class="ti ' + (on ? 'ti-chevron-down' : 'ti-chevron-right') + ' cv"></i>'
+      +   '<span class="lid">' + l.Lot_ID + '</span></div>'
+      +   (e && e.event_cnt ? '<div class="evn">이벤트 ' + e.event_cnt + '건'
+            + (e.has_defect ? ' · <b style="color:var(--dn)">불량</b>' : '')
+            + (e.is_swap_in ? ' · <b style="color:var(--wn)">대체품</b>' : '') + '</div>' : '')
+      +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '회 건너뜀</div>') + '</td>'
+      + '<td>' + l.Lot_Date
+      +   '<div style="font-size:9px;color:var(--txt3)">발주 ' + (l.order_date||'-')
+      +   (l.lead_days!=null ? ' · LT ' + l.lead_days + '일' : '') + '</div></td>'
+      + '<td class="num">' + nf(l.P_Qty) + '</td>'
+      + '<td class="num">' + nf(l.out_qty)
+      +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
+      + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
+      + '<td>' + (isLive
+          ? '<span class="bg bok">보유중</span><div style="font-size:9px;color:'
+            + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">체류 ' + l.age_days + '일</div>'
+          : '<span class="bg bmu">소진</span><div style="font-size:9px;color:var(--txt3)">'
+            + (l.out_date||'-') + (l.hold_days!=null ? ' · ' + l.hold_days + '일만에' : '') + '</div>') + '</td>'
+      + '<td class="hide-m">' + esc(l.loc_name||'-') + '</td>'
+      + '<td class="hide-m">' + esc(l.receiver||'-') + '</td>'
+      + '<td class="hide-m">' + (l.prod_wo
+          ? l.prod_wo + '건<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
+          : '<span style="color:var(--txt3)">-</span>') + '</td>'
+      + '</tr>'
+      + (on ? '<tr class="evtr"><td colspan="10">' + evBlock(l.Lot_ID) + '</td></tr>' : '');
+  }).join('');
 
   box.innerHTML =
-    '<div class="tl"><div class="mh-s" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-  +   '<b style="font-size:12px;color:var(--txt)">이벤트 타임라인</b>'
-  +   '<span>' + EV.event_cnt + '건</span>'
-  +   '<button class="btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="toggleAllEv(true)">전체 펼치기</button>'
-  +   '<button class="btn" style="padding:2px 8px;font-size:10px" onclick="toggleAllEv(false)">접기</button>'
+    '<div class="tl" style="margin-top:0">'
+  +   '<div class="mh-s" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+  +     '<b style="font-size:12px;color:var(--txt)">LOT 이력 · 이벤트</b>'
+  +     '<span>' + (EV ? EV.event_cnt + '건' : '') + '</span>'
+  +     '<button class="btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="toggleAllEv(true)">전체 펼치기</button>'
+  +     '<button class="btn" style="padding:2px 8px;font-size:10px" onclick="toggleAllEv(false)">접기</button>'
+  +   '</div>'
+  +   '<div class="tlsum">' + chips + '</div>'
   + '</div>'
-  + '<div class="tlsum">'
-  +   Object.keys(EV.kinds).map(function(k){
-        return '<span class="tlchip">' + esc(k) + ' ' + EV.kinds[k] + '</span>'; }).join('')
-  +   (EV.warn_cnt ? '<span class="tlchip" style="background:var(--bg-dn);color:#9B1C1C">'
-        + '시간 역전 ' + EV.warn_cnt + '</span>' : '')
-  + '</div>'
-  + EV.lots.map(function(l){
-      const on = !!EVOPEN[l.Lot_ID];
-      return '<div class="tlh" data-lot="' + l.Lot_ID + '" onclick="toggleEv(this.dataset.lot)">'
-        + '<i class="ti ' + (on ? 'ti-chevron-down' : 'ti-chevron-right') + '"></i>'
-        + '<span class="lid">' + l.Lot_ID + '</span>'
-        + '<span style="color:var(--txt3);font-weight:400">' + l.Lot_Date + ' · 입고 ' + nf(l.P_Qty)
-        +   ' · 잔여 ' + nf(l.remain) + ' · 이벤트 ' + l.event_cnt + '</span>'
-        + (l.has_defect ? ' <span class="bg bdn">불량</span>' : '')
-        + (l.is_swap_in ? ' <span class="bg bwn">대체품</span>' : '')
-        + (l.remain > 0 ? ' <span class="bg bok">보유중</span>' : '')
-        + '</div>'
-        + (on ? '<div class="tlb">' + l.events.map(function(e){
-            return '<div class="ev">'
-              + '<span class="ev-d">' + (e.date||'-') + '</span>'
-              + '<span class="ev-i k-' + e.tone + '"><i class="ti ' + (EVICON[e.tone]||'ti-point') + '"></i></span>'
-              + '<span><span class="ev-t">' + esc(e.title) + '</span>'
-              +   (e.desc ? '<div class="ev-s">' + esc(e.desc) + '</div>' : '')
-              +   (e.warn ? '<div class="ev-w"><i class="ti ti-alert-triangle"></i> ' + esc(e.warn) + '</div>' : '')
-              +   '</span>'
-              + '<span class="ev-q">' + (e.qty==null ? '' : nf(e.qty))
-              +   (e.ref ? '<div class="ev-s" style="text-align:right">' + esc(e.ref) + '</div>' : '')
-              +   '</span></div>';
-          }).join('') + '</div>' : '');
-    }).join('')
+  + '<table class="lt2"><thead><tr>'
+  +   '<th>순</th><th>LOT 번호</th><th>입고일 / 발주</th><th class="num">입고</th>'
+  +   '<th class="num">불출</th><th class="num">잔여</th><th>상태</th>'
+  +   '<th class="hide-m">창고</th><th class="hide-m">입고담당</th><th class="hide-m">생산투입</th>'
+  + '</tr></thead><tbody>' + rows + '</tbody></table>'
+  + '<div class="mnote">'
+  +   '<b>LOT 행을 누르면</b> 그 LOT 의 이벤트(발주·입고·불출·불량·생산투입·클레임)가 펼쳐집니다.<br>'
+  +   '<b>순</b> = 입고 순서(FIFO). '
+  +   '<b style="color:var(--ok)">초록</b> 보유중 · '
+  +   '<b style="color:var(--dn)">빨강</b> 선입선출 위반 — '
+  +   '이 LOT이 남아 있는데 더 늦게 들어온 LOT이 먼저 출고된 경우입니다.'
+  +   (MVIOL
+     ? '<br>\u26a0\ufe0f 이 자재는 위반 ' + MVIOL + '건. 오래된 재고가 묶여 있습니다.'
+     : '<br>이 자재는 입고 순서대로 출고되고 있습니다.')
   + '</div>';
 }
 
@@ -571,49 +628,9 @@ function openLots(pid){
   +   '<span style="font-size:10px;color:var(--txt3)">건</span></div>'
   +   '<div class="mk-s">' + (viol.length ? '오래된 LOT이 남음' : '선입선출 준수') + '</div></div>';
 
-  const rows = ls.map(function(l){
-    const isLive = l.remain > 0;
-    const cls = !l.fifo_ok ? 'viol' : (isLive ? 'live' : '');
-    return '<tr class="' + cls + '">'
-      + '<td><span class="sq ' + cls + '">' + l.fifo_seq + '</span></td>'
-      + '<td><span class="lid">' + l.Lot_ID + '</span>'
-      +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '회 건너뜀</div>') + '</td>'
-      + '<td>' + l.Lot_Date
-      +   '<div style="font-size:9px;color:var(--txt3)">발주 ' + (l.order_date||'-')
-      +   (l.lead_days!=null ? ' · LT ' + l.lead_days + '일' : '') + '</div></td>'
-      + '<td class="num">' + nf(l.P_Qty) + '</td>'
-      + '<td class="num">' + nf(l.out_qty)
-      +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
-      + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
-      + '<td>' + (isLive
-          ? '<span class="bg bok">보유중</span><div style="font-size:9px;color:'
-            + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">체류 ' + l.age_days + '일</div>'
-          : '<span class="bg bmu">소진</span><div style="font-size:9px;color:var(--txt3)">'
-            + (l.out_date||'-') + (l.hold_days!=null ? ' · ' + l.hold_days + '일만에' : '') + '</div>') + '</td>'
-      + '<td class="hide-m">' + esc(l.loc_name||'-') + '</td>'
-      + '<td class="hide-m">' + esc(l.receiver||'-') + '</td>'
-      + '<td class="hide-m">' + (l.prod_wo
-          ? l.prod_wo + '건<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
-          : '<span style="color:var(--txt3)">-</span>') + '</td>'
-      + '</tr>';
-  }).join('');
-
-  document.getElementById('m-body').innerHTML =
-    '<table class="lt2"><thead><tr>'
-  +   '<th>순</th><th>LOT 번호</th><th>입고일 / 발주</th><th class="num">입고</th>'
-  +   '<th class="num">불출</th><th class="num">잔여</th><th>상태</th>'
-  +   '<th class="hide-m">창고</th><th class="hide-m">입고담당</th><th class="hide-m">생산투입</th>'
-  + '</tr></thead><tbody>' + rows + '</tbody></table>'
-  + '<div class="mnote">'
-  +   '<b>순</b> = 입고 순서(FIFO). '
-  +   '<b style="color:var(--ok)">초록</b> 보유중 · '
-  +   '<b style="color:var(--dn)">빨강</b> 선입선출 위반 — '
-  +   '이 LOT이 남아 있는데 더 늦게 들어온 LOT이 먼저 출고된 경우입니다.'
-  +   (viol.length
-     ? '<br>\u26a0\ufe0f 이 자재는 위반 ' + viol.length + '건. 오래된 재고가 묶여 있습니다.'
-     : '<br>이 자재는 입고 순서대로 출고되고 있습니다.')
-  + '</div>'
-  + '<div id="m-tl"></div>';
+  // 표는 drawLots() 가 그린다. 이벤트가 도착하면 같은 함수가 다시 그린다.
+  MPID = pid; MLOTS = ls; MVIOL = viol.length;
+  drawLots();
 
   document.getElementById('ovl').classList.add('on');
   // 이벤트 타임라인은 열 때 그 자재만 받아 온다 (전 자재를 미리 실으면 수 MB)
