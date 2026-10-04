@@ -1436,6 +1436,78 @@ def worklist(conn):
     ]
 
 
+# ── 알림 ─────────────────────────────────────────────────────
+#
+# 대기 건수를 대시보드에 들어가야만 볼 수 있었다. 불출 처리 화면에 앉아
+# 있으면 승인이 밀려 있는지 알 길이 없다. worklist() 를 레이아웃까지
+# 끌어올려 어느 화면에서나 같은 숫자가 보이게 한다.
+#
+# 숫자를 여기서 다시 세지 않는다 — worklist() 하나만 쓴다. 대시보드의
+# '오늘 할 일' 카드와 사이드바 배지가 어긋나면 둘 다 못 믿는다.
+
+# 일감이 실제로 '처리되는' 메뉴. 한 메뉴가 여러 일감을 받기도 한다
+# (입고 처리 화면이 입고 대기와 불량·반품 두 탭을 함께 쥔다).
+# 불출 요청 화면에는 달지 않는다 — 요청을 올린 사람이 할 일은 끝났고,
+# 승인 대기는 승인 화면의 일이다. 보는 곳마다 점이 찍히면 의미가 없다.
+ALERT_MENU = {
+    "inbound":  "inbound",
+    "claim":    "inbound",
+    "approval": "approval",
+    "picking":  "picking",
+    "disburse": "disburse",
+    "safety":   "wizard",
+}
+
+# 정기 점검은 '밀린 일' 이 아니다. 199종이 주기 도래라고 종에 199가 뜨면
+# 다른 숫자가 묻힌다. 목록에는 두되 배지 합계에서는 뺀다
+# (대시보드 todo_total 이 이미 같은 기준을 쓴다).
+ALERT_ROUTINE = ("safety",)
+
+_TONE_RANK = {"mu": 0, "ac": 1, "wn": 2, "dn": 3}
+
+
+def _badge_txt(n):
+    """배지는 좁다. 세 자리가 넘으면 자리를 못 잡는다."""
+    return "99+" if n > 99 else str(n)
+
+
+def alerts(conn):
+    """상단 종·사이드바 배지에 쓸 대기 현황.
+
+    todo     처리 대기 (종 배지에 합산되는 것)
+    routine  정기 점검 (목록에만 — 합계에서 뺀다)
+    menu     {메뉴 id: {n, txt, tone, title}} — 사이드바 배지
+    total    종 배지 숫자
+    """
+    live = [t for t in worklist(conn) if t["n"] > 0]
+    # 정기 점검은 조용히. 199종이 승인 1건과 같은 색이면 급한 게 뭔지 안 보인다
+    for t in live:
+        if t["key"] in ALERT_ROUTINE:
+            t["tone"] = "mu"
+
+    menu = {}
+    for t in live:
+        mid = ALERT_MENU.get(t["key"])
+        if not mid:
+            continue
+        m = menu.setdefault(mid, {"n": 0, "tone": "mu", "parts": []})
+        m["n"] += t["n"]
+        if _TONE_RANK[t["tone"]] > _TONE_RANK[m["tone"]]:
+            m["tone"] = t["tone"]
+        m["parts"].append("%s %s%s" % (t["label"], format(t["n"], ","), t["unit"]))
+    for m in menu.values():
+        # 배지에 마우스를 올리면 무엇이 몇 건인지 — 숫자만 보고 못 넘어가게
+        m["title"] = " · ".join(m.pop("parts"))
+        m["txt"] = _badge_txt(m["n"])
+
+    # 키 이름이 'items' 면 Jinja 가 dict.items 메서드로 먼저 잡는다
+    todo = [t for t in live if t["key"] not in ALERT_ROUTINE]
+    routine = [t for t in live if t["key"] in ALERT_ROUTINE]
+    total = sum(t["n"] for t in todo)
+    return {"todo": todo, "routine": routine, "menu": menu,
+            "total": total, "txt": _badge_txt(total)}
+
+
 def dashboard(conn):
     """대시보드 한 화면에 필요한 집계를 모아 돌려준다.
 

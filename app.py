@@ -84,7 +84,17 @@ MENUS = [
 ]
 
 def get_menu_context(active_id):
-    return {"menus": MENUS, "active_id": active_id}
+    """레이아웃 공통 — 메뉴 + 대기 현황.
+
+    알림을 대시보드에만 두면 다른 화면에 앉아 있는 동안 승인이 밀려도 모른다.
+    여기서 한 번 읽어 사이드바 배지와 상단 종이 같은 숫자를 쓴다 (약 4ms).
+    """
+    conn = db.connect()
+    try:
+        al = db.alerts(conn)
+    finally:
+        conn.close()
+    return {"menus": MENUS, "active_id": active_id, "alerts": al, "icon": TODO_ICON}
 
 # ── 라우팅 ──────────────────────────────────────────────────
 @app.route("/")
@@ -95,7 +105,7 @@ def dashboard():
     finally:
         conn.close()
     return render_template("dashboard.html", **get_menu_context("dashboard"),
-                           page_title="메인 대시보드", d=data, icon=TODO_ICON)
+                           page_title="메인 대시보드", d=data)
 
 @app.route("/products")
 def products():
@@ -530,6 +540,25 @@ def _ctx_workbench():
 # ── 발주 등록 API ───────────────────────────────────────────
 # 이 앱에서 유일하게 DB 를 쓰는 엔드포인트다.
 # 나머지 화면은 전부 조회 전용이라 GET 만 있다.
+
+@app.route("/api/alerts")
+def api_alerts():
+    """사이드바 배지·상단 종을 다시 읽는다.
+
+    화면 안(iframe)에서 승인·불출이 일어나도 바깥 레이아웃은 그대로라
+    배지가 옛 숫자로 남는다. 목록 HTML 은 서버가 그려 보낸다 —
+    같은 조각을 JS 로 한 번 더 짜면 둘이 갈라진다.
+    """
+    conn = db.connect()
+    try:
+        al = db.alerts(conn)
+    finally:
+        conn.close()
+    return jsonify({
+        "total": al["total"], "txt": al["txt"], "menu": al["menu"],
+        "html": render_template("_alerts.html", alerts=al, icon=TODO_ICON),
+    })
+
 
 @app.route("/api/purchase/preview", methods=["POST"])
 def api_purchase_preview():

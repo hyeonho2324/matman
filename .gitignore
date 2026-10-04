@@ -5,3 +5,6 @@ venv/
 .env
 .DS_Store
 *.log
+
+# 로컬 개발 도구 설정
+.claude/

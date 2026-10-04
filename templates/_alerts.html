@@ -1,0 +1,36 @@
+{#-
+  알림 목록 조각.
+
+  base.html 이 처음 그릴 때와 /api/alerts 가 다시 그릴 때 같은 파일을 쓴다.
+  JS 로 한 번 더 짜 두면 둘이 조용히 갈라진다.
+-#}
+{%- if not alerts.todo and not alerts.routine %}
+<div class="np-e"><i class="ti ti-circle-check"></i>처리 대기 중인 일이 없습니다</div>
+{%- else %}
+  {%- for t in alerts.todo %}
+<a class="np-i np-{{ t.tone }}" href="{{ t.url }}">
+  <i class="ti {{ icon[t.key] }} np-ic"></i>
+  <div class="np-x">
+    <div class="np-l">{{ t.label }}</div>
+    <div class="np-s">{{ t.sub }}</div>
+  </div>
+  <div class="np-v">{{ t.n }}<small>{{ t.unit }}</small></div>
+</a>
+  {%- endfor %}
+  {%- if not alerts.todo %}
+<div class="np-e"><i class="ti ti-circle-check"></i>처리 대기 중인 일이 없습니다</div>
+  {%- endif %}
+  {%- if alerts.routine %}
+<div class="np-sec">정기 점검<span>대기 건수에 넣지 않습니다</span></div>
+    {%- for t in alerts.routine %}
+<a class="np-i np-{{ t.tone }}" href="{{ t.url }}">
+  <i class="ti {{ icon[t.key] }} np-ic"></i>
+  <div class="np-x">
+    <div class="np-l">{{ t.label }}</div>
+    <div class="np-s">{{ t.sub }}</div>
+  </div>
+  <div class="np-v">{{ t.n }}<small>{{ t.unit }}</small></div>
+</a>
+    {%- endfor %}
+  {%- endif %}
+{%- endif %}

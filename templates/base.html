@@ -28,9 +28,13 @@
     <div class="sb-group">
       <div class="sb-group-label">{{ group.group }}</div>
       {% for item in group.menu_items %}
+      {%- set a = alerts.menu.get(item.id) %}
       <a href="{{ item.url }}" class="sb-item {% if item.id == active_id %}active{% endif %}" data-id="{{ item.id }}">
         <i class="ti {{ item.icon }} sb-item-icon"></i>
         <span class="sb-item-label">{{ item.label }}</span>
+        {#- 배지는 항상 자리를 둔다. 처리하면 JS 가 여기를 지운다 -#}
+        <span class="sb-badge{% if a %} sb-{{ a.tone }}{% endif %}" data-badge="{{ item.id }}"
+              {% if a %}title="{{ a.title }}"{% else %}hidden{% endif %}>{{ a.txt if a }}</span>
       </a>
       {% endfor %}
     </div>
@@ -67,16 +71,28 @@
         <i class="ti ti-search"></i>
         <input type="text" placeholder="품번, LOT, 협력사 검색..." class="topbar-search-inp">
       </div>
-      <button class="topbar-icon-btn" title="알림">
-        <i class="ti ti-bell"></i>
-        <span class="notif-badge">3</span>
-      </button>
-      <button class="topbar-icon-btn" title="납기 리스크">
+      <div class="notif-wrap">
+        <button class="topbar-icon-btn" id="notif-btn" title="알림"
+                aria-haspopup="true" aria-expanded="false">
+          <i class="ti ti-bell"></i>
+          <span class="notif-badge" id="notif-badge"
+                {% if not alerts.total %}hidden{% endif %}>{{ alerts.txt }}</span>
+        </button>
+        <div class="notif-pop" id="notif-pop" hidden>
+          <div class="np-h">
+            <span class="np-t"><i class="ti ti-bell"></i>알림</span>
+            <span class="np-n" id="np-n">{% if alerts.total %}처리 대기 {{ alerts.total }}건{% else %}대기 없음{% endif %}</span>
+          </div>
+          <div class="np-body" id="np-body">{% include "_alerts.html" %}</div>
+          <a class="np-f" href="/">대시보드에서 전부 보기<i class="ti ti-arrow-right"></i></a>
+        </div>
+      </div>
+      <a class="topbar-icon-btn" href="/risk-radar" title="납기 리스크">
         <i class="ti ti-radar" style="color:#E24B4A"></i>
-      </button>
-      <button class="topbar-icon-btn" title="스캐너">
+      </a>
+      <a class="topbar-icon-btn" href="/scanner" title="스캐너">
         <i class="ti ti-scan"></i>
-      </button>
+      </a>
     </div>
   </header>
 

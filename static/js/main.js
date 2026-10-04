@@ -64,6 +64,69 @@ if (searchInp) {
   });
 }
 
+// ── 알림 ────────────────────────────────────────────────
+const notifBtn = document.getElementById('notif-btn');
+const notifPop = document.getElementById('notif-pop');
+
+if (notifBtn && notifPop) {
+  notifBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = notifPop.hidden;
+    notifPop.hidden = !open;
+    notifBtn.setAttribute('aria-expanded', String(open));
+  });
+  // 바깥을 누르거나 Esc 로 닫는다
+  document.addEventListener('click', e => {
+    if (!notifPop.hidden && !notifPop.contains(e.target)) closeNotif();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNotif(); });
+}
+function closeNotif() {
+  if (!notifPop || notifPop.hidden) return;
+  notifPop.hidden = true;
+  notifBtn.setAttribute('aria-expanded', 'false');
+}
+
+// 대기 건수는 어느 화면에 있든 같아야 한다.
+// 목록 HTML 은 서버가 그려 보낸다 — 같은 조각을 JS 로 또 짜면 둘이 갈라진다.
+let alertsBusy = false;
+async function refreshAlerts() {
+  if (alertsBusy) return;     // iframe load 와 focus 가 겹쳐 두 번 부르는 경우
+  alertsBusy = true;
+  let d;
+  try {
+    const r = await fetch('/api/alerts', { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) return;
+    d = await r.json();
+  } catch (e) { return; }          // 통신이 끊겨도 화면은 그대로 둔다
+  finally { alertsBusy = false; }
+
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = d.txt; badge.hidden = !d.total; }
+  const cnt = document.getElementById('np-n');
+  if (cnt) cnt.textContent = d.total ? `처리 대기 ${d.total}건` : '대기 없음';
+  const body = document.getElementById('np-body');
+  if (body) body.innerHTML = d.html;
+
+  document.querySelectorAll('[data-badge]').forEach(el => {
+    const m = d.menu[el.dataset.badge];
+    el.hidden = !m;
+    if (!m) { el.textContent = ''; el.removeAttribute('title'); return; }
+    el.textContent = m.txt;
+    el.title = m.title;
+    el.className = 'sb-badge sb-' + m.tone;
+  });
+}
+
+// 승인·불출·입고는 전부 iframe 안에서 일어나고, 끝나면 그 iframe 이 스스로
+// 다시 뜬다. 바깥 레이아웃은 그대로라 배지가 옛 숫자로 남는다 — 그 load 를
+// 신호로 쓴다. 첫 로드에도 한 번 더 도는데 조회가 4ms 라 그냥 둔다.
+document.querySelectorAll('iframe').forEach(f => {
+  f.addEventListener('load', () => setTimeout(refreshAlerts, 200));
+});
+// 다른 탭에서 처리하고 돌아온 경우
+window.addEventListener('focus', refreshAlerts);
+
 // ── 유틸 함수 ────────────────────────────────────────────
 const MatMan = {
   // 날짜 포맷
