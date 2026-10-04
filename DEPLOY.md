@@ -7,7 +7,7 @@
 
 | 준비된 파일 | 역할 |
 |---|---|
-| `requirements.txt` | 설치할 라이브러리 목록 (flask, gunicorn) |
+| `requirements.txt` | 설치할 라이브러리 목록 (flask, gunicorn, waitress, openpyxl) |
 | `Procfile` · `render.yaml` | Render 자동 배포 설정 |
 | `wsgi.py` | PythonAnywhere 진입점 |
 | `data/erp.db` | 데이터베이스 파일 (1.4MB) — 이것만 있으면 DB 서버가 따로 필요 없음 |
@@ -72,8 +72,13 @@ from app import app as application
 **(3) 라이브러리 설치**
 **Consoles → Bash** 에서:
 ```bash
-pip3 install --user flask
+pip3 install --user flask openpyxl
 ```
+
+> ⚠️ **`openpyxl` 을 빼먹으면 엑셀 업로드만 안 됩니다.** 나머지 화면은 그대로 돌아가고,
+> 자재 CSV 일괄 등록에서 `.xlsx` 를 올릴 때만 "이 서버에 엑셀 읽기 모듈이 없습니다" 가
+> 뜹니다(CSV 는 모듈 없이도 됩니다). 이미 배포해 둔 사이트라면 이 한 줄만 더 실행하고
+> **Reload** 하면 됩니다.
 
 ### 5단계 · 실행
 **Web** 탭 상단의 초록색 **Reload** 버튼 클릭 → 주소 접속

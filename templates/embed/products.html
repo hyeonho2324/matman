@@ -237,6 +237,8 @@ tbody tr.on{background:var(--bg-ac)}
 .drop i{font-size:26px;color:var(--txt3);display:block;margin-bottom:7px}
 .drop .t{font-size:12px;font-weight:500}
 .drop .s{font-size:11px;color:var(--txt3);margin-top:3px;line-height:1.6}
+.dlrow{display:flex;gap:7px;justify-content:center;margin-top:11px;flex-wrap:wrap}
+.dlrow .btn{text-decoration:none}
 .cols{font-size:10px;color:var(--txt3);line-height:1.9;margin-top:9px}
 .cols code{background:var(--s2);border-radius:3px;padding:1px 4px;font-family:ui-monospace,monospace;font-size:10px;color:var(--txt2)}
 .cols code.rq{color:#9B1C1C}
@@ -262,7 +264,7 @@ tbody tr.on{background:var(--bg-ac)}
       <span class="tag">실제 DB · {{ summary.total }}종 · 협력사 {{ summary.suppliers }}개사</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
-    <button class="btn" onclick="cOpen()"><i class="ti ti-file-upload"></i>CSV 일괄 등록</button>
+    <button class="btn" onclick="cOpen()"><i class="ti ti-file-spreadsheet"></i>일괄 등록</button>
     <button class="btn btnp" onclick="mOpen()"><i class="ti ti-plus"></i>자재 등록</button>
   </div>
 
@@ -410,18 +412,26 @@ tbody tr.on{background:var(--bg-ac)}
 <div class="pvl" id="cvl" onclick="if(event.target===this) cClose()">
   <div class="pbox">
     <div class="ph">
-      <i class="ti ti-file-upload" style="color:var(--acc);font-size:17px"></i>
-      <div class="ph-t">CSV 일괄 등록</div>
+      <i class="ti ti-file-spreadsheet" style="color:var(--acc);font-size:17px"></i>
+      <div class="ph-t">엑셀 · CSV 일괄 등록</div>
       <button class="px" onclick="cClose()"><i class="ti ti-x"></i></button>
     </div>
     <div class="pb">
       <div class="drop" id="c-drop" onclick="document.getElementById('c-file').click()">
         <i class="ti ti-table-import"></i>
-        <div class="t">CSV 파일을 끌어다 놓거나 눌러서 고르세요</div>
-        <div class="s">엑셀에서 저장한 파일(CP949)도 그대로 읽습니다.<br>
-          첫 줄은 머리글이어야 합니다 — <a href="/api/product/csv/template" style="color:var(--acc)">빈 양식 내려받기</a></div>
+        <div class="t">엑셀(.xlsx) 또는 CSV 파일을 끌어다 놓거나 눌러서 고르세요</div>
+        <div class="s">엑셀 파일을 그대로 올리면 됩니다. CSV 로 다시 저장하지 않아도 됩니다.<br>
+          첫 줄은 머리글이어야 합니다.</div>
+        <div class="dlrow">
+          <a class="btn btnp" href="/api/product/xlsx/template" onclick="event.stopPropagation()">
+            <i class="ti ti-file-spreadsheet"></i>엑셀 양식 내려받기</a>
+          <a class="btn" href="/api/product/csv/template" onclick="event.stopPropagation()">
+            <i class="ti ti-file-text"></i>CSV 양식</a>
+        </div>
       </div>
-      <input type="file" id="c-file" accept=".csv,text/csv" style="display:none" onchange="cPick(this.files[0])">
+      <input type="file" id="c-file"
+             accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+             style="display:none" onchange="cPick(this.files[0])">
       <div class="cols" id="c-cols"></div>
 
       <div id="c-result"></div>
@@ -494,8 +504,8 @@ function mFill(){
         }).join('') + '</div></div>';
   }).join('');
 
-  $('c-cols').innerHTML = '열 이름은 머리글로 알아봅니다 — 순서가 달라도 됩니다. '
-    + '<i class="ti ti-asterisk" style="font-size:8px;color:var(--dn)"></i> 는 필수.<br>'
+  $('c-cols').innerHTML = '열 이름은 머리글로 알아봅니다 — 순서가 달라도 되고, '
+    + '모르는 열은 무시합니다. <b style="color:var(--dn)">*</b> 는 필수.<br>'
     + SRC.csv_cols.map(function(c){
         return '<code class="' + (c[2] ? 'rq' : '') + '">' + esc(c[1]) + (c[2] ? '*' : '') + '</code>';
       }).join(' ');
@@ -697,7 +707,7 @@ function cOpen(){
   cFile = null; cPlan = null;
   $('c-result').innerHTML = ''; $('c-who').style.display = 'none';
   $('c-ok').disabled = true; cMsg('', []);
-  $('c-foot').textContent = '양식을 받아 채운 뒤 올리면 줄마다 검사해서 보여줍니다.';
+  $('c-foot').textContent = '양식을 받아 엑셀에서 채운 뒤 그대로 올리면 줄마다 검사해서 보여줍니다.';
   $('c-file').value = '';
   $('cvl').classList.add('on');
 }
@@ -724,17 +734,27 @@ function cMsg(kind, lines){
   });
 })();
 
+function cDropHint(html){
+  $('c-drop').querySelector('.s').innerHTML = html
+    || '다른 파일로 바꾸려면 다시 누르세요.';
+}
+
 async function cPick(file){
   if (!file) return;
   cFile = file;
   $('c-drop').querySelector('.t').textContent = file.name;
+  cDropHint('읽는 중입니다…');
   cMsg('', []);
   const fd = new FormData(); fd.append('file', file);
   let d;
   try {
     const r = await fetch('/api/product/csv/preview', {method:'POST', body: fd});
     d = await r.json();
-  } catch (e) { return cMsg('err', ['파일을 보낼 수 없습니다.']); }
+  } catch (e) {
+    cDropHint();
+    return cMsg('err', ['파일을 보낼 수 없습니다.']);
+  }
+  cDropHint();
 
   if (d.errors && d.errors.length) {
     $('c-result').innerHTML = ''; $('c-who').style.display = 'none';

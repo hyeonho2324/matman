@@ -5,6 +5,7 @@ erp.db 조회 모듈.
 화면에서 쓰는 SQL을 여기 모아둔다. app.py 는 이 함수들만 부른다.
 """
 import csv
+import datetime
 import io
 import os
 import sqlite3
@@ -5734,8 +5735,43 @@ def csv_template():
     return buf.getvalue()
 
 
+def _grid_to_rows(grid):
+    """표(머리글 한 줄 + 자료)를 줄 목록으로. CSV 와 엑셀이 같이 쓴다.
+
+    여기서 보는 건 **열 이름뿐**이다. 값 검증은 preview_product 가 한다 —
+    파일 형식마다 검사를 따로 두면 CSV 로는 걸리고 엑셀로는 통과하는 일이 생긴다.
+    """
+    grid = [r for r in grid if any(str(c).strip() for c in r)]
+    if len(grid) < 2:
+        return [], ["머리글 한 줄과 자료 한 줄 이상이 필요합니다."]
+
+    label2key = {lb: k for k, lb, _r, _e in PRODUCT_CSV_COLS}
+    label2key.update({k: k for k, _lb, _r, _e in PRODUCT_CSV_COLS})
+    # 양식은 필수 열을 '품명*' 처럼 표시한다. 별표·공백·따옴표는 떼고 맞춘다
+    head = [str(c).strip().strip('"').replace(" ", "").rstrip("*")
+            for c in grid[0]]
+    idx = {}
+    for i, h in enumerate(head):
+        if h in label2key and label2key[h] not in idx:
+            idx[label2key[h]] = i
+
+    miss = [lb for k, lb, req, _e in PRODUCT_CSV_COLS if req and k not in idx]
+    if miss:
+        return [], ["머리글에 없는 열이 있습니다: %s" % ", ".join(miss),
+                    "첫 줄은 %s 가 들어간 머리글이어야 합니다."
+                    % ", ".join(lb for _k, lb, _r, _e in PRODUCT_CSV_COLS)]
+
+    out = []
+    for n, r in enumerate(grid[1:], start=2):
+        d = {"_line": n}
+        for k, i in idx.items():
+            d[k] = str(r[i]).strip() if i < len(r) else ""
+        out.append(d)
+    return out, []
+
+
 def parse_product_csv(raw):
-    """바이트를 줄 목록으로. 인코딩과 열 이름만 여기서 본다."""
+    """CSV 바이트를 줄 목록으로. 인코딩만 여기서 본다."""
     if isinstance(raw, str):
         text = raw
     else:
@@ -5755,33 +5791,170 @@ def parse_product_csv(raw):
 
     rdr = csv.reader(io.StringIO(text))
     try:
-        rows = [r for r in rdr if any(str(c).strip() for c in r)]
+        grid = list(rdr)
     except csv.Error as ex:
         return [], ["CSV 형식이 아닙니다: %s" % ex]
-    if len(rows) < 2:
-        return [], ["머리글 한 줄과 자료 한 줄 이상이 필요합니다."]
+    return _grid_to_rows(grid)
 
-    label2key = {lb: k for k, lb, _r, _e in PRODUCT_CSV_COLS}
-    label2key.update({k: k for k, _lb, _r, _e in PRODUCT_CSV_COLS})
-    head = [str(c).strip().strip('"').replace(" ", "") for c in rows[0]]
-    idx = {}
-    for i, h in enumerate(head):
-        if h in label2key:
-            idx[label2key[h]] = i
 
-    miss = [lb for k, lb, req, _e in PRODUCT_CSV_COLS if req and k not in idx]
-    if miss:
-        return [], ["머리글에 없는 열이 있습니다: %s" % ", ".join(miss),
-                    "첫 줄은 %s 순서여야 합니다."
-                    % ", ".join(lb for _k, lb, _r, _e in PRODUCT_CSV_COLS)]
+def _cell(v):
+    """엑셀 칸을 글자로. 숫자가 늘 실수로 와서 그대로 쓰면 '1000.0' 이 된다."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "Y" if v else "N"
+    if isinstance(v, float) and v == int(v):
+        return str(int(v))
+    if isinstance(v, datetime.datetime):
+        return v.strftime("%Y-%m-%d")
+    return str(v).strip()
 
-    out = []
-    for n, r in enumerate(rows[1:], start=2):
-        d = {"_line": n}
-        for k, i in idx.items():
-            d[k] = str(r[i]).strip() if i < len(r) else ""
-        out.append(d)
-    return out, []
+
+def parse_product_xlsx(raw):
+    """엑셀 통합문서의 첫 시트를 줄 목록으로.
+
+    대부분의 사람이 엑셀에서 작업한다. 'CSV 로 다시 저장하세요' 는
+    한 단계를 떠넘기는 것이고, 그 단계에서 인코딩 사고가 난다.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        return [], ["이 서버에 엑셀 읽기 모듈이 없습니다. CSV 로 올리거나 "
+                    "'pip install openpyxl' 후 다시 시도하세요."]
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as ex:                      # 깨진 파일·암호 걸린 파일
+        return [], ["엑셀 파일을 열 수 없습니다: %s" % ex]
+    try:
+        ws = wb.worksheets[0]                    # 첫 시트만 읽는다
+        grid = [[_cell(c) for c in row] for row in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    if not grid:
+        return [], ["빈 시트입니다."]
+    return _grid_to_rows(grid)
+
+
+# 파일 머리 몇 바이트로 형식을 가른다. 확장자는 바뀌어 있을 수 있다.
+ZIP_SIG = b"PK\x03\x04"            # xlsx/xlsm — 사실 zip 이다
+OLE_SIG = b"\xd0\xcf\x11\xe0"    # 97~2003 .xls
+
+
+def parse_product_file(raw, filename=""):
+    """올라온 파일을 알아서 읽는다 — .xlsx 든 .csv 든."""
+    if isinstance(raw, str):
+        return parse_product_csv(raw)
+    if not raw:
+        return [], ["빈 파일입니다."]
+    if raw.startswith(ZIP_SIG):
+        return parse_product_xlsx(raw)
+    if raw.startswith(OLE_SIG):
+        return [], ["엑셀 97~2003 형식(.xls)은 읽지 못합니다. "
+                    "엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)' 로 "
+                    "바꾼 뒤 올리세요."]
+    return parse_product_csv(raw)
+
+
+
+def xlsx_template(conn):
+    """엑셀 양식 — 받아서 그대로 채우면 되는 통합문서.
+
+    CSV 양식보다 한 걸음 더 간다. 엑셀에서만 할 수 있는 것을 쓴다:
+      · 점수·대분류·협력사를 드롭다운으로 — 오타가 날 자리를 없앤다
+      · 분류 75종과 협력사 20개사를 둘째 시트에 붙여 — 코드를 찾으러 나가지 않게
+      · 중분류·소분류를 텍스트 서식으로 — 엑셀이 '01' 을 1 로 바꿔 버린다
+    """
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "자재등록"
+
+    cols = list(PRODUCT_CSV_COLS) + [("_note", "비고", False, "메모 (등록에 쓰이지 않습니다)")]
+    head_fill = PatternFill("solid", fgColor="EFEEEA")
+    req_font = Font(bold=True, color="9B1C1C")
+    opt_font = Font(bold=True, color="4A4946")
+
+    for i, (_k, label, req, _ex) in enumerate(cols, start=1):
+        c = ws.cell(row=1, column=i, value=label + ("*" if req else ""))
+        c.fill = head_fill
+        c.font = req_font if req else opt_font
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    for i, (_k, _l, _r, ex) in enumerate(cols, start=1):
+        ws.cell(row=2, column=i, value=ex)
+
+    widths = {"품명": 22, "규격": 26, "대분류": 8, "중분류": 8, "소분류": 8,
+              "협력사": 18, "단가": 11, "최소발주량": 11, "포장단위": 10,
+              "리드타임": 10, "비고": 30}
+    for i, (_k, label, _r, _e) in enumerate(cols, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = widths.get(label, 10)
+    ws.freeze_panes = "A2"               # 머리글은 스크롤해도 남는다
+
+    # 참고 시트 — 분류 코드와 협력사 이름을 여기서 보고 쓴다
+    ref = wb.create_sheet("참고")
+    ref["A1"] = "분류 (대/중/소)"
+    ref["A1"].font = Font(bold=True)
+    for j, h in enumerate(["대분류", "중분류", "소분류", "분류명", "창고", "등록 자재"], start=1):
+        c = ref.cell(row=2, column=j, value=h)
+        c.font = Font(bold=True)
+        c.fill = head_fill
+    cats = cat_list(conn)
+    for i, r in enumerate(cats, start=3):
+        ref.cell(row=i, column=1, value=r["MainCat"])
+        ref.cell(row=i, column=2, value=r["SubCat"])
+        ref.cell(row=i, column=3, value=r["DetailCat"])
+        ref.cell(row=i, column=4, value=r["Cat_Name"])
+        ref.cell(row=i, column=5, value=r["loc"])
+        ref.cell(row=i, column=6, value=r["n"])
+
+    comps = _rows(conn, "SELECT CP_N, Is_Foreign FROM Company_tb ORDER BY CP_N")
+    ref["H1"] = "협력사"
+    ref["H1"].font = Font(bold=True)
+    for j, h in enumerate(["협력사명", "구분"], start=8):
+        c = ref.cell(row=2, column=j, value=h)
+        c.font = Font(bold=True)
+        c.fill = head_fill
+    for i, r in enumerate(comps, start=3):
+        ref.cell(row=i, column=8, value=r["CP_N"])
+        ref.cell(row=i, column=9, value="해외" if r["Is_Foreign"] == "Y" else "국내")
+    for col, wd in (("A", 9), ("B", 9), ("C", 9), ("D", 30), ("E", 8), ("F", 10),
+                    ("H", 20), ("I", 8)):
+        ref.column_dimensions[col].width = wd
+    ref.freeze_panes = "A3"
+
+    LAST = 300                            # 드롭다운을 걸어 둘 범위
+
+    def add_dv(label, formula, prompt):
+        i = [c[1] for c in cols].index(label) + 1
+        L = get_column_letter(i)
+        dv = DataValidation(type="list", formula1=formula, allow_blank=True,
+                            showDropDown=False)
+        dv.promptTitle, dv.prompt = label, prompt
+        dv.showInputMessage = True
+        dv.errorTitle, dv.error = label, prompt
+        ws.add_data_validation(dv)
+        dv.add("%s3:%s%d" % (L, L, LAST))
+
+    for label in ("단가점수", "대체점수", "영향점수", "공급점수"):
+        add_dv(label, '"1,2,3"', "1~3 점 중에서 고르세요.")
+    add_dv("대분류", '"V,S,E,U,T"', "V 밸브 · S 센서 · E 전장 · U 탱크 · T 튜브")
+    add_dv("협력사", "참고!$H$3:$H$%d" % (len(comps) + 2),
+           "참고 시트의 협력사명 중에서 고르세요.")
+
+    # ⚠️ 엑셀은 '01' 을 숫자 1 로 바꾼다. 서버가 되돌리긴 하지만
+    #    화면에서 '1' 로 보이면 쓰는 사람이 틀린 줄 안다.
+    for label in ("중분류", "소분류"):
+        L = get_column_letter([c[1] for c in cols].index(label) + 1)
+        for r in range(2, LAST + 1):
+            ws["%s%d" % (L, r)].number_format = "@"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    return buf.getvalue()
 
 
 def _resolve_company(conn, v, cache):

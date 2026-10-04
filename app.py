@@ -652,19 +652,19 @@ def api_product_delete():
 # 파일은 바이트로 받는다. 화면에서 글자로 읽어 보내면 엑셀이 저장한
 # CP949 가 UTF-8 로 해석돼 한글이 전부 깨진 채 도착한다.
 
-def _csv_bytes():
-    """업로드된 파일 또는 붙여넣은 본문."""
+def _upload_bytes():
+    """업로드된 파일 또는 붙여넣은 본문. (bytes, 파일명)"""
     f = request.files.get("file")
     if f is not None:
-        return f.read()
+        return f.read(), (f.filename or "")
     if request.is_json:
-        return (request.get_json(silent=True) or {}).get("text") or ""
-    return request.form.get("text") or ""
+        return ((request.get_json(silent=True) or {}).get("text") or ""), ""
+    return (request.form.get("text") or ""), ""
 
 
 @app.route("/api/product/csv/template")
 def api_product_csv_template():
-    """빈 양식 내려받기. 엑셀이 한글을 바로 읽도록 BOM 을 붙인다."""
+    """CSV 양식 내려받기. 엑셀이 한글을 바로 읽도록 BOM 을 붙인다."""
     body = db.csv_template().encode("utf-8-sig")
     return app.response_class(
         body, mimetype="text/csv; charset=utf-8",
@@ -672,10 +672,29 @@ def api_product_csv_template():
                  "attachment; filename=matman_product_template.csv"})
 
 
+@app.route("/api/product/xlsx/template")
+def api_product_xlsx_template():
+    """엑셀 양식 — 점수·대분류·협력사 드롭다운과 분류/협력사 참고 시트가 들어 있다."""
+    conn = db.connect()
+    try:
+        body = db.xlsx_template(conn)
+    except ImportError:
+        return jsonify({"ok": False,
+                        "errors": ["이 서버에 엑셀 모듈이 없습니다. CSV 양식을 쓰세요."]}), 500
+    finally:
+        conn.close()
+    return app.response_class(
+        body,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 "attachment; filename=matman_product_template.xlsx"})
+
+
 @app.route("/api/product/csv/preview", methods=["POST"])
 def api_product_csv_preview():
     """줄마다 판정해서 돌려준다 (저장 안 함)."""
-    rows, errors = db.parse_product_csv(_csv_bytes())
+    raw, name = _upload_bytes()
+    rows, errors = db.parse_product_file(raw, name)
     if errors:
         return jsonify({"ok": False, "errors": errors})
     conn = db.connect()
@@ -689,7 +708,7 @@ def api_product_csv_preview():
 @app.route("/api/product/csv", methods=["POST"])
 def api_product_csv_create():
     """CSV 일괄 등록 — 한 줄이라도 틀리면 아무것도 저장하지 않는다."""
-    raw = _csv_bytes()
+    raw, name = _upload_bytes()
     ep_id = request.form.get("EP_ID") or (
         (request.get_json(silent=True) or {}).get("EP_ID") if request.is_json else None)
     note = request.form.get("note") or (
@@ -697,7 +716,7 @@ def api_product_csv_create():
     date = request.form.get("date") or (
         (request.get_json(silent=True) or {}).get("date") if request.is_json else None)
 
-    rows, errors = db.parse_product_csv(raw)
+    rows, errors = db.parse_product_file(raw, name)
     if errors:
         return jsonify({"ok": False, "errors": errors}), 400
     conn = db.connect()
