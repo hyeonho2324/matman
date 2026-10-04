@@ -170,6 +170,87 @@ tbody tr.on{background:var(--bg-ac)}
   .search{margin-left:0;width:100%}
   .search input{width:100%}
 }
+
+/* ── 자재 등록 · 수정 · CSV 일괄 등록 ── */
+.pvl{position:fixed;inset:0;background:rgba(26,25,23,.42);display:none;align-items:center;justify-content:center;padding:20px;z-index:70}
+.pvl.on{display:flex}
+.pbox{background:var(--s0);border-radius:12px;width:100%;max-width:920px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.22)}
+.ph{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.ph-t{font-size:14px;font-weight:600;flex:1}
+.px{border:none;background:none;cursor:pointer;color:var(--txt3);font-size:16px;padding:2px 6px}
+.px:hover{color:var(--txt)}
+.pb{flex:1;overflow:auto;min-height:0;padding:14px 16px}
+.pf{display:flex;align-items:center;gap:8px;padding:11px 16px;border-top:0.5px solid var(--border);background:var(--s1);flex-shrink:0}
+.pf .m{flex:1;font-size:11px;color:var(--txt3);line-height:1.5}
+.btnp{background:var(--acc);color:#fff;border-color:transparent}
+.btnp:hover:not(:disabled){background:#2268bd}
+.btnp:disabled{opacity:.45;cursor:not-allowed}
+.btnd{border-color:rgba(224,75,74,.45);color:#9B1C1C}
+.btnd:hover:not(:disabled){background:var(--bg-dn)}
+.ptabs{display:flex;gap:2px;padding:0 16px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.ptab{padding:8px 12px;font-size:12px;color:var(--txt3);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;font-family:inherit}
+.ptab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500}
+.fg{display:grid;grid-template-columns:repeat(2,1fr);gap:9px 16px}
+.fg.one{grid-template-columns:1fr}
+.frow{display:flex;align-items:center;gap:8px}
+.frow label{font-size:11px;color:var(--txt3);width:82px;flex-shrink:0}
+.frow label .rq{color:var(--dn);margin-left:2px}
+.pbox select,.pbox input,.pbox textarea{font-family:inherit;font-size:12px;color:var(--txt);background:var(--s0);border:0.5px solid var(--border-s);border-radius:var(--r);padding:5px 8px;min-width:0}
+.pbox select:focus,.pbox input:focus,.pbox textarea:focus{outline:none;border-color:var(--acc)}
+.pbox select,.pbox input[type=text]{flex:1}
+.pbox input[type=number]{flex:1;text-align:right;font-variant-numeric:tabular-nums}
+.pbox input[readonly]{background:var(--s1);color:var(--txt3)}
+.fsec{font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px;padding-bottom:5px;border-bottom:0.5px solid var(--border);display:flex;align-items:baseline;gap:7px}
+.fsec span{text-transform:none;letter-spacing:0;font-weight:400}
+.sc{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.scc{border:0.5px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--s1)}
+.scc-l{font-size:11px;font-weight:500;margin-bottom:1px}
+.scc-q{font-size:10px;color:var(--txt3);margin-bottom:6px}
+.scb{display:flex;gap:4px}
+.scb button{flex:1;border:0.5px solid var(--border-s);background:var(--s0);border-radius:5px;padding:5px 2px;font-size:10px;cursor:pointer;font-family:inherit;color:var(--txt2);line-height:1.35}
+.scb button b{display:block;font-size:11px;color:var(--txt)}
+.scb button.on{border-color:var(--acc);background:var(--bg-ac);color:var(--acc)}
+.scb button.on b{color:var(--acc)}
+.grd{display:flex;align-items:center;gap:10px;background:var(--bg-ac);border:0.5px solid rgba(42,120,214,.25);border-radius:8px;padding:10px 12px;margin-top:10px;flex-wrap:wrap}
+.grd-g{font-size:24px;font-weight:700;color:var(--acc);line-height:1}
+.grd-x{flex:1;min-width:160px;font-size:11px;color:var(--txt2);line-height:1.65}
+.grd-x b{color:var(--txt)}
+.pmsg{border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.7;margin-top:10px;display:none}
+.pmsg.on{display:block}
+.pmsg.err{background:var(--bg-dn);color:#9B1C1C}
+.pmsg.ok{background:var(--bg-ok);color:#1D6E52}
+.pmsg.wn{background:var(--bg-wn);color:#854F0B}
+.pmsg ul{margin:3px 0 0 16px}
+.psum{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:10px 0}
+.pc{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;padding:9px 11px}
+.pc-l{font-size:10px;color:var(--txt3);margin-bottom:2px}
+.pc-v{font-size:17px;font-weight:600}
+.pc-s{font-size:10px;color:var(--txt3);margin-top:2px}
+.ptb{border:0.5px solid var(--border);border-radius:8px;overflow:auto;max-height:42vh;margin-top:10px}
+.ptb table{min-width:720px;width:100%;border-collapse:collapse}
+.ptb th{position:sticky;top:0;background:var(--s1);font-size:10px;color:var(--txt3);font-weight:500;text-align:left;padding:6px 8px;white-space:nowrap;border-bottom:0.5px solid var(--border);z-index:1}
+.ptb td{padding:6px 8px;font-size:11px;border-bottom:0.5px solid var(--border);vertical-align:top}
+.ptb tr.bad td{background:var(--bg-dn)}
+.ptb .num{text-align:right;font-variant-numeric:tabular-nums}
+.drop{border:1.5px dashed var(--border-s);border-radius:10px;padding:22px 16px;text-align:center;cursor:pointer;background:var(--s1)}
+.drop.over{border-color:var(--acc);background:var(--bg-ac)}
+.drop i{font-size:26px;color:var(--txt3);display:block;margin-bottom:7px}
+.drop .t{font-size:12px;font-weight:500}
+.drop .s{font-size:11px;color:var(--txt3);margin-top:3px;line-height:1.6}
+.cols{font-size:10px;color:var(--txt3);line-height:1.9;margin-top:9px}
+.cols code{background:var(--s2);border-radius:3px;padding:1px 4px;font-family:ui-monospace,monospace;font-size:10px;color:var(--txt2)}
+.cols code.rq{color:#9B1C1C}
+.pnote{font-size:10px;color:var(--txt3);line-height:1.75;margin-top:10px}
+.pid-prev{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:600;color:var(--acc)}
+/* 좁은 화면 — 라벨 82px + 입력칸이 한 줄에 안 들어가 왼쪽으로 넘친다.
+   라벨을 위로 올려 쌓는다 */
+@media(max-width:760px){
+  .fg,.sc{grid-template-columns:1fr}
+  .psum{grid-template-columns:repeat(2,1fr)}
+  .frow{flex-direction:column;align-items:stretch;gap:3px}
+  .frow label{width:auto}
+  .pbox input[type=number]{text-align:left}
+}
 </style>
 </head>
 <body>
@@ -181,6 +262,8 @@ tbody tr.on{background:var(--bg-ac)}
       <span class="tag">실제 DB · {{ summary.total }}종 · 협력사 {{ summary.suppliers }}개사</span>
     </div>
     <button class="btn" onclick="dl()"><i class="ti ti-download"></i>CSV</button>
+    <button class="btn" onclick="cOpen()"><i class="ti ti-file-upload"></i>CSV 일괄 등록</button>
+    <button class="btn btnp" onclick="mOpen()"><i class="ti ti-plus"></i>자재 등록</button>
   </div>
 
   <div class="kpi-row">
@@ -266,6 +349,98 @@ tbody tr.on{background:var(--bg-ac)}
   </div>
 </div>
 
+<!-- 자재 등록 · 수정 -->
+<div class="pvl" id="mvl" onclick="if(event.target===this) mClose()">
+  <div class="pbox" style="max-width:860px">
+    <div class="ph">
+      <i class="ti ti-package" style="color:var(--acc);font-size:17px"></i>
+      <div class="ph-t" id="m2-t">자재 등록</div>
+      <button class="px" onclick="mClose()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="pb">
+
+      <div class="fsec">기본 정보 <span>물건 자체에 대한 것</span></div>
+      <div class="fg">
+        <div class="frow"><label>품명<i class="rq">*</i></label>
+          <input type="text" id="f-name" placeholder="예) 후방카메라 LCD" oninput="mDraw()"></div>
+        <div class="frow"><label>규격</label>
+          <input type="text" id="f-spec" placeholder='예) CMOS 1/3" 720P'></div>
+        <div class="frow" id="row-cat"><label>분류<i class="rq">*</i></label>
+          <select id="f-cat" onchange="mDraw()"></select></div>
+        <div class="frow"><label>품번</label>
+          <input type="text" id="f-pid" readonly placeholder="분류를 고르면 자동으로 매겨집니다"></div>
+        <div class="frow"><label>협력사<i class="rq">*</i></label>
+          <select id="f-brn" onchange="mDraw()"></select></div>
+        <div class="frow"><label>단가<i class="rq">*</i></label>
+          <input type="number" id="f-price" min="1" step="100" placeholder="원" oninput="mDraw()"></div>
+        <div class="frow"><label>최소 발주량</label>
+          <input type="number" id="f-moq" min="0" step="1" placeholder="0" oninput="mDraw()"></div>
+        <div class="frow"><label>포장단위<i class="rq">*</i></label>
+          <input type="number" id="f-pkg" min="1" step="1" placeholder="1" oninput="mDraw()"></div>
+        <div class="frow"><label>리드타임<i class="rq">*</i></label>
+          <input type="number" id="f-lt" min="1" max="365" step="1" placeholder="일" oninput="mDraw()"></div>
+        <div class="frow" id="row-mon"><label>월 예상 소요량<i class="rq">*</i></label>
+          <input type="number" id="f-mon" min="1" step="1" placeholder="개 / 월" oninput="mDraw()"></div>
+      </div>
+
+      <div class="fsec">안전재고 등급 판정 <span>네 항목을 매기면 등급과 안전재고가 따라 나옵니다</span></div>
+      <div class="sc" id="f-scores"></div>
+      <div class="grd" id="f-grade"></div>
+
+      <div class="fsec">기록</div>
+      <div class="fg">
+        <div class="frow"><label>담당자<i class="rq">*</i></label><select id="f-ep"></select></div>
+        <div class="frow"><label>메모</label>
+          <input type="text" id="f-note" placeholder="등록 사유 · 협의 내용"></div>
+      </div>
+
+      <div class="pmsg" id="m-msg"></div>
+      <div class="pnote" id="m-note"></div>
+    </div>
+    <div class="pf">
+      <div class="m" id="m-foot"></div>
+      <button class="btn btnd" id="m-del" onclick="mDelete()" style="display:none"><i class="ti ti-trash"></i>삭제</button>
+      <button class="btn" onclick="mClose()">취소</button>
+      <button class="btn btnp" id="m-ok" onclick="mSubmit()" disabled><i class="ti ti-check"></i>등록</button>
+    </div>
+  </div>
+</div>
+
+<!-- CSV 일괄 등록 -->
+<div class="pvl" id="cvl" onclick="if(event.target===this) cClose()">
+  <div class="pbox">
+    <div class="ph">
+      <i class="ti ti-file-upload" style="color:var(--acc);font-size:17px"></i>
+      <div class="ph-t">CSV 일괄 등록</div>
+      <button class="px" onclick="cClose()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="pb">
+      <div class="drop" id="c-drop" onclick="document.getElementById('c-file').click()">
+        <i class="ti ti-table-import"></i>
+        <div class="t">CSV 파일을 끌어다 놓거나 눌러서 고르세요</div>
+        <div class="s">엑셀에서 저장한 파일(CP949)도 그대로 읽습니다.<br>
+          첫 줄은 머리글이어야 합니다 — <a href="/api/product/csv/template" style="color:var(--acc)">빈 양식 내려받기</a></div>
+      </div>
+      <input type="file" id="c-file" accept=".csv,text/csv" style="display:none" onchange="cPick(this.files[0])">
+      <div class="cols" id="c-cols"></div>
+
+      <div id="c-result"></div>
+
+      <div class="fg" id="c-who" style="margin-top:12px;display:none">
+        <div class="frow"><label>담당자<i class="rq">*</i></label><select id="c-ep"></select></div>
+        <div class="frow"><label>메모</label>
+          <input type="text" id="c-note" placeholder="예) 2026년 1분기 신규 품목"></div>
+      </div>
+      <div class="pmsg" id="c-msg"></div>
+    </div>
+    <div class="pf">
+      <div class="m" id="c-foot">양식을 받아 채운 뒤 올리면 줄마다 검사해서 보여줍니다.</div>
+      <button class="btn" onclick="cClose()">닫기</button>
+      <button class="btn btnp" id="c-ok" onclick="cSubmit()" disabled><i class="ti ti-check"></i>일괄 등록</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const ROWS = {{ rows|tojson }};
 const LOTS = {{ lots|tojson }};
@@ -278,6 +453,378 @@ let cat='all', flags={}, sortKey='P_ID', sortAsc=true, sel=null;
 const nf = n => (n==null ? '-' : Number(n).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? Math.round(n/10000).toLocaleString()+'만' : nf(n));
+
+// ══════════════════════════════════════════════════════════════
+// 자재 마스터 — 등록 · 수정 · 삭제
+//
+// 자재 하나를 만들면 Product_tb · Safe_tb · Update_Log_tb 셋이 함께
+// 움직인다. 등급과 안전재고는 화면이 계산한 값을 보내지 않고
+// 서버(/api/product/preview)가 매 입력마다 다시 내려 준다 — 화면 계산을
+// 믿으면 저장된 값과 보여 준 값이 갈라진다.
+// ══════════════════════════════════════════════════════════════
+const SRC = {{ src|tojson }};
+let mPid = null;          // null 이면 등록, 품번이면 수정
+let mPlan = null, mTimer = null, mRefs = null;
+
+function $(id){ return document.getElementById(id); }
+
+function mFill(){
+  // 분류 — 품번 앞 5자리가 여기서 나온다
+  $('f-cat').innerHTML = '<option value="">선택하세요</option>' + SRC.cats.map(function(c){
+    return '<option value="' + c.MainCat + '|' + c.SubCat + '|' + c.DetailCat + '">'
+      + c.code + ' · ' + esc(c.Cat_Name) + ' (' + c.n + '종)</option>';
+  }).join('');
+  $('f-brn').innerHTML = '<option value="">선택하세요</option>' + SRC.companies.map(function(c){
+    return '<option value="' + c.BRN + '">' + esc(c.CP_N)
+      + (c.Is_Foreign === 'Y' ? ' · 해외' : '') + ' (' + c.n + '종)</option>';
+  }).join('');
+  const ws = SRC.workers.map(function(w){
+    return '<option value="' + w.EP_ID + '">' + esc(w.Name) + ' ' + esc(w.Position) + '</option>';
+  }).join('');
+  $('f-ep').innerHTML = ws;
+  $('c-ep').innerHTML = ws;
+
+  // 점수 체크리스트 — 숫자만 받으면 '왜 3점인가' 가 사람 머릿속에만 남는다
+  $('f-scores').innerHTML = SRC.scores.map(function(sc){
+    return '<div class="scc"><div class="scc-l">' + esc(sc.label) + '</div>'
+      + '<div class="scc-q">' + esc(sc.q) + '</div><div class="scb" data-k="' + sc.key + '">'
+      + sc.opts.map(function(o){
+          return '<button type="button" data-v="' + o.v + '" onclick="mScore(\'' + sc.key + '\',' + o.v + ')">'
+            + '<b>' + o.v + '점</b>' + esc(o.t) + '</button>';
+        }).join('') + '</div></div>';
+  }).join('');
+
+  $('c-cols').innerHTML = '열 이름은 머리글로 알아봅니다 — 순서가 달라도 됩니다. '
+    + '<i class="ti ti-asterisk" style="font-size:8px;color:var(--dn)"></i> 는 필수.<br>'
+    + SRC.csv_cols.map(function(c){
+        return '<code class="' + (c[2] ? 'rq' : '') + '">' + esc(c[1]) + (c[2] ? '*' : '') + '</code>';
+      }).join(' ');
+}
+
+function mScore(key, v){
+  const box = document.querySelector('.scb[data-k="' + key + '"]');
+  box.querySelectorAll('button').forEach(function(b){
+    b.classList.toggle('on', Number(b.dataset.v) === v);
+  });
+  mDraw();
+}
+function mScoreGet(key){
+  const b = document.querySelector('.scb[data-k="' + key + '"] button.on');
+  return b ? Number(b.dataset.v) : null;
+}
+
+function mBody(){
+  const cat = ($('f-cat').value || '').split('|');
+  const b = {
+    P_N: $('f-name').value, Spec: $('f-spec').value,
+    BRN: $('f-brn').value, P_Price: $('f-price').value,
+    MinOrderQty: $('f-moq').value, PkgUnit: $('f-pkg').value,
+    Lead_Time: $('f-lt').value, month_qty: $('f-mon').value,
+    EP_ID: $('f-ep').value, note: $('f-note').value
+  };
+  SRC.scores.forEach(function(sc){ b[sc.key] = mScoreGet(sc.key); });
+  if (mPid) { b.P_ID = mPid; }
+  else { b.MainCat = cat[0]; b.SubCat = cat[1]; b.DetailCat = cat[2]; }
+  return b;
+}
+
+// 입력할 때마다 서버에 묻되, 타자 중에는 묻지 않는다
+function mDraw(){
+  clearTimeout(mTimer);
+  mTimer = setTimeout(mPreview, 220);
+}
+
+async function mPreview(){
+  const b = mBody();
+  let d;
+  try {
+    const r = await fetch('/api/product/preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(b)
+    });
+    d = await r.json();
+  } catch (e) {
+    return mMsg('err', ['서버에 연결할 수 없습니다.']);
+  }
+  mPlan = d.plan;
+
+  if (!d.ok) {
+    $('f-grade').innerHTML = '<div class="grd-x">필수 칸을 채우면 등급과 안전재고가 여기에 나옵니다.</div>';
+    $('f-pid').value = '';
+    mMsg('err', d.errors);
+    $('m-ok').disabled = true;
+    $('m-foot').textContent = '';
+    return;
+  }
+
+  const p = d.plan;
+  if (!mPid) $('f-pid').value = p.P_ID;
+  const cut = SRC.cut[p.is_new ? 'new' : 'upd'];
+  $('f-grade').innerHTML =
+      '<div class="grd-g">' + p.eff_grade + '</div>'
+    + '<div class="grd-x">'
+    + '네 항목 합계 <b>' + p.score_sum + '점</b> → ' + p.grade + '등급'
+    + ' <span style="color:var(--txt3)">(A ' + cut.A + '점+ · B ' + cut.B + '점+ · 그 미만 C)</span><br>'
+    + '안전재고 <b>' + nf(p.Sf_Num) + '개</b>'
+    + ' <span style="color:var(--txt3)">= 공식(' + p.eff_grade + ', 리드타임 ' + (p.Lead_Time||0) + '일, '
+    + '일평균 ' + (p.daily||0) + '개' + (p.daily_src ? ' · ' + p.daily_src : '') + ')</span><br>'
+    + '재검토 주기 <b>' + p.cycle + '일</b>'
+    + (p.loc ? ' · 보관 창고 <b>' + p.loc + '</b>' : '')
+    + (p.ovr_lv ? ' · <span style="color:var(--wn)">수동 조정 ' + p.ovr_lv + '등급 고정</span>' : '')
+    + '</div>';
+
+  const warn = (p.warn || []).slice();
+  if (mPid && p.changes && p.changes.length) {
+    mMsg('wn', ['바뀌는 것 — ' + p.changes.join(' · ')].concat(warn));
+  } else if (warn.length) {
+    mMsg('wn', warn);
+  } else {
+    mMsg('', []);
+  }
+
+  $('m-ok').disabled = false;
+  $('m-foot').textContent = mPid
+    ? ('품번 ' + mPid + ' · 분류와 품번은 바꿀 수 없습니다')
+    : ('품번 ' + p.P_ID + ' 로 등록됩니다');
+}
+
+function mMsg(kind, lines){
+  const el = $('m-msg');
+  if (!lines || !lines.length) { el.className = 'pmsg'; el.innerHTML = ''; return; }
+  el.className = 'pmsg on ' + (kind || 'err');
+  el.innerHTML = lines.length === 1 ? esc(lines[0])
+    : '<ul>' + lines.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+}
+
+function mOpen(pid){
+  mPid = pid || null; mPlan = null; mRefs = null;
+  mFill();
+  $('m2-t').textContent = mPid ? '자재 수정' : '자재 등록';
+  $('m-ok').innerHTML = '<i class="ti ti-check"></i>' + (mPid ? '수정' : '등록');
+  $('row-cat').style.display = mPid ? 'none' : '';
+  $('m-del').style.display = mPid ? '' : 'none';
+  $('m-note').innerHTML = mPid
+    ? '품번과 분류는 바꿀 수 없습니다 — LOT · 거래 · BOM 등 일곱 테이블이 품번으로 엮여 있습니다. '
+      + '등급이나 안전재고가 바뀌면 갱신 이력에 남습니다.'
+    : '등록하면 자재 정보(Product_tb) · 안전재고 기준(Safe_tb) · 등록 이력(Update_Log_tb) 세 곳에 함께 기록됩니다. '
+      + '월 예상 소요량은 안전재고 공식의 일평균 사용량으로 쓰이며, 실제 불출이 쌓이면 일괄 갱신에서 실적값으로 바뀝니다.';
+
+  ['f-name','f-spec','f-price','f-moq','f-pkg','f-lt','f-mon','f-note','f-pid'].forEach(function(i){ $(i).value=''; });
+  $('f-cat').value = ''; $('f-brn').value = '';
+  document.querySelectorAll('.scb button').forEach(function(b){ b.classList.remove('on'); });
+  mMsg('', []); $('m-ok').disabled = true; $('m-foot').textContent = '';
+  $('f-grade').innerHTML = '<div class="grd-x">필수 칸을 채우면 등급과 안전재고가 여기에 나옵니다.</div>';
+
+  if (mPid) {
+    const r = ROWS.find(function(x){ return x.P_ID === mPid; }) || {};
+    $('f-name').value = r.P_N || ''; $('f-spec').value = r.Spec || '';
+    $('f-brn').value = r.BRN || ''; $('f-price').value = r.P_Price || '';
+    $('f-moq').value = r.MinOrderQty == null ? '' : r.MinOrderQty;
+    $('f-pkg').value = r.PkgUnit || ''; $('f-lt').value = r.lead_time || '';
+    $('f-pid').value = mPid;
+    // 점수는 목록에 없다 — 미리보기가 받아올 때까지 서버 값을 쓴다
+    fetch('/api/product/preview', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({P_ID: mPid, P_N: r.P_N, BRN: r.BRN, P_Price: r.P_Price,
+        PkgUnit: r.PkgUnit, Lead_Time: r.lead_time,
+        Price_Score:1, Sub_Score:1, Impact_Score:1, Supply_Score:1})
+    }).then(function(x){ return x.json(); }).then(function(d){
+      const o = d.plan && d.plan.old;
+      if (o) SRC.scores.forEach(function(sc){ if (o[sc.key]) mScore(sc.key, o[sc.key]); });
+      mDraw();
+    });
+    fetch('/api/product/refs?P_ID=' + encodeURIComponent(mPid))
+      .then(function(x){ return x.json(); }).then(function(d){
+        mRefs = d;
+        $('m-del').disabled = !d.deletable;
+        $('m-del').title = d.deletable ? '참조가 없어 삭제할 수 있습니다'
+          : ('이미 쓰이고 있습니다 — ' + d.refs.map(function(r2){ return r2.label + ' ' + r2.n + '건'; }).join(' · '));
+      });
+  }
+  $('mvl').classList.add('on');
+  setTimeout(function(){ $('f-name').focus(); }, 30);
+}
+function mClose(){ $('mvl').classList.remove('on'); clearTimeout(mTimer); }
+
+async function mSubmit(){
+  const btn = $('m-ok'); btn.disabled = true;
+  const url = mPid ? '/api/product/update' : '/api/product';
+  let d;
+  try {
+    const r = await fetch(url, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(mBody())
+    });
+    d = await r.json();
+  } catch (e) { btn.disabled = false; return mMsg('err', ['서버에 연결할 수 없습니다.']); }
+
+  if (!d.ok) { btn.disabled = false; return mMsg('err', d.errors); }
+  const p = d.plan;
+  mMsg('ok', [(mPid ? '수정했습니다' : '등록했습니다') + ' — ' + p.P_ID + ' ' + p.P_N
+    + ' · ' + (p.eff_grade || p.grade) + '등급 · 안전재고 ' + nf(p.Sf_Num) + '개'
+    + '. 잠시 후 목록을 새로 읽습니다.']);
+  $('m-foot').textContent = '';
+  setTimeout(function(){ location.reload(); }, 1300);
+}
+
+async function mDelete(){
+  if (!mPid) return;
+  if (!confirm(mPid + ' 자재를 삭제합니다.\n되돌릴 수 없습니다. 계속할까요?')) return;
+  const btn = $('m-del'); btn.disabled = true;
+  let d;
+  try {
+    const r = await fetch('/api/product/delete', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({P_ID: mPid, EP_ID: $('f-ep').value, note: $('f-note').value})
+    });
+    d = await r.json();
+  } catch (e) { btn.disabled = false; return mMsg('err', ['서버에 연결할 수 없습니다.']); }
+  if (!d.ok) { btn.disabled = false; return mMsg('err', d.errors); }
+  mMsg('ok', ['삭제했습니다 — ' + d.plan.P_ID + ' ' + d.plan.P_N + '. 잠시 후 목록을 새로 읽습니다.']);
+  setTimeout(function(){ location.reload(); }, 1300);
+}
+
+// ══════════════════════════════════════════════════════════════
+// CSV 일괄 등록
+//
+// 파일은 바이트 그대로 올린다. 화면에서 글자로 읽어 보내면 엑셀이
+// 저장한 CP949 가 UTF-8 로 해석돼 한글이 전부 깨진 채 도착한다.
+// ══════════════════════════════════════════════════════════════
+let cFile = null, cPlan = null;
+
+function cOpen(){
+  mFill();
+  cFile = null; cPlan = null;
+  $('c-result').innerHTML = ''; $('c-who').style.display = 'none';
+  $('c-ok').disabled = true; cMsg('', []);
+  $('c-foot').textContent = '양식을 받아 채운 뒤 올리면 줄마다 검사해서 보여줍니다.';
+  $('c-file').value = '';
+  $('cvl').classList.add('on');
+}
+function cClose(){ $('cvl').classList.remove('on'); }
+function cMsg(kind, lines){
+  const el = $('c-msg');
+  if (!lines || !lines.length) { el.className = 'pmsg'; el.innerHTML = ''; return; }
+  el.className = 'pmsg on ' + (kind || 'err');
+  el.innerHTML = lines.length === 1 ? esc(lines[0])
+    : '<ul>' + lines.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+}
+
+(function(){
+  const d = $('c-drop');
+  if (!d) return;
+  ['dragenter','dragover'].forEach(function(ev){
+    d.addEventListener(ev, function(e){ e.preventDefault(); d.classList.add('over'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    d.addEventListener(ev, function(e){ e.preventDefault(); d.classList.remove('over'); });
+  });
+  d.addEventListener('drop', function(e){
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) cPick(e.dataTransfer.files[0]);
+  });
+})();
+
+async function cPick(file){
+  if (!file) return;
+  cFile = file;
+  $('c-drop').querySelector('.t').textContent = file.name;
+  cMsg('', []);
+  const fd = new FormData(); fd.append('file', file);
+  let d;
+  try {
+    const r = await fetch('/api/product/csv/preview', {method:'POST', body: fd});
+    d = await r.json();
+  } catch (e) { return cMsg('err', ['파일을 보낼 수 없습니다.']); }
+
+  if (d.errors && d.errors.length) {
+    $('c-result').innerHTML = ''; $('c-who').style.display = 'none';
+    $('c-ok').disabled = true;
+    return cMsg('err', d.errors);
+  }
+  cPlan = d.plan;
+  cTable(d.plan);
+  $('c-who').style.display = '';
+  $('c-ok').disabled = d.plan.bad > 0 || d.plan.ok === 0;
+  $('c-foot').textContent = d.plan.bad
+    ? '한 줄이라도 틀리면 저장하지 않습니다. 파일을 고쳐서 다시 올리세요.'
+    : (d.plan.ok + '줄을 등록합니다.');
+  if (d.plan.bad) {
+    cMsg('err', [d.plan.total + '줄 중 ' + d.plan.bad + '줄에 오류가 있습니다.']);
+  } else {
+    cMsg('ok', [d.plan.ok + '줄 전부 등록할 수 있습니다.']);
+  }
+}
+
+function cTable(p){
+  const by = {A:0,B:0,C:0};
+  p.rows.forEach(function(r){ if (r.ok) by[r.grade]++; });
+  let h = '<div class="psum">'
+    + '<div class="pc"><div class="pc-l">읽은 줄</div><div class="pc-v">' + p.total + '</div>'
+      + '<div class="pc-s">머리글 제외</div></div>'
+    + '<div class="pc"><div class="pc-l">등록 가능</div><div class="pc-v" style="color:var(--ok)">' + p.ok + '</div>'
+      + '<div class="pc-s">A ' + by.A + ' · B ' + by.B + ' · C ' + by.C + '</div></div>'
+    + '<div class="pc"><div class="pc-l">오류</div><div class="pc-v" style="color:' + (p.bad?'var(--dn)':'var(--txt3)') + '">' + p.bad + '</div>'
+      + '<div class="pc-s">' + (p.bad ? '전부 고쳐야 저장됩니다' : '없습니다') + '</div></div>'
+    + '<div class="pc"><div class="pc-l">단가 합계</div><div class="pc-v">' + won(p.amount) + '</div>'
+      + '<div class="pc-s">등록 가능분</div></div>'
+    + '</div>';
+
+  h += '<div class="ptb"><table><thead><tr>'
+    + '<th>줄</th><th>품번</th><th>품명 / 규격</th><th>협력사</th>'
+    + '<th class="num">단가</th><th class="num">포장</th><th class="num">리드타임</th>'
+    + '<th>등급</th><th class="num">안전재고</th><th>창고</th></tr></thead><tbody>';
+  p.rows.forEach(function(r){
+    if (r.ok) {
+      h += '<tr><td class="num">' + r.line + '</td>'
+        + '<td class="lid2" style="color:var(--acc)">' + esc(r.P_ID) + '</td>'
+        + '<td><b>' + esc(r.P_N) + '</b>' + (r.Spec ? '<br><span style="color:var(--txt3);font-size:10px">' + esc(r.Spec) + '</span>' : '') + '</td>'
+        + '<td>' + esc(r.supplier || '-') + '</td>'
+        + '<td class="num">' + nf(r.P_Price) + '</td>'
+        + '<td class="num">' + nf(r.PkgUnit) + '</td>'
+        + '<td class="num">' + nf(r.Lead_Time) + '일</td>'
+        + '<td><span class="gr gr' + r.grade + '">' + r.grade + '</span>'
+          + '<span style="color:var(--txt3);font-size:10px"> ' + r.score_sum + '점</span></td>'
+        + '<td class="num">' + nf(r.Sf_Num) + '</td>'
+        + '<td style="font-size:10px;color:var(--txt3)">' + esc(r.loc || '-') + '</td></tr>';
+    } else {
+      h += '<tr class="bad"><td class="num">' + r.line + '</td>'
+        + '<td colspan="9" style="color:#9B1C1C">'
+        + '<b>' + esc(r.P_N || '(품명 없음)') + '</b> — ' + r.errors.map(esc).join(' · ')
+        + '</td></tr>';
+    }
+  });
+  h += '</tbody></table></div>'
+    + '<div class="pnote">등록하면 자재 정보 · 안전재고 기준 · 등록 이력이 줄마다 함께 기록됩니다. '
+    + '품번은 분류별로 이어서 매겨집니다.</div>';
+  $('c-result').innerHTML = h;
+}
+
+async function cSubmit(){
+  if (!cFile) return;
+  const btn = $('c-ok'); btn.disabled = true;
+  const fd = new FormData();
+  fd.append('file', cFile);
+  fd.append('EP_ID', $('c-ep').value);
+  fd.append('note', $('c-note').value);
+  let d;
+  try {
+    const r = await fetch('/api/product/csv', {method:'POST', body: fd});
+    d = await r.json();
+  } catch (e) { btn.disabled = false; return cMsg('err', ['서버에 연결할 수 없습니다.']); }
+  if (!d.ok) { btn.disabled = false; return cMsg('err', d.errors); }
+  const p = d.plan;
+  cMsg('ok', [p.cnt + '종을 등록했습니다 — A ' + p.by_grade.A + ' · B ' + p.by_grade.B
+    + ' · C ' + p.by_grade.C + '. 잠시 후 목록을 새로 읽습니다.']);
+  $('c-foot').textContent = '';
+  setTimeout(function(){ location.reload(); }, 1500);
+}
+
+// Esc 로 닫는다
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Escape') return;
+  if ($('mvl').classList.contains('on')) mClose();
+  else if ($('cvl').classList.contains('on')) cClose();
+});
 
 // ── 대분류 탭 ──
 (function(){
@@ -429,6 +976,8 @@ function pick(pid){
         + viol.length + '건 — 전체 이력에서 확인</div>' : '')
   +   '<button class="btn btnfull" onclick="openLots(&quot;' + x.P_ID + '&quot;)">'
   +     '<i class="ti ti-history"></i>전체 LOT 이력 조회 (' + myLots.length + '건)</button>'
+  +   '<button class="btn btnfull" style="margin-top:6px" onclick="mOpen(&quot;' + x.P_ID + '&quot;)">'
+  +     '<i class="ti ti-edit"></i>자재 정보 수정</button>'
   + '</div>'
 
   + '<div class="pn">'

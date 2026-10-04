@@ -4,6 +4,8 @@ erp.db 조회 모듈.
 
 화면에서 쓰는 SQL을 여기 모아둔다. app.py 는 이 함수들만 부른다.
 """
+import csv
+import io
 import os
 import sqlite3
 
@@ -4625,6 +4627,22 @@ def cancel_request(conn, rid, ep_id=None):
 #   금액 한도      직급별 한도를 넘으면 윗선이 처리한다 (APPROVAL_LIMIT)
 
 
+def _worker(conn, ep_id):
+    """담당자 검증 — 등록 여부만 본다.
+
+    _approver 와 달리 직급을 묻지 않는다. 등록·기록하는 일에까지 한도를
+    걸면 일이 안 돈다. 되돌릴 수 없는 쪽(승인·삭제·되돌리기)만 _approver 를 쓴다.
+    """
+    ep_id = str(ep_id or "").strip()
+    if not ep_id:
+        return None, ["담당자를 선택하세요."]
+    r = conn.execute(
+        "SELECT EP_ID, Name, Position FROM User_tb WHERE EP_ID = ?", (ep_id,)).fetchone()
+    if r is None:
+        return None, ["등록되지 않은 담당자입니다: %s" % ep_id]
+    return {"EP_ID": r["EP_ID"], "Name": r["Name"], "Position": r["Position"]}, []
+
+
 def _approver(conn, ep_id, amount=None, what="불출 승인"):
     """승인자 검증 — 등록 여부 · 승인 권한 · 금액 한도.
 
@@ -5206,3 +5224,664 @@ def lot_events(conn, pid):
             "price": prod["P_Price"], "lots": lots,
             "event_cnt": total, "kinds": kinds,
             "warn_cnt": sum(l["warn_cnt"] for l in lots)}, []
+
+
+# ── 자재 마스터 등록 ─────────────────────────────────────────
+#
+# 200종이 처음부터 DB 에 들어 있었다. 화면은 그걸 읽기만 했다 —
+# 새 자재가 들어오면 손댈 데가 없었다.
+#
+# ⚠️ 자재 하나를 만들면 테이블 셋이 함께 움직인다.
+#     Product_tb     품번·품명·분류·단가·포장           (물건 자체)
+#     Safe_tb        등급·안전재고·4개 점수             (관리 기준)
+#     Update_Log_tb  등록 이력 + 다음 재검토 예정일      (근거)
+#
+# Safe_tb 를 빼먹으면 조용히 사라진다. safety_stock_list() 가
+# `FROM Safe_tb JOIN Product_tb` 라서, 안전재고·수요예측·시뮬레이터·
+# 마법사·대시보드 다섯 화면에서 그 자재가 아예 안 보인다.
+# 그래서 등록은 셋을 한 트랜잭션에 묶는다.
+
+# 신규 등록 컷오프 — 4항목 만점 12점 (SAFE_STOCK_DESIGN 4절).
+# 갱신 이후의 13/8/7 과 다르다. 사용 이력이 없어 Usage_Score 가 NULL 이라
+# 5항목 컷오프를 쓰면 전부 C 로 떨어진다.
+NEW_CUT = {"A": 10, "B": 6}
+UPD_CUT = {"A": 13, "B": 8}
+
+SCORE_KEYS = ("Price_Score", "Sub_Score", "Impact_Score", "Supply_Score")
+
+# 화면이 체크리스트를 그릴 수 있게 판정 기준까지 내려보낸다.
+# 점수를 숫자로만 받으면 "왜 3점인가" 가 사람 머릿속에만 남는다.
+SCORE_META = [
+    ("Price_Score",  "단가",        "단가",
+     {3: "10만원 이상", 2: "1만원 이상", 1: "1만원 미만"}),
+    ("Sub_Score",    "대체 가능성",  "대체품이 있는가",
+     {3: "대체 불가", 2: "대체 어려움", 1: "대체 가능"}),
+    ("Impact_Score", "품절 영향",    "없으면 무슨 일이 생기는가",
+     {3: "생산 중단", 2: "일부 지연", 1: "영향 적음"}),
+    ("Supply_Score", "공급 안정성",  "어디서 오는가",
+     {3: "공급처 1곳 / 해외", 2: "공급처 2곳", 1: "공급처 다수"}),
+]
+
+
+def new_grade(scores, usage=None):
+    """점수 합으로 등급을 매긴다.
+
+    usage 가 없으면(신규) 4항목 10/6/5, 있으면(갱신 완료) 5항목 13/8/7.
+    같은 자재라도 어느 컷오프를 쓰는지에 따라 등급이 달라지므로
+    한 함수에 모아 둔다.
+    """
+    four = sum(int(scores.get(k) or 0) for k in SCORE_KEYS)
+    if usage is None:
+        cut, total = NEW_CUT, four
+    else:
+        cut, total = UPD_CUT, four + int(usage)
+    return ("A" if total >= cut["A"] else "B" if total >= cut["B"] else "C"), total
+
+
+def cat_list(conn):
+    """분류 75종. 신규 품번의 앞 5자리가 여기서 나온다."""
+    rows = _rows(conn, """
+        SELECT c.MainCat, c.SubCat, c.DetailCat, c.Cat_Name,
+               (SELECT COUNT(*) FROM Product_tb p
+                 WHERE p.MainCat = c.MainCat AND p.SubCat = c.SubCat
+                   AND p.DetailCat = c.DetailCat) AS n
+          FROM Cat_tb c
+         ORDER BY c.MainCat, c.SubCat, c.DetailCat
+    """)
+    for r in rows:
+        r["code"] = r["MainCat"] + r["SubCat"] + r["DetailCat"]
+        r["loc"] = LOC_BY_MAINCAT.get(r["MainCat"])
+    return rows
+
+
+def next_pid(conn, main, sub, detail, taken=()):
+    """품번 채번 — 대분류(1) + 중분류(2) + 소분류(2) + 순번(4).
+
+    taken 은 같은 요청 안에서 이미 뽑아 둔 번호다. CSV 로 같은 분류를
+    여러 줄 올리면 DB 만 보고는 전부 같은 번호가 나온다.
+    """
+    pre = "%s%s%s" % (main, sub, detail)
+    last = conn.execute(
+        "SELECT MAX(CAST(SUBSTR(P_ID, 6) AS INTEGER)) FROM Product_tb"
+        " WHERE P_ID LIKE ? AND LENGTH(P_ID) = 9", (pre + "%",)).fetchone()[0] or 0
+    n = int(last) + 1
+    while ("%s%04d" % (pre, n)) in taken:
+        n += 1
+    return "%s%04d" % (pre, n)
+
+
+def product_source(conn):
+    """자재 등록 화면이 필요로 하는 선택지."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    return {
+        "cats": cat_list(conn),
+        "mains": _rows(conn, """
+            SELECT MainCat, COUNT(*) AS n FROM Product_tb
+             GROUP BY MainCat ORDER BY MainCat
+        """),
+        "companies": _rows(conn, """
+            SELECT c.BRN, c.CP_N, c.Is_Foreign,
+                   (SELECT COUNT(*) FROM Product_tb p WHERE p.BRN = c.BRN) AS n
+              FROM Company_tb c ORDER BY c.CP_N
+        """),
+        "workers": _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name"),
+        "scores": [{"key": k, "label": lb, "q": q,
+                    "opts": [{"v": v, "t": t} for v, t in sorted(o.items(), reverse=True)]}
+                   for k, lb, q, o in SCORE_META],
+        "cut": {"new": NEW_CUT, "upd": UPD_CUT},
+        "cycle": REVIEW_CYCLE_DAYS,
+        "loc": LOC_BY_MAINCAT,
+        "base": base, "entry": _add_days(base, 1),
+        "csv_cols": PRODUCT_CSV_COLS,
+    }
+
+
+def _josa(word, pair="은는"):
+    """받침에 맞는 조사를 고른다 — '단가이(가)' 같은 문구를 안 쓰기 위해.
+
+    오류 메시지는 칸 이름을 끼워 만든다. 조사를 괄호로 둘 다 적으면
+    읽는 사람이 자기 경우를 골라야 한다.
+    """
+    w = str(word or "").rstrip()
+    if not w:
+        return pair[1]
+    c = ord(w[-1])
+    if 0xAC00 <= c <= 0xD7A3:                 # 한글 음절 — 종성 유무로 가른다
+        return pair[0] if (c - 0xAC00) % 28 else pair[1]
+    return pair[1] if w[-1] in "0123456789aeiouAEIOU" else pair[0]
+
+
+def _pos_int(v, name, errors, lo=0, hi=None, required=True):
+    """숫자 칸 하나를 검사한다. 빈칸·문자·음수를 전부 여기서 잡는다."""
+    t = str(v if v is not None else "").strip().replace(",", "")
+    eun, i_ga, eul = (_josa(name, p) for p in ("은는", "이가", "을를"))
+    if t == "":
+        if required:
+            errors.append("%s%s 입력하세요." % (name, eul))
+        return None
+    try:
+        n = float(t)
+    except ValueError:
+        errors.append("%s%s 숫자가 아닙니다: %s" % (name, i_ga, v))
+        return None
+    if n != int(n):
+        errors.append("%s%s 정수여야 합니다: %s" % (name, eun, v))
+        return None
+    n = int(n)
+    if n < lo:
+        errors.append("%s%s %s 이상이어야 합니다: %s" % (name, eun, format(lo, ","), v))
+        return None
+    if hi is not None and n > hi:
+        errors.append("%s%s %s 이하여야 합니다: %s" % (name, eun, format(hi, ","), v))
+        return None
+    return n
+
+
+def _check_product(conn, body, pid=None, taken=()):
+    """등록·수정이 함께 쓰는 입력 검증.
+
+    pid 가 있으면 수정이다 — 분류는 품번에 박혀 있어 바꿀 수 없다.
+    """
+    e = []
+    f = {}
+
+    f["P_N"] = str(body.get("P_N") or "").strip()
+    if len(f["P_N"]) < 2:
+        e.append("품명을 2자 이상 입력하세요.")
+    elif len(f["P_N"]) > 60:
+        e.append("품명이 너무 깁니다(60자 이내).")
+    f["Spec"] = str(body.get("Spec") or "").strip()[:120]
+
+    # ⚠️ 품명만으로는 못 가린다 — 200종 중 188종이 남과 이름을 나눠 쓴다
+    #    ('현대 기타' 6종 등). 실제로 유일한 건 품명 + 규격이다 (중복 0).
+    #    같은 쌍을 또 넣으면 발주·불출 화면에서 어느 쪽인지 구분할 수 없다.
+    if f["P_N"]:
+        dup = conn.execute(
+            "SELECT P_ID FROM Product_tb WHERE P_N = ? AND COALESCE(Spec,'') = ?"
+            "   AND P_ID <> ?", (f["P_N"], f["Spec"], pid or "")).fetchone()
+        if dup is not None:
+            e.append("품명·규격이 같은 자재가 이미 있습니다: %s %s"
+                     % (dup["P_ID"], f["P_N"] + (" " + f["Spec"] if f["Spec"] else "")))
+
+    brn = str(body.get("BRN") or "").strip()
+    if not brn:
+        e.append("협력사를 선택하세요.")
+    else:
+        c = conn.execute("SELECT BRN, CP_N FROM Company_tb WHERE BRN = ?", (brn,)).fetchone()
+        if c is None:
+            e.append("등록되지 않은 협력사입니다: %s" % brn)
+        else:
+            f["BRN"] = c["BRN"]
+            f["supplier"] = c["CP_N"]
+
+    price = _pos_int(body.get("P_Price"), "단가", e, lo=1)
+    if price is not None:
+        f["P_Price"] = price
+    # 최소 발주량·규격은 비워도 된다. 없는 자재가 실제로 있다
+    f["MinOrderQty"] = _pos_int(body.get("MinOrderQty"), "최소 발주량", e,
+                                lo=0, required=False) or 0
+    pkg = _pos_int(body.get("PkgUnit"), "포장단위", e, lo=1)
+    if pkg is not None:
+        f["PkgUnit"] = pkg
+    f["Lead_Time"] = _pos_int(body.get("Lead_Time"), "리드타임", e, lo=1, hi=365)
+
+    for k, label, _q, opts in SCORE_META:
+        v = _pos_int(body.get(k), label + " 점수", e, lo=1, hi=3)
+        if v is not None:
+            f[k] = v
+
+    if pid is None:
+        main = str(body.get("MainCat") or "").strip().upper()
+        sub = str(body.get("SubCat") or "").strip()
+        det = str(body.get("DetailCat") or "").strip()
+        if not (main and sub and det):
+            e.append("분류(대/중/소)를 모두 지정하세요.")
+        elif conn.execute(
+                "SELECT 1 FROM Cat_tb WHERE MainCat=? AND SubCat=? AND DetailCat=?",
+                # 엑셀이 '01' 을 1 로 바꿔 저장한다. 두 자리로 되돌린다
+                (main, sub.zfill(2), det.zfill(2))).fetchone() is None:
+            e.append("등록되지 않은 분류입니다: %s-%s-%s" % (main, sub, det))
+        else:
+            sub, det = sub.zfill(2), det.zfill(2)
+            f["MainCat"], f["SubCat"], f["DetailCat"] = main, sub, det
+            f["P_ID"] = next_pid(conn, main, sub, det, taken)
+
+    # 월 예상 소요량 — 신규는 불출 이력이 없어 공식의 d 를 여기서만 얻을 수 있다
+    mon = _pos_int(body.get("month_qty"), "월 예상 소요량", e,
+                   lo=1, required=(pid is None))
+    if mon is not None:
+        f["month_qty"] = mon
+        f["daily"] = round(mon / 30.0, 4)
+
+    return f, e
+
+
+def preview_product(conn, body, pid=None):
+    """등록 전 판정 — 품번·등급·안전재고·창고 (저장 안 함)."""
+    taken = tuple(body.get("_taken") or ())
+    f, e = _check_product(conn, body, pid, taken)
+    if e:
+        return None, e
+
+    usage = None
+    if pid:
+        old = conn.execute(
+            "SELECT p.*, s.Sf_Lv, s.Sf_Num, s.Lead_Time, s.Usage_Score,"
+            "       s.Price_Score, s.Sub_Score, s.Impact_Score, s.Supply_Score"
+            "  FROM Product_tb p LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID"
+            " WHERE p.P_ID = ?", (pid,)).fetchone()
+        if old is None:
+            return None, ["등록되지 않은 품번입니다: %s" % pid]
+        usage = old["Usage_Score"]
+        f["P_ID"] = pid
+        f["MainCat"], f["SubCat"] = old["MainCat"], old["SubCat"]
+        f["DetailCat"] = old["DetailCat"]
+    else:
+        old = None
+
+    grade, total = new_grade(f, usage)
+    f["grade"], f["score_sum"] = grade, total
+    f["is_new"] = 1 if usage is None else 0
+
+    # 일평균 사용량 — 수정 시에는 실적이 있으면 실적을 쓴다.
+    # 사람이 적어 낸 예상보다 실제로 나간 양이 언제나 낫다.
+    daily = f.get("daily")
+    if pid:
+        days = operating_days(conn)
+        r = conn.execute(f"""
+            SELECT SUM(t.T_Num) q FROM Transaction_tb t
+              JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+             WHERE l.P_ID = ? AND {DEMAND_T}""", (pid,)).fetchone()
+        if r and r["q"]:
+            daily = round(r["q"] / days, 4)
+            f["daily_src"] = "실적"
+        else:
+            f["daily_src"] = "예상" if daily else None
+    else:
+        f["daily_src"] = "예상"
+    f["daily"] = daily
+
+    # ⚠️ 수정할 때 사용량을 모르면 공식이 None 을 낸다. 그대로 0 을 쓰면
+    #    단가만 고치려던 사람이 안전재고를 말없이 지워 버린다.
+    #    실적도 예상도 없으면 기존값이 그나마 가장 나은 값이다.
+    keep = old["Sf_Num"] if (old is not None and old["Sf_Num"]) else None
+
+    def _ss(g):
+        v = safe_formula(g, f.get("Lead_Time"), daily)
+        return keep if v is None else v
+
+    ss = _ss(grade)
+    if ss is not None and ss == keep and not daily:
+        f["daily_src"] = "기존값 유지"
+    # 수동 조정이 걸려 있으면 사람이 정한 등급·하한이 이긴다 (일괄 갱신과 같은 규칙)
+    ovr = active_overrides(conn).get(pid) if pid else None
+    if ovr is not None:
+        f["ovr_lv"], f["ovr_min"] = ovr["Ovr_Lv"], ovr["Min_Qty"]
+        if ovr["Ovr_Lv"]:
+            grade = ovr["Ovr_Lv"]
+            ss = _ss(grade)
+        if ovr["Min_Qty"]:
+            ss = max(ss or 0, ovr["Min_Qty"])
+    f["eff_grade"] = grade
+    f["Sf_Num"] = ss if ss is not None else 0
+    f["cycle"] = REVIEW_CYCLE_DAYS.get(grade, 90)
+    f["loc"] = LOC_BY_MAINCAT.get(f.get("MainCat"))
+
+    warn = []
+    if f.get("PkgUnit") and f.get("MinOrderQty") and f["MinOrderQty"] % f["PkgUnit"]:
+        warn.append("최소 발주량(%s)이 포장단위(%s)의 배수가 아닙니다. 발주 수량이 올림됩니다."
+                    % (format(f["MinOrderQty"], ","), format(f["PkgUnit"], ",")))
+    if ss is None:
+        warn.append("사용량을 알 수 없어 안전재고를 0 으로 둡니다. 일괄 갱신에서 다시 산정됩니다.")
+    elif f.get("daily_src") == "기존값 유지":
+        warn.append("불출 실적이 없어 안전재고를 기존값(%s개)으로 둡니다. "
+                    "다시 계산하려면 월 예상 소요량을 넣으세요." % format(ss, ","))
+    if old is not None:
+        diff = []
+        if old["P_Price"] != f.get("P_Price"):
+            diff.append("단가 %s → %s원" % (format(int(old["P_Price"] or 0), ","),
+                                            format(f.get("P_Price", 0), ",")))
+            warn.append("⚠️ 단가를 바꾸면 재고자산·ABC 분석·연간 사용금액이 소급해서 바뀝니다.")
+        if old["PkgUnit"] != f.get("PkgUnit"):
+            diff.append("포장단위 %s → %s" % (old["PkgUnit"], f.get("PkgUnit")))
+            warn.append("진행 중인 불출 요청은 예전 포장단위로 계산돼 있습니다.")
+        if old["Sf_Lv"] != grade:
+            diff.append("등급 %s → %s" % (old["Sf_Lv"], grade))
+        if old["Sf_Num"] != f["Sf_Num"]:
+            diff.append("안전재고 %s → %s개" % (old["Sf_Num"], f["Sf_Num"]))
+        if old["BRN"] != f.get("BRN"):
+            diff.append("협력사 변경")
+        if old["P_N"] != f["P_N"]:
+            diff.append("품명 %s → %s" % (old["P_N"], f["P_N"]))
+        f["changes"] = diff
+        f["old"] = {k: old[k] for k in
+                    ("P_N", "Spec", "BRN", "P_Price", "MinOrderQty", "PkgUnit",
+                     "Sf_Lv", "Sf_Num", "Lead_Time", "Usage_Score") + SCORE_KEYS}
+    f["warn"] = warn
+    return f, []
+
+
+def create_product(conn, date, body, ep_id):
+    """자재 등록 — Product_tb + Safe_tb + Update_Log_tb 한 묶음."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    f, e = preview_product(conn, body)
+    if e:
+        return None, e
+
+    note = str(body.get("note") or "").strip() or "신규 등록"
+    with conn:
+        conn.execute(
+            "INSERT INTO Product_tb (P_ID, P_N, Spec, BRN, P_Price,"
+            " MainCat, SubCat, DetailCat, MinOrderQty, PkgUnit)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (f["P_ID"], f["P_N"], f["Spec"], f["BRN"], f["P_Price"],
+             f["MainCat"], f["SubCat"], f["DetailCat"],
+             f["MinOrderQty"], f["PkgUnit"]))
+        conn.execute(
+            "INSERT INTO Safe_tb (P_ID, Lead_Time, Sf_Lv, Sf_Num,"
+            " Price_Score, Sub_Score, Impact_Score, Supply_Score, Usage_Score)"
+            " VALUES (?,?,?,?,?,?,?,?,NULL)",
+            (f["P_ID"], f["Lead_Time"], f["grade"], f["Sf_Num"],
+             f["Price_Score"], f["Sub_Score"], f["Impact_Score"], f["Supply_Score"]))
+        conn.execute(
+            "INSERT INTO Update_Log_tb (P_ID, Updated_Date, Next_Date,"
+            " Old_Lv, New_Lv, Old_Num, New_Num, Old_Usage, New_Usage, EP_ID, Note)"
+            " VALUES (?,?,?,NULL,?,NULL,?,NULL,NULL,?,?)",
+            (f["P_ID"], date, _add_days(date, f["cycle"]),
+             f["grade"], f["Sf_Num"], w["EP_ID"], note))
+
+    f["EP_ID"], f["worker"] = w["EP_ID"], w["Name"]
+    f["date"], f["note"] = date, note
+    f["next_date"] = _add_days(date, f["cycle"])
+    return f, []
+
+
+def update_product(conn, date, pid, body, ep_id):
+    """자재 수정. 분류·품번은 바꿀 수 없다 — 일곱 테이블이 품번으로 엮여 있다."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    f, e = preview_product(conn, body, pid)
+    if e:
+        return None, e
+
+    old = conn.execute(
+        "SELECT s.Sf_Lv, s.Sf_Num, s.Usage_Score FROM Safe_tb s WHERE s.P_ID = ?",
+        (pid,)).fetchone()
+    note = str(body.get("note") or "").strip() or "자재 정보 수정"
+
+    with conn:
+        conn.execute(
+            "UPDATE Product_tb SET P_N=?, Spec=?, BRN=?, P_Price=?,"
+            " MinOrderQty=?, PkgUnit=? WHERE P_ID=?",
+            (f["P_N"], f["Spec"], f["BRN"], f["P_Price"],
+             f["MinOrderQty"], f["PkgUnit"], pid))
+        conn.execute(
+            "UPDATE Safe_tb SET Lead_Time=?, Sf_Lv=?, Sf_Num=?,"
+            " Price_Score=?, Sub_Score=?, Impact_Score=?, Supply_Score=? WHERE P_ID=?",
+            (f["Lead_Time"], f["eff_grade"], f["Sf_Num"],
+             f["Price_Score"], f["Sub_Score"], f["Impact_Score"],
+             f["Supply_Score"], pid))
+        # 등급이나 수량이 바뀌었으면 이력을 남긴다. 아무것도 안 바뀌었는데
+        # 이력만 쌓으면 재검토 주기가 계속 밀린다.
+        if old and (old["Sf_Lv"] != f["eff_grade"] or old["Sf_Num"] != f["Sf_Num"]):
+            conn.execute(
+                "INSERT OR REPLACE INTO Update_Log_tb (P_ID, Updated_Date, Next_Date,"
+                " Old_Lv, New_Lv, Old_Num, New_Num, Old_Usage, New_Usage, EP_ID, Note)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, date, _add_days(date, f["cycle"]),
+                 old["Sf_Lv"], f["eff_grade"], old["Sf_Num"], f["Sf_Num"],
+                 old["Usage_Score"], old["Usage_Score"], w["EP_ID"], note))
+            f["logged"] = 1
+
+    f["EP_ID"], f["worker"] = w["EP_ID"], w["Name"]
+    f["date"], f["note"] = date, note
+    return f, []
+
+
+# 품번이 걸려 있는 곳. 하나라도 있으면 지우지 않는다 —
+# 지우면 LOT·거래·BOM 이 가리킬 데가 없는 고아가 된다.
+PRODUCT_REFS = [
+    ("Lot_tb",               "P_ID = ?",   "LOT"),
+    ("Purchase_Detail_tb",   "P_ID = ?",   "발주 품목"),
+    ("BOM_tb",               "P_ID = ?",   "BOM"),
+    ("Production_tb",        "P_ID = ?",   "생산 실적"),
+    ("Disburse_Req_Item_tb", "P_ID = ?",   "불출 요청"),
+    ("Inbound_Claim_tb",     "P_ID = ?",   "클레임"),
+    ("Safe_Override_tb",     "P_ID = ? AND Status = '적용'", "안전재고 조정"),
+]
+
+
+def product_refs(conn, pid):
+    """이 품번을 쓰고 있는 곳과 건수."""
+    out = []
+    for tbl, where, label in PRODUCT_REFS:
+        n = conn.execute("SELECT COUNT(*) FROM %s WHERE %s" % (tbl, where),
+                         (pid,)).fetchone()[0]
+        if n:
+            out.append({"table": tbl, "label": label, "n": n})
+    return out
+
+
+def delete_product(conn, pid, ep_id, note=None):
+    """자재 삭제 — 참조가 하나도 없을 때만.
+
+    등록·수정은 누구나 하지만 삭제는 직급을 본다. 되돌릴 수 없는 쪽만 조인다.
+    """
+    w, e = _approver(conn, ep_id, what="자재 삭제")
+    if e:
+        return None, e
+    prod = conn.execute(
+        "SELECT P_ID, P_N FROM Product_tb WHERE P_ID = ?", (pid,)).fetchone()
+    if prod is None:
+        return None, ["등록되지 않은 품번입니다: %s" % pid]
+
+    refs = product_refs(conn, pid)
+    if refs:
+        return None, ["이미 쓰인 자재라 삭제할 수 없습니다 — %s. 정보를 수정하세요."
+                      % " · ".join("%s %d건" % (r["label"], r["n"]) for r in refs)]
+
+    with conn:
+        conn.execute("DELETE FROM Update_Log_tb WHERE P_ID = ?", (pid,))
+        conn.execute("DELETE FROM Safe_tb WHERE P_ID = ?", (pid,))
+        conn.execute("DELETE FROM Product_tb WHERE P_ID = ?", (pid,))
+    return {"P_ID": pid, "P_N": prod["P_N"], "worker": w["Name"],
+            "note": str(note or "").strip()}, []
+
+
+# ── CSV 일괄 등록 ────────────────────────────────────────────
+#
+# 자재 50종을 화면에서 하나씩 넣게 할 수는 없다. 다만 CSV 는
+# 사람이 손으로 만드는 파일이라 틀린 채로 들어오는 게 정상이다.
+# 그래서 저장 전에 전 줄을 검사해 보여주고, 한 줄이라도 틀리면
+# 아무것도 저장하지 않는다 — 절반만 들어간 마스터가 제일 고치기 어렵다.
+
+PRODUCT_CSV_COLS = [
+    ("P_N",          "품명",          True,  "후방카메라 LCD"),
+    ("Spec",         "규격",          False, "CMOS 1/3\" 720P"),
+    ("MainCat",      "대분류",        True,  "E"),
+    ("SubCat",       "중분류",        True,  "01"),
+    ("DetailCat",    "소분류",        True,  "01"),
+    ("BRN",          "협력사",        True,  "글로벌디스플레이"),
+    ("P_Price",      "단가",          True,  "217800"),
+    ("MinOrderQty",  "최소발주량",     False, "50"),
+    ("PkgUnit",      "포장단위",       True,  "10"),
+    ("Lead_Time",    "리드타임",       True,  "64"),
+    ("Price_Score",  "단가점수",       True,  "3"),
+    ("Sub_Score",    "대체점수",       True,  "3"),
+    ("Impact_Score", "영향점수",       True,  "3"),
+    ("Supply_Score", "공급점수",       True,  "3"),
+    ("month_qty",    "월예상소요량",    True,  "300"),
+]
+
+# 엑셀에서 '다른 이름으로 저장 → CSV' 하면 한국어 윈도우는 cp949 로 쓴다.
+# utf-8 로만 읽으면 한글이 전부 깨지거나 예외가 난다.
+CSV_ENCODINGS = ("utf-8-sig", "cp949", "utf-8")
+
+
+def csv_template():
+    """받아서 그대로 채우면 되는 빈 양식 (머리글 + 예시 한 줄).
+
+    따옴표·쉼표는 csv 모듈에 맡긴다. 직접 붙이면 규격이 1/3" 처럼
+    따옴표를 품은 값에서 깨진다.
+    """
+    buf = io.StringIO()
+    wr = csv.writer(buf, lineterminator="\r\n")
+    wr.writerow([label for _k, label, _r, _ex in PRODUCT_CSV_COLS])
+    wr.writerow([ex for _k, _l, _r, ex in PRODUCT_CSV_COLS])
+    return buf.getvalue()
+
+
+def parse_product_csv(raw):
+    """바이트를 줄 목록으로. 인코딩과 열 이름만 여기서 본다."""
+    if isinstance(raw, str):
+        text = raw
+    else:
+        text = None
+        for enc in CSV_ENCODINGS:
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            return [], ["파일을 읽을 수 없습니다. UTF-8 또는 CP949(엑셀 기본)로 저장하세요."]
+
+    text = text.replace("\r\n", "\n").strip("\ufeff").strip()
+    if not text:
+        return [], ["빈 파일입니다."]
+
+    rdr = csv.reader(io.StringIO(text))
+    try:
+        rows = [r for r in rdr if any(str(c).strip() for c in r)]
+    except csv.Error as ex:
+        return [], ["CSV 형식이 아닙니다: %s" % ex]
+    if len(rows) < 2:
+        return [], ["머리글 한 줄과 자료 한 줄 이상이 필요합니다."]
+
+    label2key = {lb: k for k, lb, _r, _e in PRODUCT_CSV_COLS}
+    label2key.update({k: k for k, _lb, _r, _e in PRODUCT_CSV_COLS})
+    head = [str(c).strip().strip('"').replace(" ", "") for c in rows[0]]
+    idx = {}
+    for i, h in enumerate(head):
+        if h in label2key:
+            idx[label2key[h]] = i
+
+    miss = [lb for k, lb, req, _e in PRODUCT_CSV_COLS if req and k not in idx]
+    if miss:
+        return [], ["머리글에 없는 열이 있습니다: %s" % ", ".join(miss),
+                    "첫 줄은 %s 순서여야 합니다."
+                    % ", ".join(lb for _k, lb, _r, _e in PRODUCT_CSV_COLS)]
+
+    out = []
+    for n, r in enumerate(rows[1:], start=2):
+        d = {"_line": n}
+        for k, i in idx.items():
+            d[k] = str(r[i]).strip() if i < len(r) else ""
+        out.append(d)
+    return out, []
+
+
+def _resolve_company(conn, v, cache):
+    """협력사를 사업자번호로도 이름으로도 받는다. 사람이 쓰는 건 이름이다."""
+    t = str(v or "").strip()
+    if not t:
+        return None
+    if t in cache:
+        return cache[t]
+    r = conn.execute(
+        "SELECT BRN FROM Company_tb WHERE BRN = ? OR CP_N = ?", (t, t)).fetchone()
+    cache[t] = r["BRN"] if r else None
+    return cache[t]
+
+
+def preview_products_csv(conn, rows):
+    """줄마다 판정한다. 저장은 하지 않는다."""
+    taken, seen, cache = [], {}, {}
+    out, bad = [], 0
+    for r in rows:
+        body = dict(r)
+        body["BRN"] = _resolve_company(conn, r.get("BRN"), cache) or r.get("BRN")
+        body["_taken"] = tuple(taken)
+        f, e = preview_product(conn, body)
+
+        # 파일 안에서 겹치는 것도 잡아 준다 — 복사해 붙이다 흔히 난다.
+        # DB 와의 중복은 _check_product 가 이미 본다. 여기선 파일 안만.
+        nm = str(r.get("P_N") or "").strip()
+        key = (nm, str(r.get("Spec") or "").strip())
+        if nm and key in seen:
+            e = list(e) + ["%d번째 줄과 품명·규격이 같습니다." % seen[key]]
+        elif nm:
+            seen[key] = r["_line"]
+
+        if e:
+            bad += 1
+            out.append({"line": r["_line"], "ok": 0, "P_N": nm,
+                        "errors": e, "raw": r})
+        else:
+            taken.append(f["P_ID"])
+            out.append({"line": r["_line"], "ok": 1, "P_ID": f["P_ID"],
+                        "P_N": f["P_N"], "Spec": f["Spec"],
+                        "supplier": f.get("supplier"), "grade": f["grade"],
+                        "score_sum": f["score_sum"], "Sf_Num": f["Sf_Num"],
+                        "P_Price": f["P_Price"], "PkgUnit": f["PkgUnit"],
+                        "Lead_Time": f["Lead_Time"], "loc": f["loc"],
+                        "warn": f.get("warn", []), "raw": r})
+    return {"rows": out, "total": len(out), "ok": len(out) - bad, "bad": bad,
+            "amount": sum(x.get("P_Price", 0) or 0 for x in out if x["ok"])}, []
+
+
+def create_products_bulk(conn, date, rows, ep_id, note=None):
+    """CSV 일괄 등록 — 전부 성공 아니면 전부 실패."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    if not rows:
+        return None, ["등록할 줄이 없습니다."]
+
+    plan, _ = preview_products_csv(conn, rows)
+    if plan["bad"]:
+        return None, ["%d줄 중 %d줄에 오류가 있습니다. 한 줄이라도 틀리면 저장하지 않습니다."
+                      % (plan["total"], plan["bad"])] + [
+            "%d번째 줄: %s" % (r["line"], r["errors"][0])
+            for r in plan["rows"] if not r["ok"]][:10]
+
+    note = str(note or "").strip() or "CSV 일괄 등록"
+    taken, done = [], []
+    with conn:                       # 한 줄이라도 실패하면 전부 되돌린다
+        for r in rows:
+            body = dict(r)
+            body["BRN"] = _resolve_company(conn, r.get("BRN"), {}) or r.get("BRN")
+            body["_taken"] = tuple(taken)
+            f, e2 = preview_product(conn, body)
+            if e2:
+                raise ValueError("%d번째 줄: %s" % (r["_line"], e2[0]))
+            taken.append(f["P_ID"])
+            conn.execute(
+                "INSERT INTO Product_tb (P_ID, P_N, Spec, BRN, P_Price,"
+                " MainCat, SubCat, DetailCat, MinOrderQty, PkgUnit)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (f["P_ID"], f["P_N"], f["Spec"], f["BRN"], f["P_Price"],
+                 f["MainCat"], f["SubCat"], f["DetailCat"],
+                 f["MinOrderQty"], f["PkgUnit"]))
+            conn.execute(
+                "INSERT INTO Safe_tb (P_ID, Lead_Time, Sf_Lv, Sf_Num,"
+                " Price_Score, Sub_Score, Impact_Score, Supply_Score, Usage_Score)"
+                " VALUES (?,?,?,?,?,?,?,?,NULL)",
+                (f["P_ID"], f["Lead_Time"], f["grade"], f["Sf_Num"],
+                 f["Price_Score"], f["Sub_Score"], f["Impact_Score"], f["Supply_Score"]))
+            conn.execute(
+                "INSERT INTO Update_Log_tb (P_ID, Updated_Date, Next_Date,"
+                " Old_Lv, New_Lv, Old_Num, New_Num, Old_Usage, New_Usage, EP_ID, Note)"
+                " VALUES (?,?,?,NULL,?,NULL,?,NULL,NULL,?,?)",
+                (f["P_ID"], date, _add_days(date, f["cycle"]),
+                 f["grade"], f["Sf_Num"], w["EP_ID"], note))
+            done.append({"P_ID": f["P_ID"], "P_N": f["P_N"], "grade": f["grade"],
+                         "Sf_Num": f["Sf_Num"], "supplier": f.get("supplier"),
+                         "loc": f["loc"]})
+
+    by_grade = {g: sum(1 for d in done if d["grade"] == g) for g in ("A", "B", "C")}
+    return {"items": done, "cnt": len(done), "by_grade": by_grade,
+            "worker": w["Name"], "date": date, "note": note}, []

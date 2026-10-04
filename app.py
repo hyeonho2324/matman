@@ -271,6 +271,7 @@ def _ctx_safety_stock():
 
 
 def _ctx_products():
+    """자재 목록 — 조회 + 마스터 등록·수정(src)."""
     conn = db.connect()
     try:
         rows = db.product_list(conn)
@@ -281,6 +282,7 @@ def _ctx_products():
             "bom_usage": db.bom_usage(conn),
             "cats": db.category_tree(conn),
             "maincat": db.MAINCAT,
+            "src": db.product_source(conn),
         }
     finally:
         conn.close()
@@ -558,6 +560,159 @@ def api_alerts():
         "total": al["total"], "txt": al["txt"], "menu": al["menu"],
         "html": render_template("_alerts.html", alerts=al, icon=TODO_ICON),
     })
+
+
+# ── 자재 마스터 API ─────────────────────────────────────────
+# 200종이 처음부터 들어 있었고 화면은 읽기만 했다. 자재 하나를 만들면
+# Product_tb · Safe_tb · Update_Log_tb 셋이 함께 움직인다 (db.create_product).
+
+
+@app.route("/api/product/preview", methods=["POST"])
+def api_product_preview():
+    """품번 채번 · 등급 · 안전재고를 미리 본다 (저장 안 함)."""
+    body = request.get_json(silent=True) or {}
+    pid = (body.get("P_ID") or "").strip() or None
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_product(conn, body, pid)
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/product", methods=["POST"])
+def api_product_create():
+    """자재 등록 — Product_tb + Safe_tb + Update_Log_tb."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.create_product(
+            conn, _entry_date(body), body, body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/product/update", methods=["POST"])
+def api_product_update():
+    """자재 수정. 품번·분류는 바꿀 수 없다 — 일곱 테이블이 품번으로 엮여 있다."""
+    body = request.get_json(silent=True) or {}
+    pid = (body.get("P_ID") or "").strip()
+    if not pid:
+        return jsonify({"ok": False, "errors": ["품번이 없습니다."]}), 400
+    conn = db.connect()
+    try:
+        plan, errors = db.update_product(
+            conn, _entry_date(body), pid, body, body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/product/refs")
+def api_product_refs():
+    """이 품번이 어디에 쓰이고 있는지 — 삭제 가능 여부 판정."""
+    pid = (request.args.get("P_ID") or "").strip()
+    conn = db.connect()
+    try:
+        refs = db.product_refs(conn, pid)
+        return jsonify({"ok": True, "P_ID": pid, "refs": refs,
+                        "deletable": not refs})
+    finally:
+        conn.close()
+
+
+@app.route("/api/product/delete", methods=["POST"])
+def api_product_delete():
+    """자재 삭제 — 참조가 하나도 없고 직급이 될 때만."""
+    body = request.get_json(silent=True) or {}
+    conn = db.connect()
+    try:
+        plan, errors = db.delete_product(
+            conn, (body.get("P_ID") or "").strip(),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+# ── CSV 일괄 등록 ───────────────────────────────────────────
+# 파일은 바이트로 받는다. 화면에서 글자로 읽어 보내면 엑셀이 저장한
+# CP949 가 UTF-8 로 해석돼 한글이 전부 깨진 채 도착한다.
+
+def _csv_bytes():
+    """업로드된 파일 또는 붙여넣은 본문."""
+    f = request.files.get("file")
+    if f is not None:
+        return f.read()
+    if request.is_json:
+        return (request.get_json(silent=True) or {}).get("text") or ""
+    return request.form.get("text") or ""
+
+
+@app.route("/api/product/csv/template")
+def api_product_csv_template():
+    """빈 양식 내려받기. 엑셀이 한글을 바로 읽도록 BOM 을 붙인다."""
+    body = db.csv_template().encode("utf-8-sig")
+    return app.response_class(
+        body, mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 "attachment; filename=matman_product_template.csv"})
+
+
+@app.route("/api/product/csv/preview", methods=["POST"])
+def api_product_csv_preview():
+    """줄마다 판정해서 돌려준다 (저장 안 함)."""
+    rows, errors = db.parse_product_csv(_csv_bytes())
+    if errors:
+        return jsonify({"ok": False, "errors": errors})
+    conn = db.connect()
+    try:
+        plan, e2 = db.preview_products_csv(conn, rows)
+        return jsonify({"ok": not e2 and not plan["bad"], "plan": plan, "errors": e2})
+    finally:
+        conn.close()
+
+
+@app.route("/api/product/csv", methods=["POST"])
+def api_product_csv_create():
+    """CSV 일괄 등록 — 한 줄이라도 틀리면 아무것도 저장하지 않는다."""
+    raw = _csv_bytes()
+    ep_id = request.form.get("EP_ID") or (
+        (request.get_json(silent=True) or {}).get("EP_ID") if request.is_json else None)
+    note = request.form.get("note") or (
+        (request.get_json(silent=True) or {}).get("note") if request.is_json else None)
+    date = request.form.get("date") or (
+        (request.get_json(silent=True) or {}).get("date") if request.is_json else None)
+
+    rows, errors = db.parse_product_csv(raw)
+    if errors:
+        return jsonify({"ok": False, "errors": errors}), 400
+    conn = db.connect()
+    try:
+        plan, e2 = db.create_products_bulk(
+            conn, _entry_date({"date": date}), rows, ep_id, note)
+        if e2:
+            return jsonify({"ok": False, "errors": e2}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except ValueError as e:
+        return jsonify({"ok": False, "errors": [str(e)]}), 400
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
 
 
 @app.route("/api/purchase/preview", methods=["POST"])
