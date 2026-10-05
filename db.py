@@ -1247,6 +1247,78 @@ def _pct(part, whole, nd=1):
     return math.floor(part / whole * 100 * f + 0.5) / f
 
 
+# ── 발주서 (A4 한 장) ────────────────────────────────────────
+#
+# 화면의 발주 목록은 '대조' 가 목적이라 품명·단가를 들고 있지 않다.
+# 종이로 나가는 발주서는 협력사가 보는 문서라 품명·규격·단가가 다 있어야 한다.
+# 인쇄할 때만 부르는 조회라 따로 둔다 — 목록 payload 를 키우지 않는다.
+
+VAT_RATE = 0.10          # 국내 거래 부가세. 해외는 영세율로 0 을 쓴다
+
+
+def po_sheet(conn, hid):
+    """발주번호 하나로 발주서 한 장을 채운다."""
+    hid = str(hid or "").strip().upper()
+    if not hid:
+        return None, ["발주번호가 없습니다."]
+
+    head = conn.execute("""
+        SELECT h.H_ID, h.P_Date, h.BRN, c.CP_N AS supplier, c.Is_Foreign AS is_foreign
+          FROM Purchase_Header_tb h
+          LEFT JOIN Company_tb c ON h.BRN = c.BRN
+         WHERE h.H_ID = ?
+    """, (hid,)).fetchone()
+    if head is None:
+        return None, ["등록되지 않은 발주번호입니다: %s" % hid]
+
+    items = _rows(conn, """
+        SELECT d.Purchase_num AS num, d.P_ID, p.P_N, p.Spec,
+               d.P_Qty AS qty, p.P_Price AS price,
+               ROUND(d.P_Qty * p.P_Price) AS amount,
+               p.PkgUnit AS pkg, p.MinOrderQty AS moq,
+               s.Lead_Time AS lead_time,
+               cat.Cat_Name AS cat_name
+          FROM Purchase_Detail_tb d
+          JOIN Product_tb p   ON d.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s ON s.P_ID = p.P_ID
+          LEFT JOIN Cat_tb cat ON cat.MainCat = p.MainCat
+                              AND cat.SubCat = p.SubCat
+                              AND cat.DetailCat = p.DetailCat
+         WHERE d.H_ID = ?
+         ORDER BY d.Purchase_num
+    """, (hid,))
+    if not items:
+        return None, ["품목이 없는 발주입니다: %s" % hid]
+
+    # 납기 — 한 장은 함께 들어오는 것을 전제로 가장 긴 리드타임을 쓴다
+    # (발주 등록 화면의 예상 입고일과 같은 기준)
+    lead = max((r["lead_time"] or 0) for r in items)
+    supply = sum(r["amount"] or 0 for r in items)
+    foreign = head["is_foreign"] == "Y"
+    vat = 0 if foreign else round(supply * VAT_RATE)
+
+    # 입고 진행 상황 — 종이에도 상태를 적어 둔다
+    recv = conn.execute("""
+        SELECT MIN(Lot_Date) AS first_in, COUNT(*) AS n
+          FROM Lot_tb WHERE H_ID = ?
+    """, (hid,)).fetchone()
+
+    return {
+        "H_ID": head["H_ID"], "P_Date": head["P_Date"],
+        "supplier": head["supplier"], "BRN": head["BRN"],
+        "is_foreign": head["is_foreign"],
+        "items": items,
+        "line_cnt": len(items),
+        "qty_total": sum(r["qty"] or 0 for r in items),
+        "supply": supply, "vat": vat, "total": supply + vat,
+        "vat_note": "영세율 (해외 거래)" if foreign else "부가세 10% 별도",
+        "lead_max": lead,
+        "eta": _add_days(head["P_Date"], lead) if lead else None,
+        "recv_date": recv["first_in"] if recv else None,
+        "recv_lots": (recv["n"] if recv else 0) or 0,
+    }, []
+
+
 def purchase_summary(orders):
     """발주 요약.
 

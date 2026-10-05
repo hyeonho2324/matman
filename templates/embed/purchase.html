@@ -207,6 +207,79 @@ tbody tr.on{background:var(--bg-ac)}
   .no-print{display:none !important}
   .po-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #999;margin-bottom:10px}
 }
+
+/* ── A4 발주서 ─────────────────────────────────────────────
+   화면에서는 오버레이로 띄우고, 인쇄하면 이 종이만 나간다.    */
+.shv{position:fixed;inset:0;background:rgba(26,25,23,.45);display:none;
+     align-items:flex-start;justify-content:flex-start;padding:18px;z-index:80;overflow:auto}
+@media(min-width:850px){ .shv{justify-content:center} }
+.shv.on{display:flex}
+/* A4 폭을 줄이지 않는다 — 줄이면 칸이 눌려 종이와 달라 보인다.
+   좁은 화면에서는 가로로 넘겨 본다 (열 숨김 금지 원칙과 같다) */
+.shwrap{background:#fff;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.25);
+        width:210mm;flex-shrink:0;display:flex;flex-direction:column}
+.shbar{display:flex;align-items:center;gap:8px;padding:10px 14px;
+       border-bottom:0.5px solid var(--border);background:var(--s1);
+       border-radius:10px 10px 0 0;flex-shrink:0}
+.shbar .t{font-size:13px;font-weight:600;flex:1}
+
+/* 종이 — A4 세로, 15mm 여백 */
+.sheet{padding:15mm;font-size:10.5px;color:#1A1917;line-height:1.5}
+.sh-h{display:flex;align-items:flex-start;gap:14px;border-bottom:2px solid #1A1917;
+      padding-bottom:9px;margin-bottom:12px}
+.sh-ttl{flex:1}
+.sh-ttl h1{font-size:25px;letter-spacing:11px;font-weight:700;margin:0 0 3px}
+.sh-ttl .sub{font-size:10px;color:#6b6a66;letter-spacing:.5px}
+.sh-bc{text-align:right}
+.sh-bc img{height:48px}
+.sh-no{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+       font-weight:700;margin-top:2px;letter-spacing:.5px}
+
+/* 공급자 / 공급받는자 */
+.sh-two{display:flex;gap:10px;margin-bottom:12px}
+.sh-box{flex:1;border:1px solid #9b9a96}
+.sh-bt{background:#EFEEEA;border-bottom:1px solid #9b9a96;padding:4px 8px;
+       font-size:10px;font-weight:700;letter-spacing:2px}
+.sh-br{display:flex;border-bottom:1px solid #d4d3ce;min-height:20px}
+.sh-br:last-child{border-bottom:none}
+.sh-bk{width:62px;flex-shrink:0;background:#F8F7F4;border-right:1px solid #d4d3ce;
+       padding:3px 7px;font-size:9.5px;color:#4A4946}
+.sh-bv{flex:1;padding:3px 8px;font-size:10.5px;min-width:0;word-break:break-all}
+.sh-bv.blank{color:#b8b7b2}
+
+/* 품목표 */
+table.sh-tb{width:100%;border-collapse:collapse;margin-bottom:10px}
+.sh-tb th{background:#EFEEEA;border:1px solid #9b9a96;padding:5px 6px;font-size:9.5px;
+          font-weight:700;white-space:nowrap}
+.sh-tb td{border:1px solid #d4d3ce;padding:5px 6px;font-size:10px;vertical-align:top}
+.sh-tb .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sh-tb .c{text-align:center}
+.sh-tb .pid{font-family:ui-monospace,monospace;font-size:9.5px}
+.sh-tb .spec{font-size:9px;color:#6b6a66}
+.sh-tb tfoot td{border:1px solid #9b9a96;background:#F8F7F4;font-weight:600}
+.sh-tb tfoot .tot td{background:#EFEEEA;font-size:11.5px}
+
+.sh-note{border:1px solid #d4d3ce;padding:7px 9px;font-size:9.5px;color:#4A4946;
+         line-height:1.75;margin-bottom:11px}
+.sh-note b{color:#1A1917}
+.sh-sign{display:flex;gap:10px;margin-top:4px}
+.sh-sg{flex:1;border:1px solid #9b9a96;height:62px;position:relative}
+.sh-sg .lb{position:absolute;top:0;left:0;right:0;background:#EFEEEA;
+           border-bottom:1px solid #9b9a96;padding:3px 7px;font-size:9.5px;font-weight:600}
+.sh-ft{margin-top:9px;font-size:9px;color:#898781;text-align:center}
+
+@media print{
+  @page{size:A4 portrait;margin:0}
+  body *{visibility:hidden !important}
+  .shv, .shv *{visibility:visible !important}
+  .shv{position:absolute;inset:auto;padding:0;background:#fff;display:block !important;overflow:visible}
+  .shwrap{box-shadow:none;border-radius:0;width:100%;max-width:none}
+  .shbar{display:none !important}
+  .sheet{padding:14mm}
+  .sh-tb{page-break-inside:auto}
+  .sh-tb tr{page-break-inside:avoid}
+  .sh-tb thead{display:table-header-group}
+}
 </style>
 </head>
 <body>
@@ -289,6 +362,19 @@ tbody tr.on{background:var(--bg-ac)}
       <button class="btn" id="poPrev" onclick="poGo(-1)">이전</button>
       <button class="btn btnp" id="poNext" onclick="poGo(1)">다음</button>
     </div>
+  </div>
+</div>
+
+<!-- A4 발주서 -->
+<div class="shv" id="shv" onclick="if(event.target===this) shClose()">
+  <div class="shwrap">
+    <div class="shbar">
+      <i class="ti ti-file-text" style="color:var(--acc);font-size:16px"></i>
+      <span class="t">발주서</span>
+      <button class="btn" onclick="window.print()"><i class="ti ti-printer"></i>인쇄</button>
+      <button class="btn" onclick="shClose()"><i class="ti ti-x"></i>닫기</button>
+    </div>
+    <div class="sheet" id="shBody"></div>
   </div>
 </div>
 
@@ -419,6 +505,129 @@ function render(){
     : '');
 }
 
+
+// ══════════════════════════════════════════════════════════
+//  A4 발주서
+//
+//  협력사에 보내는 문서라 목록이 들고 있지 않은 품명·규격·단가가 필요하다.
+//  인쇄할 때만 /api/po-sheet 로 그 발주 한 건을 받는다 — 목록 payload 를
+//  키우지 않으려고 따로 뒀다.
+//
+//  ⚠️ 공급받는자(우리 쪽) 정보와 협력사 주소·연락처는 데이터에 없다.
+//     (Company_tb 는 상호·해외여부뿐이고 BRN 은 'SAMBO' 같은 내부 코드다)
+//     지어내지 않고 빈칸으로 두어 손으로 적게 한다.
+// ══════════════════════════════════════════════════════════
+function shClose(){ document.getElementById('shv').classList.remove('on'); }
+
+async function shOpen(hid){
+  const box = document.getElementById('shBody');
+  box.innerHTML = '<div style="padding:40px;text-align:center;color:#898781">불러오는 중…</div>';
+  document.getElementById('shv').classList.add('on');
+  let d;
+  try{
+    const r = await fetch('/api/po-sheet?id=' + encodeURIComponent(hid));
+    d = await r.json();
+  }catch(e){ d = {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
+  if(!d.ok){
+    box.innerHTML = '<div style="padding:40px;text-align:center;color:#9B1C1C">'
+      + esc((d.errors||['발주서를 만들지 못했습니다.'])[0]) + '</div>';
+    return;
+  }
+  box.innerHTML = shDraw(d.sheet);
+}
+
+function shRow(k, v, blank){
+  return '<div class="sh-br"><div class="sh-bk">' + k + '</div>'
+       + '<div class="sh-bv' + (blank ? ' blank' : '') + '">' + v + '</div></div>';
+}
+
+function shDraw(s){
+  const rows = s.items.map(function(i, n){
+    return '<tr>'
+      + '<td class="c">' + (n+1) + '</td>'
+      + '<td class="pid">' + esc(i.P_ID) + '</td>'
+      + '<td>' + esc(i.P_N || '-')
+      +   (i.Spec ? '<div class="spec">' + esc(i.Spec) + '</div>' : '') + '</td>'
+      + '<td class="n">' + nf(i.qty) + '</td>'
+      + '<td class="n">' + nf(i.price) + '</td>'
+      + '<td class="n">' + nf(i.amount) + '</td>'
+      + '<td class="c">' + (i.pkg ? nf(i.pkg) : '-') + '</td>'
+      + '<td class="c">' + (i.lead_time ? i.lead_time + '일' : '-') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  // 줄이 적어도 표가 허전하지 않게 최소 8줄을 채운다 (종이 문서 관행)
+  let pad = '';
+  for(let k = s.items.length; k < 8; k++)
+    pad += '<tr><td class="c">' + (k+1) + '</td><td></td><td></td>'
+         + '<td></td><td></td><td></td><td></td><td></td></tr>';
+
+  return ''
+  + '<div class="sh-h">'
+  +   '<div class="sh-ttl"><h1>발 주 서</h1>'
+  +     '<div class="sub">PURCHASE ORDER</div></div>'
+  +   '<div class="sh-bc">'
+  +     '<img src="/api/barcode?v=' + encodeURIComponent(s.H_ID) + '&h=40&t=0" alt="">'
+  +     '<div class="sh-no">' + esc(s.H_ID) + '</div></div>'
+  + '</div>'
+
+  + '<div class="sh-two">'
+  +   '<div class="sh-box"><div class="sh-bt">공 급 자</div>'
+  +     shRow('상호', esc(s.supplier || '-')
+            + (s.is_foreign === 'Y' ? ' <b>(해외)</b>' : ''))
+  +     shRow('거래처코드', esc(s.BRN || '-'))
+  +     shRow('주소', '&nbsp;', true)
+  +     shRow('담당 · 연락처', '&nbsp;', true)
+  +   '</div>'
+  +   '<div class="sh-box"><div class="sh-bt">공 급 받 는 자</div>'
+  +     shRow('상호', 'MatMan 자재관리')
+  +     shRow('발주일', esc(s.P_Date))
+  +     shRow('납기 요청', esc(s.eta || '-')
+            + (s.lead_max ? ' <span style="color:#6b6a66">(리드타임 ' + s.lead_max + '일)</span>' : ''))
+  +     shRow('담당 · 연락처', '&nbsp;', true)
+  +   '</div>'
+  + '</div>'
+
+  + '<table class="sh-tb"><thead><tr>'
+  +   '<th style="width:26px">No</th><th style="width:76px">품번</th><th>품명 / 규격</th>'
+  +   '<th style="width:56px">수량</th><th style="width:62px">단가</th>'
+  +   '<th style="width:78px">공급가액</th><th style="width:48px">포장</th>'
+  +   '<th style="width:44px">납기</th>'
+  + '</tr></thead><tbody>' + rows + pad + '</tbody>'
+  + '<tfoot>'
+  +   '<tr><td colspan="3" class="c">합계 ' + s.line_cnt + '개 품목</td>'
+  +     '<td class="n">' + nf(s.qty_total) + '</td><td class="c">공급가액</td>'
+  +     '<td class="n">' + nf(s.supply) + '</td><td colspan="2"></td></tr>'
+  +   '<tr><td colspan="3"></td><td colspan="2" class="c">부가세</td>'
+  +     '<td class="n">' + nf(s.vat) + '</td>'
+  +     '<td colspan="2" class="c" style="font-size:9px;font-weight:400">' + esc(s.vat_note) + '</td></tr>'
+  +   '<tr class="tot"><td colspan="3"></td><td colspan="2" class="c">합계 금액</td>'
+  +     '<td class="n">' + nf(s.total) + '</td><td colspan="2" class="c">원</td></tr>'
+  + '</tfoot></table>'
+
+  + '<div class="sh-note">'
+  +   '<b>1.</b> 납품 시 본 발주서를 지참하고, 상단 바코드를 입고 담당자에게 제시해 주십시오.<br>'
+  +   '<b>2.</b> 수량은 <b>포장단위의 배수</b>로 출하합니다. 부족·초과 시 사전 협의해 주십시오.<br>'
+  +   '<b>3.</b> 단가는 ' + esc(s.vat_note) + ' 기준입니다.'
+  +   (s.recv_date
+      ? '<br><b>4.</b> 이 발주는 <b>' + esc(s.recv_date) + '</b> 에 입고 처리되었습니다 (LOT ' + s.recv_lots + '건).'
+      : '')
+  + '</div>'
+
+  + '<div class="sh-sign">'
+  +   '<div class="sh-sg"><div class="lb">발주 담당</div></div>'
+  +   '<div class="sh-sg"><div class="lb">검토</div></div>'
+  +   '<div class="sh-sg"><div class="lb">승인</div></div>'
+  +   '<div class="sh-sg"><div class="lb">공급자 확인</div></div>'
+  + '</div>'
+  + '<div class="sh-ft">' + esc(s.H_ID) + ' · 발주일 ' + esc(s.P_Date)
+  +   ' · MatMan 자재관리 시스템에서 발행</div>';
+}
+
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') shClose();
+});
+
 function pick(hid){
   sel=hid;
   const o=ORD.filter(function(v){return v.H_ID===hid;})[0];
@@ -477,7 +686,9 @@ function pick(hid){
   + '</div>'
 
   + '<div class="pn">'
-  +   '<div class="pnh"><i class="ti ti-receipt"></i><span class="pnh-t">발주 정보</span></div>'
+  +   '<div class="pnh"><i class="ti ti-receipt"></i><span class="pnh-t">발주 정보</span>'
+  +     '<button class="btn" style="margin-left:auto;padding:3px 8px;font-size:11px" '
+  +       'onclick="shOpen(\'' + o.H_ID + '\')"><i class="ti ti-printer"></i>발주서</button></div>'
   +   '<div class="ir"><span class="ik">발주번호</span><span class="iv mono">' + o.H_ID + '</span></div>'
   +   '<div class="ir"><span class="ik">협력사</span><span class="iv">' + esc(o.supplier||'-') + ' (' + o.BRN + ')</span></div>'
   +   '<div class="ir"><span class="ik">발주일 · 입고일</span><span class="iv">' + o.date + ' → ' + (o.recv_date||'-') + '</span></div>'

@@ -565,6 +565,23 @@ def _ctx_workbench():
 # 이 앱에서 유일하게 DB 를 쓰는 엔드포인트다.
 # 나머지 화면은 전부 조회 전용이라 GET 만 있다.
 
+@app.route("/api/po-sheet")
+def api_po_sheet():
+    """발주서 한 장에 들어갈 것 — 품명·규격·단가·납기·세액.
+
+    목록 조회(purchase_orders)는 '대조' 가 목적이라 품명·단가를 안 들고 있다.
+    종이로 나가는 문서는 협력사가 보는 것이라 다 있어야 해서, 인쇄할 때만 부른다.
+    """
+    conn = db.connect()
+    try:
+        sheet, errors = db.po_sheet(conn, request.args.get("id"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
 @app.route("/api/barcode")
 def api_barcode():
     """값 하나를 Code 128 바코드 SVG 로. 발주번호를 종이에 찍어 스캔한다.
