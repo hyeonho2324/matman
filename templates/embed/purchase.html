@@ -194,6 +194,19 @@ tbody tr.on{background:var(--bg-ac)}
 .tc-u+.tc-u{border-left:0.5px solid var(--border)}
 .tc-u:hover{background:var(--s2);color:var(--txt)}
 .tc-u.on{background:var(--acc);color:#fff}
+
+/* 발주 완료 — 바코드 */
+.bc{padding:9px 11px 10px;border-top:0.5px solid var(--border);background:#fff;text-align:center}
+.bc img{max-width:100%;height:auto}
+.po-acts{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
+.po-ah{font-size:11px;color:var(--txt3);line-height:1.6}
+@media print{
+  body *{visibility:hidden}
+  #poBody, #poBody *{visibility:visible}
+  #poBody{position:absolute;left:0;top:0;width:100%}
+  .no-print{display:none !important}
+  .po-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #999;margin-bottom:10px}
+}
 </style>
 </head>
 <body>
@@ -822,6 +835,9 @@ function poView3(){
   return h;
 }
 
+// 발주서를 뽑을 때 바코드가 함께 나가야 창고에서 찍을 수 있다
+function poPrint(){ window.print(); }
+
 // ── 완료 ──
 function poView4(){
   const tot = poRes.reduce(function(a,g){return a+g.amount;},0);
@@ -834,8 +850,15 @@ function poView4(){
       + '<span class="po-hid">' + g.H_ID + '</span>'
       + '<span class="po-cn">' + esc(g.supplier||'-') + '</span>'
       + '<span class="po-cm">' + g.line_cnt + '개 품목 · 예상 입고 ' + g.eta + '</span>'
-      + '<span class="po-camt">' + nf(g.amount) + '원</span></div></div>';
+      + '<span class="po-camt">' + nf(g.amount) + '원</span></div>'
+      // 발주서에 붙일 바코드 — 물건이 오면 창고에서 이걸 찍는다
+      + '<div class="bc"><img src="/api/barcode?v=' + encodeURIComponent(g.H_ID) + '&h=46" '
+      +   'alt="' + esc(g.H_ID) + ' 바코드"></div></div>';
   });
+  h += '<div class="po-acts no-print">'
+    + '<button class="btn" onclick="poPrint()"><i class="ti ti-printer"></i>바코드 인쇄</button>'
+    + '<span class="po-ah">발주서에 붙여 두면 물건이 왔을 때 '
+    + '<b>스캐너 화면에서 찍어 바로 입고 처리</b>로 넘어갑니다.</span></div>';
   h += '<div class="po-note" style="border:0.5px solid var(--border);border-radius:var(--r)">'
     + '입고가 등록되면 발주 수량과 실제 입고 수량이 대조되어 '
     + '<b>일치 / 부족 / 초과</b>로 판정됩니다. 지금은 <b>미입고</b> 상태입니다.'

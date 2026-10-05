@@ -3236,8 +3236,32 @@ def simulator_items(conn):
 # ── 입출고 작업 화면 (입고/불출/승인/스캐너) ─────────────────
 # 이 4개는 본래 '입력' 화면이라 조회할 이력이 없다.
 # 대신 입력에 필요한 실제 참조 데이터를 붙여, 작업 맥락을 보여준다.
+def scan_orders(conn):
+    """스캐너가 발주 바코드를 읽었을 때 쓸 가벼운 목록.
+
+    상세(품목별 수량)는 입고 화면이 다시 읽으므로 여기선 머리글만 담는다.
+    254건 × 몇 칸이라 전부 내려보내도 25KB 쯤이다.
+    """
+    return _rows(conn, """
+        SELECT h.H_ID, h.P_Date, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               COUNT(DISTINCT d.Purchase_num) AS line_cnt,
+               SUM(d.P_Qty)                   AS qty,
+               ROUND(SUM(d.P_Qty * p.P_Price)) AS amount,
+               MIN(l.Lot_Date)                AS recv_date,
+               SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS pending_lines
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c    ON h.BRN = c.BRN
+          %s
+         GROUP BY h.H_ID, h.P_Date, c.CP_N, c.Is_Foreign
+         ORDER BY h.P_Date DESC, h.H_ID DESC
+    """ % (PENDING_WHERE, PENDING_JOIN))
+
+
 def workbench(conn):
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    scan_po = scan_orders(conn)            # 스캐너가 발주 바코드를 읽을 때 쓴다
 
     # 입고: 발주 → 입고 실적 (LOT 채번 규칙 확인용)
     recent_po = _rows(conn, """
@@ -3340,6 +3364,7 @@ def workbench(conn):
         "disburse": disburse,
         "approvals": approvals,
         "scan_lots": scan_lots,
+        "scan_po": scan_po,
         "workers": workers,
         "pending": pending,
         "subs": subs,

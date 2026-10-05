@@ -2,6 +2,8 @@ from flask import Flask, render_template, jsonify, request
 from jinja2 import TemplateNotFound
 import json, os, re, sqlite3
 
+import barcode
+
 import db
 
 app = Flask(__name__)
@@ -148,7 +150,12 @@ def abc():
 
 @app.route("/inbound")
 def inbound():
-    return render_template("inbound.html", **get_menu_context("inbound"), page_title="입고 처리")
+    """입고 처리. ?h=PO… 로 오면 그 발주를 고른 채 연다 (스캐너에서 넘어온 경우)."""
+    hid = (request.args.get("h") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{1,20}", hid or "-"):
+        hid = ""
+    return render_template("inbound.html", **get_menu_context("inbound"),
+                           page_title="입고 처리", hid=hid)
 
 @app.route("/disburse-request")
 def disburse_request():
@@ -557,6 +564,30 @@ def _ctx_workbench():
 # ── 발주 등록 API ───────────────────────────────────────────
 # 이 앱에서 유일하게 DB 를 쓰는 엔드포인트다.
 # 나머지 화면은 전부 조회 전용이라 GET 만 있다.
+
+@app.route("/api/barcode")
+def api_barcode():
+    """값 하나를 Code 128 바코드 SVG 로. 발주번호를 종이에 찍어 스캔한다.
+
+    SVG 로 내는 이유는 바코드가 선 굵기로 읽히기 때문이다 — PNG 를 확대하면
+    바가 뭉개져 스캐너가 놓친다. 외부 라이브러리 없이 barcode.py 가 그린다.
+    """
+    v = (request.args.get("v") or "").strip().upper()
+    try:
+        h = max(24, min(int(request.args.get("h") or 52), 200))
+        m = max(1, min(int(request.args.get("m") or 2), 6))
+    except ValueError:
+        h, m = 52, 2
+    try:
+        body = barcode.svg(v, height=h, module=m,
+                           show_text=request.args.get("t") != "0")
+    except ValueError as e:
+        return jsonify({"ok": False, "errors": [str(e)]}), 400
+    resp = app.response_class(body, mimetype="image/svg+xml")
+    # 같은 값이면 늘 같은 그림이라 캐시해도 된다
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
 
 @app.route("/api/alerts")
 def api_alerts():

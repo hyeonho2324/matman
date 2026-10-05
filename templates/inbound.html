@@ -16,7 +16,7 @@
 <div style="flex:1;display:flex;flex-direction:column;gap:14px">
   <div style="flex:1;border-radius:12px;overflow:hidden;border:0.5px solid var(--border);min-height:580px">
     <iframe
-      src="/embed/inbound"
+      src="/embed/inbound{% if hid %}?h={{ hid|urlencode }}{% endif %}"
       style="width:100%;height:100%;min-height:580px;border:none;display:block"
       title="입고 처리">
     </iframe>

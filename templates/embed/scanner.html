@@ -65,29 +65,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
   .main{flex-direction:column}
   .hist{width:100%;max-height:32%;border-left:none;border-top:0.5px solid var(--border-s)}
 }
+
+/* 발주 바코드 스캔 결과 */
+.po-hit{padding:14px}
+.po-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;flex-wrap:wrap}
+.po-no{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:17px;font-weight:600;color:var(--acc)}
+.po-sup{font-size:13px;font-weight:500}
+.po-meta{font-size:11px;color:var(--txt3);margin-left:auto}
+.po-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:11px}
+.po-c{background:var(--s1);border:0.5px solid var(--border);border-radius:var(--r);padding:8px 10px}
+.po-cl{font-size:10px;color:var(--txt3)}
+.po-cv{font-size:15px;font-weight:600;margin-top:2px}
+.po-cv small{font-size:10px;font-weight:400;color:var(--txt3);margin-left:1px}
+/* 다음 단계 안내 — 자동 이동 카운트 */
+.nx{display:flex;align-items:center;gap:10px;border-radius:8px;padding:11px 13px;flex-wrap:wrap}
+.nx.go{background:var(--bg-ac);border:0.5px solid rgba(42,120,214,.3)}
+.nx.ok{background:var(--bg-ok);border:0.5px solid rgba(29,158,117,.3)}
+.nx-t{flex:1;min-width:170px;font-size:12px;line-height:1.65}
+.nx-t b{color:var(--txt)}
+.nx-c{font-family:ui-monospace,monospace;font-size:19px;font-weight:700;color:var(--acc);min-width:20px;text-align:center}
+.btng{background:var(--acc);color:#fff;border-color:transparent}
+.btng:hover{background:#2268bd}
+.bcbox{margin-top:11px;padding:9px;background:#fff;border:0.5px solid var(--border);border-radius:var(--r);text-align:center}
+.bcbox img{max-width:100%;height:auto}
+.bcbox .cap{font-size:10px;color:var(--txt3);margin-top:4px}
+@media(max-width:700px){ .po-grid{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div class="pt"><i class="ti ti-scan" style="color:var(--acc)"></i>스캐너 · LOT 조회
-      <span class="tag">실제 DB · LOT {{ scan_lots|length }}건</span></div>
+    <div class="pt"><i class="ti ti-scan" style="color:var(--acc)"></i>스캐너
+      <span class="tag">실제 DB · 발주 {{ scan_po|length }}건 · LOT {{ scan_lots|length }}건</span></div>
     <button class="btn" onclick="demo()"><i class="ti ti-wand"></i>임의 스캔</button>
   </div>
   <div class="ro">
     <i class="ti ti-info-circle"></i>
-    <b>실제 바코드 스캐너는 하드웨어 연동이 필요합니다.</b> 여기서는 스캐너가 읽어들일
-    <b>LOT 번호나 품번을 입력하면 그 자리에서 재고·이력을 조회</b>하는 부분만 구현했습니다.
+    <b>발주번호를 읽으면 입고 처리로 바로 넘어갑니다.</b> 발주 등록 화면에서 받은
+    바코드를 찍거나 번호를 직접 넣으세요. LOT 번호·품번을 넣으면 그 자리에서
+    재고와 이력을 조회합니다.
+    <br>※ 실물 바코드 스캐너는 읽은 값을 그대로 타이핑하고 Enter 를 보냅니다 —
+    입력창에 커서만 있으면 아래 동작이 그대로 일어납니다.
   </div>
 
   <div class="scanbox">
     <div class="inp">
       <i class="ti ti-barcode"></i>
-      <input id="code" placeholder="LOT 번호 또는 품번 입력 후 Enter" autocomplete="off"
+      <input id="code" placeholder="발주번호 · LOT 번호 · 품번 입력 후 Enter" autocomplete="off"
              onkeydown="if(event.key==='Enter') scan()">
       <button class="btn" onclick="scan()"><i class="ti ti-search"></i>조회</button>
     </div>
-    <div class="hint">예시 — <code onclick="fill(this)" id="ex1"></code>
+    <div class="hint">예시 — <code onclick="fill(this)" id="ex0"></code>
+      <code onclick="fill(this)" id="ex1"></code>
       <code onclick="fill(this)" id="ex2"></code> <code onclick="fill(this)" id="ex3"></code>
       <br>클릭하면 입력창에 채워집니다</div>
   </div>
@@ -103,6 +132,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 </div>
 <script>
 const LOTS = {{ scan_lots|tojson }};
+const POS  = {{ scan_po|tojson }};
 const hist = [];
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -111,6 +141,9 @@ const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(
 // 예시 코드 채우기
 (function(){
   const live = LOTS.filter(function(l){return l.remain>0;});
+  // 미입고 발주가 있으면 그걸 먼저 보여준다 — 바로 눌러 흐름을 타 볼 수 있다
+  const pend = POS.filter(function(o){return o.pending_lines>0;});
+  document.getElementById('ex0').textContent = (pend[0] || POS[0] || {}).H_ID || '';
   document.getElementById('ex1').textContent = live.length ? live[0].Lot_ID : LOTS[0].Lot_ID;
   document.getElementById('ex2').textContent = LOTS[LOTS.length-1].Lot_ID;
   document.getElementById('ex3').textContent = LOTS[0].P_ID;
@@ -134,16 +167,21 @@ function scan(){
   const q = (document.getElementById('code').value||'').trim().toUpperCase();
   if(!q){ blank(); return; }
 
+  cancelJump();                       // 새로 찍으면 앞 카운트는 멈춘다
+
+  const po  = POS.filter(function(o){return o.H_ID.toUpperCase()===q;})[0];
   const lot = LOTS.filter(function(l){return l.Lot_ID.toUpperCase()===q;})[0];
   const byPid = LOTS.filter(function(l){return l.P_ID.toUpperCase()===q;});
 
-  if(lot)       { showLot(lot);  push(lot.Lot_ID, lot.P_N, 'LOT'); }
+  if(po)        { showPo(po);    push(po.H_ID, po.supplier, '발주'); }
+  else if(lot)  { showLot(lot);  push(lot.Lot_ID, lot.P_N, 'LOT'); }
   else if(byPid.length) { showPid(byPid); push(byPid[0].P_ID, byPid[0].P_N, '품번'); }
   else {
     document.getElementById('out').innerHTML =
       '<div class="sec"><div class="err"><i class="ti ti-alert-circle"></i> '
-    + '<b>' + esc(q) + '</b> 에 해당하는 LOT 이나 품번이 없습니다.</div>'
-    + '<div class="note">LOT 은 <code>LOT+날짜+순번</code>, 품번은 <code>9자리</code> 형식입니다.</div></div>';
+    + '<b>' + esc(q) + '</b> 에 해당하는 발주·LOT·품번이 없습니다.</div>'
+    + '<div class="note">발주는 <code>PO+날짜+순번</code>, LOT 은 <code>LOT+날짜+순번</code>, '
+    + '품번은 <code>9자리</code> 형식입니다.</div></div>';
   }
   document.getElementById('code').select();
 }
@@ -160,6 +198,94 @@ function push(code, name, kind){
   }).join('');
 }
 function fillCode(c){ document.getElementById('code').value=c; scan(); }
+
+// ══════════════════════════════════════════════════════════
+//  발주 바코드 → 입고 처리
+//
+//  창고에서 바코드를 찍는 맥락은 '이 발주 물건이 지금 도착했다' 다.
+//  그래서 읽자마자 입고 화면으로 넘긴다. 다만 조회하려고 찍는 경우도 있어
+//  곧장 튀지 않고 몇 초 세며 멈출 틈을 준다.
+// ══════════════════════════════════════════════════════════
+const JUMP_SEC = 3;
+let jumpTimer = null, jumpLeft = 0;
+
+function cancelJump(){
+  if(jumpTimer){ clearInterval(jumpTimer); jumpTimer = null; }
+  const el = document.getElementById('nxc');
+  if(el) el.closest('.nx').classList.remove('go');
+}
+
+function goInbound(hid){
+  cancelJump();
+  // iframe 안이라 부모를 움직여야 사이드바까지 함께 바뀐다
+  const url = '/inbound?h=' + encodeURIComponent(hid);
+  if(window.parent && window.parent !== window) window.parent.location.href = url;
+  else window.location.href = url;
+}
+
+function startJump(hid){
+  jumpLeft = JUMP_SEC;
+  const tick = function(){
+    const el = document.getElementById('nxc');
+    if(!el){ cancelJump(); return; }      // 다른 걸 찍었다
+    el.textContent = jumpLeft;
+    if(jumpLeft <= 0){ goInbound(hid); return; }
+    jumpLeft--;
+  };
+  tick();
+  jumpTimer = setInterval(tick, 1000);
+}
+
+function showPo(o){
+  const pending = o.pending_lines > 0;
+  let h = '<div class="po-hit">'
+    + '<div class="po-top"><span class="po-no">' + esc(o.H_ID) + '</span>'
+    + '<span class="po-sup">' + esc(o.supplier || '-') + '</span>'
+    + (o.is_foreign === 'Y' ? '<span class="bg bwn">해외</span>' : '')
+    + '<span class="po-meta">발주일 ' + esc(o.P_Date) + '</span></div>'
+    + '<div class="po-grid">'
+    + '<div class="po-c"><div class="po-cl">품목</div><div class="po-cv">'
+    +   o.line_cnt + '<small>종</small></div></div>'
+    + '<div class="po-c"><div class="po-cl">수량</div><div class="po-cv">'
+    +   nf(o.qty) + '<small>개</small></div></div>'
+    + '<div class="po-c"><div class="po-cl">금액</div><div class="po-cv">'
+    +   won(o.amount) + '<small>원</small></div></div>'
+    + '<div class="po-c"><div class="po-cl">상태</div><div class="po-cv" style="color:'
+    +   (pending ? 'var(--wn)' : 'var(--ok)') + '">'
+    +   (pending ? '미입고' : '입고완료') + '</div>'
+    +   '<div class="po-cl" style="margin-top:2px">'
+    +   (pending ? o.pending_lines + '개 라인 대기' : '입고 ' + esc(o.recv_date || '-'))
+    +   '</div></div></div>';
+
+  if(pending){
+    h += '<div class="nx go"><i class="ti ti-arrow-bar-to-down" style="font-size:19px;color:var(--acc)"></i>'
+      + '<div class="nx-t"><b>입고 처리로 넘어갑니다.</b><br>'
+      + '도착한 물건의 실입고 수량과 검수 불량을 그 화면에서 넣습니다.</div>'
+      + '<span class="nx-c" id="nxc">' + JUMP_SEC + '</span>'
+      + '<button class="btn btng" onclick="goInbound(\'' + esc(o.H_ID) + '\')">'
+      + '<i class="ti ti-arrow-right"></i>지금 이동</button>'
+      + '<button class="btn" onclick="cancelJump()">머무르기</button></div>';
+  } else {
+    h += '<div class="nx ok"><i class="ti ti-circle-check" style="font-size:19px;color:var(--ok)"></i>'
+      + '<div class="nx-t"><b>이미 입고가 끝난 발주입니다.</b><br>'
+      + '더 받을 것이 없어 입고 처리로 넘기지 않습니다. 대조 결과는 구매 발주 화면에서 봅니다.</div>'
+      + '<button class="btn" onclick="goPurchase(\'' + esc(o.H_ID) + '\')">'
+      + '<i class="ti ti-arrow-right"></i>발주 대조 보기</button></div>';
+  }
+
+  h += '<div class="bcbox"><img src="/api/barcode?v=' + encodeURIComponent(o.H_ID) + '&h=44" '
+    + 'alt="' + esc(o.H_ID) + ' 바코드"><div class="cap">이 발주의 바코드 — '
+    + '발주서에 찍어 창고에서 다시 읽습니다</div></div></div>';
+
+  document.getElementById('out').innerHTML = h;
+  if(pending) startJump(o.H_ID);
+}
+
+function goPurchase(hid){
+  const url = '/purchase?id=' + encodeURIComponent(hid);
+  if(window.parent && window.parent !== window) window.parent.location.href = url;
+  else window.location.href = url;
+}
 
 function showLot(l){
   const used = l.P_Qty - l.remain;

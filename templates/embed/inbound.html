@@ -803,8 +803,36 @@ async function doClaim(){
   busy = false;
 }
 
-// 받을 발주가 있으면 등록 탭부터, 없으면 대조 탭부터 연다
-setMode(CSUM.open ? 'claim' : (PENDING.length ? 'pending' : 'done'));
+// 스캐너에서 발주 바코드를 읽고 넘어온 경우 (/inbound?h=PO…)
+// 그 발주를 고른 채로 연다 — 창고에서 찍고 바로 수량을 넣을 수 있게
+(function(){
+  const want = new URLSearchParams(location.search).get('h');
+  if(want){
+    const inPend = PENDING.some(function(o){ return o.H_ID === want; });
+    const inDone = PO.some(function(o){ return o.H_ID === want; });
+    if(inPend || inDone){
+      setMode(inPend ? 'pending' : 'done');
+      pick(want);
+      const row = document.querySelector('[data-hid="' + want + '"]');
+      if(row) row.scrollIntoView({block:'center'});
+      if(!inPend) flash('이미 입고가 끝난 발주라 대조 결과를 보여줍니다.');
+      return;
+    }
+    flash(want + ' 발주를 찾지 못했습니다.');
+  }
+  // 받을 발주가 있으면 등록 탭부터, 없으면 대조 탭부터 연다
+  setMode(CSUM.open ? 'claim' : (PENDING.length ? 'pending' : 'done'));
+})();
+
+function flash(msg){
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99;'
+    + 'background:var(--bg-wn);color:#854F0B;border:0.5px solid rgba(239,159,39,.45);'
+    + 'border-radius:8px;padding:8px 14px;font-size:11.5px;box-shadow:0 4px 16px rgba(0,0,0,.1)';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 4000);
+}
 </script>
 </body>
 </html>
