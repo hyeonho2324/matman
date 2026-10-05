@@ -231,7 +231,8 @@ tbody tr.on{background:var(--bg-ac)}
 .sh-ttl h1{font-size:25px;letter-spacing:11px;font-weight:700;margin:0 0 3px}
 .sh-ttl .sub{font-size:10px;color:#6b6a66;letter-spacing:.5px}
 .sh-bc{text-align:right}
-.sh-bc img{height:48px}
+/* 크기는 SVG 가 mm 로 들고 있다 — 여기서 px 를 주면 인쇄 크기가 틀어진다 */
+.sh-bc img{display:block;margin-left:auto}
 .sh-no{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
        font-weight:700;margin-top:2px;letter-spacing:.5px}
 
@@ -567,7 +568,7 @@ function shDraw(s){
   +   '<div class="sh-ttl"><h1>발 주 서</h1>'
   +     '<div class="sub">PURCHASE ORDER</div></div>'
   +   '<div class="sh-bc">'
-  +     '<img src="/api/barcode?v=' + encodeURIComponent(s.H_ID) + '&h=40&t=0" alt="">'
+  +     '<img src="/api/barcode?v=' + encodeURIComponent(s.H_ID) + '&w=58&h=11&t=0" alt="">'
   +     '<div class="sh-no">' + esc(s.H_ID) + '</div></div>'
   + '</div>'
 
@@ -1063,7 +1064,7 @@ function poView4(){
       + '<span class="po-cm">' + g.line_cnt + '개 품목 · 예상 입고 ' + g.eta + '</span>'
       + '<span class="po-camt">' + nf(g.amount) + '원</span></div>'
       // 발주서에 붙일 바코드 — 물건이 오면 창고에서 이걸 찍는다
-      + '<div class="bc"><img src="/api/barcode?v=' + encodeURIComponent(g.H_ID) + '&h=46" '
+      + '<div class="bc"><img src="/api/barcode?v=' + encodeURIComponent(g.H_ID) + '&w=60&h=11" '
       +   'alt="' + esc(g.H_ID) + ' 바코드"></div></div>';
   });
   h += '<div class="po-acts no-print">'

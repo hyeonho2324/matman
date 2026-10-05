@@ -586,17 +586,19 @@ def api_po_sheet():
 def api_barcode():
     """값 하나를 Code 128 바코드 SVG 로. 발주번호를 종이에 찍어 스캔한다.
 
+    w · h 는 **mm** 다 (기본 60 x 12mm). 인쇄하면 정확히 그 크기로 나온다.
     SVG 로 내는 이유는 바코드가 선 굵기로 읽히기 때문이다 — PNG 를 확대하면
     바가 뭉개져 스캐너가 놓친다. 외부 라이브러리 없이 barcode.py 가 그린다.
     """
     v = (request.args.get("v") or "").strip().upper()
+    # 크기는 mm 다. px 로 주면 종이에서 몇 cm 가 될지 알 수 없다
     try:
-        h = max(24, min(int(request.args.get("h") or 52), 200))
-        m = max(1, min(int(request.args.get("m") or 2), 6))
+        w = max(25.0, min(float(request.args.get("w") or 60), 180.0))
+        h = max(6.0, min(float(request.args.get("h") or 12), 60.0))
     except ValueError:
-        h, m = 52, 2
+        w, h = 60.0, 12.0
     try:
-        body = barcode.svg(v, height=h, module=m,
+        body = barcode.svg(v, mm=w, bar_mm=h,
                            show_text=request.args.get("t") != "0")
     except ValueError as e:
         return jsonify({"ok": False, "errors": [str(e)]}), 400
