@@ -18,7 +18,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .btn:hover{background:var(--s2)}
 
 /* 월 선택 탭 */
-.mtabs{display:flex;gap:0;padding:0 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;overflow-x:auto}
+.mtabs{background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.mtabs .yrow{display:flex;gap:0;padding:0 14px;border-bottom:0.5px solid var(--border);overflow-x:auto}
+.mtabs .mrow{display:flex;gap:0;padding:0 14px;overflow-x:auto}
+.yt{padding:5px 11px;font-size:11px;cursor:pointer;color:var(--txt3);white-space:nowrap;font-family:inherit;background:transparent;border:none;border-bottom:2px solid transparent;line-height:1.3}
+.yt:hover{background:var(--s2);color:var(--txt)}
+.yt.on{color:var(--acc);font-weight:600;border-bottom-color:var(--acc)}
+.yt small{display:block;font-size:8.5px;color:var(--txt3);font-weight:400}
+.yt.on small{color:var(--acc);opacity:.7}
 .mt{padding:8px 14px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--txt2);white-space:nowrap;font-family:inherit;background:transparent;border-top:none;border-left:none;border-right:none}
 .mt:hover{background:var(--s2)}
 .mt.on{border-bottom-color:var(--acc);color:var(--acc);font-weight:600}
@@ -70,7 +77,13 @@ tr:last-child td{border-bottom:none}
   .cards{grid-template-columns:repeat(2,1fr)}
   .two{grid-template-columns:1fr}
 }
+.tc-unit{display:inline-flex;gap:0;border:0.5px solid var(--border);border-radius:5px;overflow:hidden}
+.tc-u{border:none;background:var(--s0);color:var(--txt3);font-family:inherit;font-size:10px;padding:2px 7px;cursor:pointer;line-height:1.5}
+.tc-u+.tc-u{border-left:0.5px solid var(--border)}
+.tc-u:hover{background:var(--s2);color:var(--txt)}
+.tc-u.on{background:var(--acc);color:#fff}
 </style>
+<script src="/static/js/timechart.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -113,36 +126,68 @@ function delta(cur, prev){
   return '<span class="delta '+cls+'">'+ar+' '+Math.abs(d).toFixed(0)+'%</span>';
 }
 
+// ⚠️ 월 탭은 '추세' 가 아니라 '특정 월 고르기' 라 집계 단위를 올릴 수 없다.
+//    (분기로 묶으면 월간 리포트가 아니게 된다)
+//    대신 해가 둘 이상이면 연도를 먼저 고르게 해 한 줄에 최대 12개만 둔다.
+//    5년이면 탭 57개가 가로로 늘어서는데, 거기서 한 달을 찾는 건 못 할 일이다.
+let tabYear = null;
+function selYear(y){ tabYear = y; drawTabs(); }
+
 function drawTabs(){
-  document.getElementById('mtabs').innerHTML = M.map(function(m,i){
+  const years = [];
+  M.forEach(function(m){ const y=m.ym.slice(0,4); if(years.indexOf(y)<0) years.push(y); });
+  const cur = M[mi] ? M[mi].ym.slice(0,4) : years[years.length-1];
+  if (tabYear === null || years.indexOf(tabYear) < 0) tabYear = cur;
+
+  // 1년 이하면 한 줄에 다 들어간다. 그때 연도 줄을 띄우면 한 번 더 누르게 될 뿐이다
+  const twoRow = M.length > 12 && years.length > 1;
+  let h = '';
+  if (twoRow) {
+    h += '<div class="yrow">' + years.map(function(y){
+      const n = M.filter(function(m){ return m.ym.slice(0,4)===y; }).length;
+      return '<button class="yt' + (y===tabYear?' on':'') + '" onclick="selYear(\'' + y + '\')">'
+           + y + '<small>' + n + '개월</small></button>';
+    }).join('') + '</div>';
+  }
+  h += '<div class="mrow">' + M.map(function(m,i){
+    if (twoRow && m.ym.slice(0,4) !== tabYear) return '';
     return '<button class="mt ' + (i===mi?'on':'') + '" onclick="sel(' + i + ')">'
-         + m.ym + '<small>' + (m.in_cnt+m.out_cnt) + '건</small></button>';
-  }).join('');
+         + (twoRow ? parseInt(m.ym.slice(5,7),10)+'월' : m.ym)
+         + '<small>' + (m.in_cnt+m.out_cnt) + '건</small></button>';
+  }).join('') + '</div>';
+  document.getElementById('mtabs').innerHTML = h;
 }
 
 // 월별 추이 차트 (선택 월 강조)
 function trend(){
-  const W=1000,H=120,pad={t:12,b:18},n=M.length;
+  const W=1000,H=120,pad={t:12,b:18};
+  // 추세 차트는 집계 단위를 올린다 — 선택한 달이 속한 칸을 강조한다
+  const info=TimeChart.prep(M,{width:W});
+  const R=info.rows, n=info.n;
+  const selKey = M[mi] ? TimeChart.keyOf(M[mi].ym, info.unit) : null;
   const gw=W/n, bw=Math.min(gw*0.3,30);
-  const mx=Math.max.apply(null,M.map(function(m){return Math.max(m.in_qty,m.out_qty);}))||1;
-  const mxA=SUM.max_amt||1;
+  const mx=Math.max.apply(null,R.map(function(m){return Math.max(m.in_qty,m.out_qty);}))||1;
+  const mxA=info.unit==='month' ? (SUM.max_amt||1)
+          : (Math.max.apply(null,R.map(function(m){return m.po_amt;}))||1);
   const ph=H-pad.t-pad.b;
-  let g='', line='', dots='';
-  M.forEach(function(m,i){
+  let g=TimeChart.yearMarks(info,W,pad.t,pad.t+ph), line='', dots='';
+  R.forEach(function(m,i){
     const cx=gw*i+gw/2;
-    const cur = (i===mi);
+    const cur = (m.key===selKey);
     [[m.in_qty,'#2a78d6',-1],[m.out_qty,'#EF9F27',1]].forEach(function(d){
       const bh=d[0]/mx*ph;
       const x=cx+(d[2]<0?-bw-1:1);
       g+='<rect x="'+x.toFixed(1)+'" y="'+(pad.t+ph-bh).toFixed(1)+'" width="'+bw.toFixed(1)
        + '" height="'+Math.max(bh,0.5).toFixed(1)+'" fill="'+d[1]+'" opacity="'+(cur?'.95':'.4')+'" rx="1">'
-       + '<title>'+m.ym+' '+(d[2]<0?'입고':'출고')+' '+nf(d[0])+'개</title></rect>';
+       + '<title>'+m.full+' '+(d[2]<0?'입고':'출고')+' '+nf(d[0])+'개</title></rect>';
     });
     const py=(pad.t+ph-(m.po_amt/mxA*ph)).toFixed(1);
     line+=(i?' L':'M')+cx.toFixed(1)+' '+py;
-    dots+='<circle cx="'+cx.toFixed(1)+'" cy="'+py+'" r="'+(cur?3.4:2)+'" fill="#1D9E75" opacity="'+(cur?1:.55)+'"><title>'+m.ym+' 발주 '+won(m.po_amt)+'원</title></circle>';
-    g+='<text x="'+cx.toFixed(1)+'" y="'+(H-4)+'" font-size="9" fill="'+(cur?'#2a78d6':'#898781')
-     + '" text-anchor="middle" font-weight="'+(cur?'600':'400')+'">'+m.ym.slice(2)+'</text>';
+    dots+='<circle cx="'+cx.toFixed(1)+'" cy="'+py+'" r="'+(cur?3.4:2)+'" fill="#1D9E75" opacity="'+(cur?1:.55)+'"><title>'+m.full+' 발주 '+won(m.po_amt)+'원</title></circle>';
+    // 라벨은 자리가 있을 때만. 선택한 칸은 솎여도 반드시 보인다
+    if(i%info.step===0 || cur)
+      g+='<text x="'+cx.toFixed(1)+'" y="'+(H-4)+'" font-size="9" fill="'+(cur?'#2a78d6':'#898781')
+       + '" text-anchor="middle" font-weight="'+(cur?'600':'400')+'">'+m.label+'</text>';
   });
   return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' + g
        + '<path d="'+line+'" fill="none" stroke="#1D9E75" stroke-width="1.4" opacity=".7"/>' + dots

@@ -132,6 +132,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
         <div class="mnav">
           <button class="btn" id="prev" onclick="move(-1)"><i class="ti ti-chevron-left"></i></button>
           <button class="btn" id="next" onclick="move(1)"><i class="ti ti-chevron-right"></i></button>
+          <select id="mjump" onchange="jump(this.value)" title="월 바로 가기"></select>
         </div>
         <div class="mtitle" id="mtitle"></div>
         <div class="leg">
@@ -161,6 +162,21 @@ const CAL = {{ cal|tojson }};
 const SUM = {{ summary|tojson }};
 const MONTHS = CAL.months;
 
+// 달이 쌓이면 prev/next 로만 넘기는 게 고통스럽다 (5년이면 60번).
+// 연도별로 묶은 드롭다운을 함께 둔다.
+function fillJump(){
+  const sel=document.getElementById('mjump');
+  if(!sel) return;
+  const years={};
+  MONTHS.forEach(function(ym,i){ (years[ym.slice(0,4)]=years[ym.slice(0,4)]||[]).push([ym,i]); });
+  sel.innerHTML=Object.keys(years).sort().map(function(y){
+    return '<optgroup label="'+y+'">'+years[y].map(function(p){
+      return '<option value="'+p[1]+'">'+p[0]+'</option>';
+    }).join('')+'</optgroup>';
+  }).join('');
+}
+function jump(i){ mi=parseInt(i,10); drawMonth(); }
+
 let mi = 0, sel = null;
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -173,6 +189,8 @@ function drawMonth(){
   document.getElementById('mtitle').textContent = y + '년 ' + m + '월';
   document.getElementById('prev').disabled = (mi===0);
   document.getElementById('next').disabled = (mi===MONTHS.length-1);
+  const jp=document.getElementById('mjump');
+  if(jp){ jp.value=mi; jp.style.display = MONTHS.length>12 ? '' : 'none'; }
 
   const first = new Date(y, m-1, 1).getDay();      // 0=일
   const last  = new Date(y, m, 0).getDate();
@@ -275,6 +293,7 @@ function dl(){
   a.click();
 }
 
+fillJump();
 drawMonth();
 </script>
 </body>

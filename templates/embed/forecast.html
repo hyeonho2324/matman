@@ -105,7 +105,13 @@ tbody tr.on{background:var(--bg-ac)}
   .search input{width:100%}
   svg{height:70px}
 }
+.tc-unit{display:inline-flex;gap:0;border:0.5px solid var(--border);border-radius:5px;overflow:hidden}
+.tc-u{border:none;background:var(--s0);color:var(--txt3);font-family:inherit;font-size:10px;padding:2px 7px;cursor:pointer;line-height:1.5}
+.tc-u+.tc-u{border-left:0.5px solid var(--border)}
+.tc-u:hover{background:var(--s2);color:var(--txt)}
+.tc-u.on{background:var(--acc);color:#fff}
 </style>
+<script src="/static/js/timechart.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -148,8 +154,9 @@ tbody tr.on{background:var(--bg-ac)}
 
   <div class="chartbox">
     <div class="charthead">
-      <span class="t">월별 불출 추이</span>
+      <span class="t" id="ctitle">월별 불출 추이</span>
       <span class="m">막대 = 수량 · 선 = 금액</span>
+      <span id="cunit" style="margin-left:auto"></span>
     </div>
     <svg id="chart" viewBox="0 0 1000 84" preserveAspectRatio="none"></svg>
   </div>
@@ -212,26 +219,37 @@ const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 
+// 집계 단위(월/분기/연)는 데이터 길이가 정한다 — static/js/timechart.js
+let chartUnit = 'auto';
+function setChartUnit(u){ chartUnit = u; drawChart(); }
+
 function drawChart(){
-  const W=1000,H=84,pad={t:10,b:15},n=MON.length;
+  const W=1000,H=84,pad={t:10,b:15};
+  const info=TimeChart.prep(MON,{width:W,unit:chartUnit});
+  const R=info.rows, n=info.n;
   const gw=W/n, bw=Math.min(gw*0.44,46);
-  const mxQ=Math.max.apply(null,MON.map(function(m){return m.qty;}))||1;
-  const mxA=Math.max.apply(null,MON.map(function(m){return m.amount;}))||1;
+  const mxQ=Math.max.apply(null,R.map(function(m){return m.qty;}))||1;
+  const mxA=Math.max.apply(null,R.map(function(m){return m.amount;}))||1;
   const ph=H-pad.t-pad.b;
   let bars='', line='', dots='';
-  MON.forEach(function(m,i){
+  R.forEach(function(m,i){
     const cx=gw*i+gw/2, bh=m.qty/mxQ*ph;
     bars+='<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+(pad.t+ph-bh).toFixed(1)+'" width="'+bw.toFixed(1)
         + '" height="'+Math.max(bh,0.5).toFixed(1)+'" fill="#EF9F27" opacity=".8" rx="1">'
-        + '<title>'+m.ym+' 불출 '+nf(m.qty)+'개 · '+won(m.amount)+'원 ('+m.cnt+'건)</title></rect>';
+        + '<title>'+m.full+' 불출 '+nf(m.qty)+'개 · '+won(m.amount)+'원 ('+m.cnt+'건)</title></rect>';
     const py=(pad.t+ph-(m.amount/mxA*ph)).toFixed(1);
     line+=(i?' L':'M')+cx.toFixed(1)+' '+py;
     dots+='<circle cx="'+cx.toFixed(1)+'" cy="'+py+'" r="2.2" fill="#2a78d6"/>';
-    bars+='<text x="'+cx.toFixed(1)+'" y="'+(H-3)+'" font-size="9" fill="#898781" text-anchor="middle">'+m.ym.slice(2)+'</text>';
+    // 라벨은 들어갈 자리가 있을 때만 — 안 그러면 겹쳐서 뭉갠다
+    if(i%info.step===0)
+      bars+='<text x="'+cx.toFixed(1)+'" y="'+(H-3)+'" font-size="9" fill="#898781" text-anchor="middle">'+m.label+'</text>';
   });
+  const marks=TimeChart.yearMarks(info,W,pad.t,pad.t+ph);
   document.getElementById('chart').innerHTML =
-      bars + '<path d="'+line+'" fill="none" stroke="#2a78d6" stroke-width="1.5"/>' + dots
+      marks + bars + '<path d="'+line+'" fill="none" stroke="#2a78d6" stroke-width="1.5"/>' + dots
     + '<line x1="0" y1="'+(pad.t+ph)+'" x2="'+W+'" y2="'+(pad.t+ph)+'" stroke="#D4D3CE" stroke-width="1"/>';
+  document.getElementById('ctitle').textContent=info.unitLabel+' 불출 추이';
+  document.getElementById('cunit').innerHTML=TimeChart.picker(info,chartUnit,'setChartUnit');
 }
 
 function view(){
