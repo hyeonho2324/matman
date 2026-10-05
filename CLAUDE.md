@@ -2289,6 +2289,44 @@ info.unitLabel, info.choices
 
 ---
 
+### ⚠️ 세로 flex 는 넘치기 전에 자식을 먼저 줄인다 (2026-10-05)
+
+대시보드 맨 아래 **ABC 분석 카드가 2px 로 눌려** 내용 188px 가 통째로 안 보였다.
+스크롤은 멀쩡히 끝까지 갔는데 카드만 납작했다.
+
+```
+.page-content { display:flex; flex-direction:column; overflow:auto }
+   page-header 45 + todo-bar 125 + kpi 87 + dash-grid 389 + dash-grid 389 + card 188
+   = 1,223px  >  컨테이너 672px
+```
+
+세로 flex 는 넘치면 **넘기는 게 아니라 자식을 먼저 줄인다.** 보통은 자식의
+자동 최소높이(`min-height:auto`)가 바닥을 받쳐 주는데 —
+
+```css
+.card { overflow: hidden }     /* ← 이게 그 바닥을 없앤다 */
+```
+
+`overflow` 가 `visible` 이 아니면 `min-height:auto` 가 `0` 이 된다.
+그래서 **`.card` 만 0 까지 줄어들 수 있었고**, 대시보드에서 최상위에 홀로 놓인
+카드가 하나뿐이라 그 카드가 **축소분 전부를 혼자 떠안았다.**
+위의 `dash-grid`·`kpi-grid` 는 `display:grid` 라 바닥이 살아 있어 멀쩡했다.
+
+```css
+/* 줄이지 말고 넘겨라 — overflow:auto 가 스크롤해 준다 */
+.page-content > * { flex-shrink: 0; }
+```
+
+> 카드가 하나만 눌린 게 아니라 **마지막 카드가 유일하게 눌릴 수 있는 자식**이었던 것이다.
+> 화면에는 '아래가 잘린' 것처럼 보이지만 원인은 스크롤이 아니라 **flex 축소**였다.
+
+> ✅ **검증** — 창 높이 500·600·720·900·1,200px 전 구간에서 눌린 자식 0,
+> ABC 카드 190px 정상, 스크롤 끝에서 카드 하단이 컨테이너 안에 들어옴.
+> iframe 화면 7종(`products`·`inbound`·`purchase`·`picking`·`approval`·`report`·`users`)은
+> 규칙 적용 전후 수치가 **동일**해 영향 없음을 확인했다.
+
+---
+
 ### 로그인을 넣지 않은 이유 (2026-10-05 결정)
 
 설계는 해 두고 **구현하지 않기로 했다.** 빠뜨린 게 아니라 고른 것이다.

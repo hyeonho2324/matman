@@ -373,6 +373,12 @@ input, select, textarea { font-family: inherit; }
   flex-direction: column;
   gap: 16px;
 }
+/* ⚠️ 세로 flex 는 넘치면 '넘치게' 두는 게 아니라 자식을 먼저 줄인다.
+   보통은 자식의 자동 최소높이(min-height:auto)가 막아 주는데,
+   .card 는 overflow:hidden 이라 그 바닥이 사라진다 — 그래서 대시보드 맨 아래
+   ABC 분석 카드 혼자 축소를 다 떠안아 188px 내용이 2px 로 눌려 있었다.
+   줄이지 말고 넘기면 .page-content 의 overflow:auto 가 스크롤해 준다. */
+.page-content > * { flex-shrink: 0; }
 
 /* ── 공통 컴포넌트 ──────────────────────────────────────── */
 
