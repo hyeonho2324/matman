@@ -336,7 +336,7 @@ function render(){
     else                vd='<span class="bg bok">전량 일치</span>';
     return '<tr onclick="pick(\'' + o.wo + '\')" class="' + (sel===o.wo?'on':'') + '">'
       + '<td class="mono">' + o.date + '</td>'
-      + '<td><span class="wo">' + o.wo + '</span></td>'
+      + '<td><span class="wo">' + esc(o.wo) + '</span></td>'
       + '<td><div class="fg">' + esc(o.FG_N) + '</div><div class="fgid">' + o.FG_ID + '</div></td>'
       + '<td class="num">' + nf(o.units) + '대</td>'
       + '<td class="num">' + o.line_cnt + '종</td>'
@@ -355,7 +355,7 @@ function pick(wo){
   render();
 
   document.getElementById('dt').innerHTML =
-    '<span class="wo">' + o.wo + '</span> ' + esc(o.FG_N)
+    '<span class="wo">' + esc(o.wo) + '</span> ' + esc(o.FG_N)
     + (o.diff ? ' <span class="bg bdn">불일치 '+o.diff+'</span>' : '')
     + (o.alt_used ? ' <span class="bg bac">대체 '+o.alt_used+'</span>' : '');
   document.getElementById('ds').innerHTML =

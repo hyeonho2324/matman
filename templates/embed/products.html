@@ -896,7 +896,7 @@ function render(){
     return;
   }
   tb.innerHTML=r.map(function(x){
-    return '<tr onclick="pick(\'' + x.P_ID + '\')" class="' + (sel===x.P_ID?'on':'') + '">'
+    return '<tr onclick="pick(\'' + x.P_ID + '\')" data-id="' + x.P_ID + '" class="' + (sel===x.P_ID?'on':'') + '">'
       + '<td><span class="pid pidlink" title="전체 LOT 이력 보기"'
       +     ' onclick="pidClick(event,&quot;' + x.P_ID + '&quot;)">' + x.P_ID
       +     '<i class="ti ti-history"></i></span>'
@@ -1242,6 +1242,20 @@ function dl(){
 }
 
 render();
+
+// 상단 검색창에서 품번으로 들어오면 (/products/<품번>) 그 자재를 펼쳐 둔다
+(function(){
+  const want = new URLSearchParams(location.search).get('pid');
+  if (!want) return;
+  if (!ROWS.some(function(r){ return r.P_ID === want; })) {
+    document.getElementById('ds').textContent =
+      want + ' 은(는) 등록되지 않은 품번입니다.';
+    return;
+  }
+  pick(want);
+  const tr = document.querySelector('tr[data-id="' + want + '"]');
+  if (tr) tr.scrollIntoView({block: 'center'});
+})();
 </script>
 </body>
 </html>

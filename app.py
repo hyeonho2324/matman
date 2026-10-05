@@ -1,9 +1,20 @@
 from flask import Flask, render_template, jsonify, request
+from jinja2 import TemplateNotFound
 import json, os, re, sqlite3
 
 import db
 
 app = Flask(__name__)
+
+# 업로드 상한. 자재 50~수백 줄짜리 엑셀은 수백 KB 면 충분하다.
+# 상한이 없으면 큰 파일 하나로 메모리를 통째로 가져간다.
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024    # 8MB
+
+
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"ok": False,
+                    "errors": ["파일이 너무 큽니다(8MB 이내). 줄을 나눠 올리세요."]}), 413
 
 # 오늘 할 일 카드의 아이콘. db 는 숫자만 내고 표시는 여기서 정한다.
 TODO_ICON = {
@@ -108,12 +119,16 @@ def dashboard():
                            page_title="메인 대시보드", d=data)
 
 @app.route("/products")
-def products():
-    return render_template("products.html", **get_menu_context("products"), page_title="자재 목록")
-
 @app.route("/products/<pid>")
-def product_detail(pid):
-    return render_template("product_detail.html", **get_menu_context("products"), page_title="품목 상세", pid=pid)
+def products(pid=None):
+    """자재 목록. 품번이 붙으면 그 자재를 펼친 채로 연다.
+
+    상단 검색창에 품번을 치면 /products/<품번> 으로 온다. 전에는 여기서
+    product_detail.html 을 찾다가 500 이 났다 — 그 템플릿은 만든 적이 없고,
+    상세는 목록 화면 오른쪽 패널이 이미 보여 준다.
+    """
+    return render_template("products.html", **get_menu_context("products"),
+                           page_title="자재 목록", pid=pid)
 
 @app.route("/lot")
 def lot():
@@ -570,7 +585,7 @@ def api_alerts():
 @app.route("/api/product/preview", methods=["POST"])
 def api_product_preview():
     """품번 채번 · 등급 · 안전재고를 미리 본다 (저장 안 함)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     pid = (body.get("P_ID") or "").strip() or None
     conn = db.connect()
     try:
@@ -583,7 +598,7 @@ def api_product_preview():
 @app.route("/api/product", methods=["POST"])
 def api_product_create():
     """자재 등록 — Product_tb + Safe_tb + Update_Log_tb."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_product(
@@ -600,7 +615,7 @@ def api_product_create():
 @app.route("/api/product/update", methods=["POST"])
 def api_product_update():
     """자재 수정. 품번·분류는 바꿀 수 없다 — 일곱 테이블이 품번으로 엮여 있다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     pid = (body.get("P_ID") or "").strip()
     if not pid:
         return jsonify({"ok": False, "errors": ["품번이 없습니다."]}), 400
@@ -633,7 +648,7 @@ def api_product_refs():
 @app.route("/api/product/delete", methods=["POST"])
 def api_product_delete():
     """자재 삭제 — 참조가 하나도 없고 직급이 될 때만."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.delete_product(
@@ -658,7 +673,7 @@ def _upload_bytes():
     if f is not None:
         return f.read(), (f.filename or "")
     if request.is_json:
-        return ((request.get_json(silent=True) or {}).get("text") or ""), ""
+        return ((_body()).get("text") or ""), ""
     return (request.form.get("text") or ""), ""
 
 
@@ -710,11 +725,11 @@ def api_product_csv_create():
     """CSV 일괄 등록 — 한 줄이라도 틀리면 아무것도 저장하지 않는다."""
     raw, name = _upload_bytes()
     ep_id = request.form.get("EP_ID") or (
-        (request.get_json(silent=True) or {}).get("EP_ID") if request.is_json else None)
+        (_body()).get("EP_ID") if request.is_json else None)
     note = request.form.get("note") or (
-        (request.get_json(silent=True) or {}).get("note") if request.is_json else None)
+        (_body()).get("note") if request.is_json else None)
     date = request.form.get("date") or (
-        (request.get_json(silent=True) or {}).get("date") if request.is_json else None)
+        (_body()).get("date") if request.is_json else None)
 
     rows, errors = db.parse_product_file(raw, name)
     if errors:
@@ -737,7 +752,7 @@ def api_product_csv_create():
 @app.route("/api/purchase/preview", methods=["POST"])
 def api_purchase_preview():
     """등록 전 미리보기 — 협력사별로 발주서가 어떻게 나뉘는지 보여준다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         groups, errors = db.preview_purchase(
@@ -750,7 +765,7 @@ def api_purchase_preview():
 @app.route("/api/purchase", methods=["POST"])
 def api_purchase_create():
     """발주 등록. 협력사별로 발주서를 나눠 저장한다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         created, errors = db.create_purchase(
@@ -763,6 +778,17 @@ def api_purchase_create():
         return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
     finally:
         conn.close()
+
+
+def _body():
+    """요청 본문을 dict 로. 배열·문자열이 와도 터지지 않는다.
+
+    `get_json(silent=True) or {}` 는 본문이 JSON 배열이면 리스트를 그대로
+    통과시켜, 뒤따르는 .get() 이 AttributeError 로 500 을 낸다. 32개
+    엔드포인트가 전부 같은 모양이라 한 곳에서 막는다.
+    """
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
 
 
 def _entry_date(body):
@@ -788,7 +814,7 @@ def _entry_date(body):
 @app.route("/api/disburse/preview", methods=["POST"])
 def api_disburse_preview():
     """등록 전 미리보기 — 어느 LOT 에서 얼마씩 나가는지 보여준다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_disburse(
@@ -802,7 +828,7 @@ def api_disburse_preview():
 @app.route("/api/disburse", methods=["POST"])
 def api_disburse_create():
     """불출 등록. FIFO 로 나눈 LOT 마다 거래 행을 남긴다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_disburse(
@@ -820,7 +846,7 @@ def api_disburse_create():
 @app.route("/api/disburse/batch/preview", methods=["POST"])
 def api_disburse_batch_preview():
     """일괄 불출 미리보기 — 자재마다 FIFO 배분을 계산한다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_disburse_batch(
@@ -833,7 +859,7 @@ def api_disburse_batch_preview():
 @app.route("/api/disburse/batch", methods=["POST"])
 def api_disburse_batch_create():
     """일괄 불출 등록. 한 줄이라도 걸리면 전체를 반려한다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_disburse_batch(
@@ -869,7 +895,7 @@ def api_lot_events():
 @app.route("/api/claim", methods=["POST"])
 def api_claim_create():
     """사용 중 발견한 불량 접수 — LOT 에서 차감하고 클레임을 연다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         out, errors = db.create_claim(
@@ -887,7 +913,7 @@ def api_claim_create():
 @app.route("/api/claim/resolve", methods=["POST"])
 def api_claim_resolve():
     """클레임 처리 — 대체입고(새 LOT 생성) / 환불 / 폐기."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         out, errors = db.resolve_claim(
@@ -909,7 +935,7 @@ def api_claim_resolve():
 @app.route("/api/request/plan", methods=["POST"])
 def api_request_plan():
     """완제품 + 목표 대수 → 자재 소요량 초안."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.request_plan(conn, body.get("FG_ID"), body.get("plan_qty"))
@@ -921,7 +947,7 @@ def api_request_plan():
 @app.route("/api/request/preview", methods=["POST"])
 def api_request_preview():
     """등록 전 미리보기 — 포장단위 검증과 합계."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_request(
@@ -936,7 +962,7 @@ def api_request_preview():
 @app.route("/api/request", methods=["POST"])
 def api_request_create():
     """불출 요청 등록."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_request(
@@ -955,7 +981,7 @@ def api_request_create():
 @app.route("/api/request/cancel", methods=["POST"])
 def api_request_cancel():
     """요청 취소. 한 건이라도 불출됐으면 취소하지 않는다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         res, errors = db.cancel_request(conn, body.get("Req_ID"), body.get("EP_ID"))
@@ -975,7 +1001,7 @@ def api_request_cancel():
 @app.route("/api/production/plan", methods=["POST"])
 def api_production_plan():
     """완제품 + 생산 대수 → 현장 보유에서 뺄 자재·LOT (저장 안 함)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.production_plan(conn, body.get("FG_ID"), body.get("qty"))
@@ -987,7 +1013,7 @@ def api_production_plan():
 @app.route("/api/production/preview", methods=["POST"])
 def api_production_preview():
     """등록 전 검증 — 현장 부족·생산일 역전을 여기서 잡는다 (저장 안 함)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_production(
@@ -1001,7 +1027,7 @@ def api_production_preview():
 @app.route("/api/production", methods=["POST"])
 def api_production_create():
     """생산 실적 등록 — 자재 x LOT 마다 Production_tb 한 행."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_production(
@@ -1019,7 +1045,7 @@ def api_production_create():
 @app.route("/api/override/preview", methods=["POST"])
 def api_override_preview():
     """안전재고 조정 미리보기 — 계산값과 운영값의 차이 (저장 안 함)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_override(
@@ -1033,7 +1059,7 @@ def api_override_preview():
 @app.route("/api/override", methods=["POST"])
 def api_override_create():
     """안전재고 수동 조정 등록 — Safe_tb(운영값) + Safe_Override_tb(근거)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_override(
@@ -1051,7 +1077,7 @@ def api_override_create():
 @app.route("/api/override/release", methods=["POST"])
 def api_override_release():
     """조정 해제 — 계산 등급으로 되돌리고 수량을 공식으로 다시 낸다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         res, errors = db.release_override(
@@ -1068,7 +1094,7 @@ def api_override_release():
 @app.route("/api/safety/preview", methods=["POST"])
 def api_safety_preview():
     """안전재고 일괄 갱신 미리보기 — 대상 판정과 변경 건수 (저장 안 함)."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_safety_update(
@@ -1081,7 +1107,7 @@ def api_safety_preview():
 @app.route("/api/safety/apply", methods=["POST"])
 def api_safety_apply():
     """안전재고 일괄 갱신 실행 — Safe_tb 갱신 + Update_Log_tb 이력."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.apply_safety_update(
@@ -1098,7 +1124,7 @@ def api_safety_apply():
 @app.route("/api/safety/revert", methods=["POST"])
 def api_safety_revert():
     """갱신 되돌리기 — 그 실행분의 변경 전 값을 되돌린다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         res, errors = db.revert_safety_update(
@@ -1115,7 +1141,7 @@ def api_safety_revert():
 @app.route("/api/request/approve/preview", methods=["POST"])
 def api_request_approve_preview():
     """승인 전 미리보기 — 라인별 조정 수량과 승인 금액·한도를 확인한다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_approval(
@@ -1129,7 +1155,7 @@ def api_request_approve_preview():
 @app.route("/api/request/approve", methods=["POST"])
 def api_request_approve():
     """불출 승인. 승인된 요청만 불출 처리 화면으로 내려간다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.approve_request(
@@ -1147,7 +1173,7 @@ def api_request_approve():
 @app.route("/api/request/reject", methods=["POST"])
 def api_request_reject():
     """불출 반려. 사유가 없으면 받지 않는다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         res, errors = db.reject_request(
@@ -1165,7 +1191,7 @@ def api_request_reject():
 @app.route("/api/inbound/preview", methods=["POST"])
 def api_inbound_preview():
     """등록 전 미리보기 — 판정·배정 창고·정산 금액을 보여준다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.preview_inbound(
@@ -1180,7 +1206,7 @@ def api_inbound_preview():
 @app.route("/api/inbound", methods=["POST"])
 def api_inbound_create():
     """입고 등록. 라인마다 LOT·입고거래를, 변경이 있으면 변경이력을 남긴다."""
-    body = request.get_json(silent=True) or {}
+    body = _body()
     conn = db.connect()
     try:
         plan, errors = db.create_inbound(
@@ -1238,10 +1264,15 @@ def embed(screen):
             ctx = provider(period)
         except TypeError:
             ctx = provider()
+    # ⚠️ 여기서 모든 예외를 삼키면 안 된다. 전에는 `except Exception` 이라
+    #    템플릿 안의 진짜 오류(없는 변수·오타·컨텍스트 누락)까지 '준비 중' 으로
+    #    덮여서, 화면이 비어 보이는데 로그에 아무것도 안 남았다.
+    #    파일이 아예 없는 경우만 안내로 바꾸고 나머지는 그대로 터뜨린다.
     try:
         return render_template(tmpl, **ctx)
-    except Exception:
-        return f"<div style='padding:20px;color:#888;font-family:sans-serif'>embed/{screen}.html 준비 중...</div>"
+    except TemplateNotFound:
+        return (f"<div style='padding:20px;color:#888;font-family:sans-serif'>"
+                f"embed/{screen}.html 준비 중...</div>"), 404
 
 if __name__ == "__main__":
     # 로컬 개발용. 배포 환경에서는 gunicorn(Render) 또는 PythonAnywhere 가

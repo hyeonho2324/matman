@@ -425,7 +425,7 @@ function pick(tid){
         + '<div class="prodlist">'
         + shown.map(function(u){
             return '<div class="prodrow"><span>' + u.Prod_Date + '</span>'
-                 + '<span>' + u.Work_Order + '</span>'
+                 + '<span>' + esc(u.Work_Order) + '</span>'
                  + '<b>' + u.FG_ID + '</b><span style="margin-left:auto">' + nf(u.qty) + '개</span></div>';
           }).join('')
         + (more>0 ? '<div class="prodrow" style="justify-content:center;color:var(--txt3)">외 ' + more + '건</div>' : '')

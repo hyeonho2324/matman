@@ -1796,12 +1796,10 @@ def forecast_list(conn):
                 r["urgency"] = "여유"
 
         # 권장 발주량 — 리드타임 소요분 + 안전재고 − 현재고, MOQ·포장단위로 올림
-        need = max(round(d * lt + (r["safe_qty"] or 0) - (r["stock"] or 0)), 0)
-        moq, pkg = r["MinOrderQty"] or 0, r["PkgUnit"] or 1
-        if need > 0:
-            need = max(need, moq)
-            if pkg > 1:
-                need = -(-need // pkg) * pkg     # 포장단위 올림
+        # 올림 규칙은 round_order_qty() 한 곳에만 둔다. 여기에 같은 식을
+        # 복제해 두면 한쪽만 고쳐져 발주 수량이 화면마다 달라진다.
+        need = round(d * lt + (r["safe_qty"] or 0) - (r["stock"] or 0))
+        need = round_order_qty(need, r["MinOrderQty"], r["PkgUnit"])
         r["order_qty"] = need
         r["order_amt"] = round(need * (r["P_Price"] or 0))
         # 관측 횟수로 신뢰도 표시
@@ -2988,7 +2986,10 @@ def preview_production(conn, date, fg_id, qty, ep_id, wo=None, note=None):
                 return None, ["생산일(%s)이 %s 불출일(%s)보다 앞섭니다. 현장에 오기 전입니다."
                               % (date, a["Lot_ID"], a["last_out"])]
 
-    wo = str(wo or "").strip() or None
+    wo, we = _check_wo(wo)
+    if we:
+        return None, we
+    wo = wo or None
     if wo:
         row = conn.execute(
             "SELECT FG_ID FROM Disburse_Req_tb WHERE Work_Order = ?", (wo,)).fetchone()
@@ -3230,98 +3231,6 @@ def simulator_items(conn):
     order = {"재고소진": 0, "발주지연": 1, "발주임박": 2, "주의": 3, "여유": 4, "예측불가": 5}
     out.sort(key=lambda x: (order.get(x["urgency"], 9), -(x["daily"] or 0)))
     return out, base, span
-
-
-# ── 피킹리스트 ───────────────────────────────────────────────
-# 불출해야 할 자재를 FIFO(선입선출) 순으로 LOT 을 지정하고,
-# 창고 구역 순서대로 정렬해 이동 동선을 최소화한 피킹 지시서를 만든다.
-def picking_list(conn, need=None):
-    """need: {P_ID: 필요수량}. 없으면 안전재고 미달분을 채우는 양으로 자동 산출."""
-    rows, base, span = forecast_list(conn)
-
-    # 기본 대상 — 재고가 있으면서 안전재고에 못 미치는 품목은 불출 대상이 아니므로
-    # '생산에 필요해서 현장으로 내보낼 자재'를 BOM 소요 기준으로 잡는다.
-    fg_need = _rows(conn, """
-        SELECT b.P_ID, SUM(b.BOM_Qty) AS per_set
-          FROM BOM_tb b WHERE b.BOM_Type = '표준'
-         GROUP BY b.P_ID
-    """)
-    per_set = {r["P_ID"]: r["per_set"] for r in fg_need}
-
-    # 잔여 LOT (FIFO 순)
-    lots = {}
-    for r in _rows(conn, f"""
-        SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, lo.Loc_N AS loc_name,
-               l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
-               CAST(julianday((SELECT MAX(T_Date) FROM Transaction_tb))
-                    - julianday(l.Lot_Date) AS INT) AS age_days
-          FROM Lot_tb l
-          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
-         WHERE l.P_Qty - COALESCE(x.out_qty, 0) > 0
-         ORDER BY l.P_ID, l.Lot_Date
-    """):
-        lots.setdefault(r["P_ID"], []).append(r)
-
-    info = {r["P_ID"]: r for r in rows}
-    picks = []
-    for pid, ls in lots.items():
-        r = info.get(pid)
-        if not r:
-            continue
-        # 필요 수량 — 지정값이 없으면 완제품 10세트분 소요량
-        want = (need or {}).get(pid)
-        if want is None:
-            want = (per_set.get(pid) or 0) * 10
-        if want <= 0:
-            continue
-
-        left, alloc = want, []
-        for l in ls:                      # 이미 입고일 순(FIFO)으로 정렬돼 있다
-            if left <= 0:
-                break
-            take = min(left, l["remain"])
-            alloc.append({
-                "Lot_ID": l["Lot_ID"], "Lot_Date": l["Lot_Date"],
-                "loc": l["loc_name"], "Loc_ID": l["Loc_ID"],
-                "remain": l["remain"], "take": take,
-                "age_days": l["age_days"],
-            })
-            left -= take
-
-        picks.append({
-            "P_ID": pid, "P_N": r["P_N"], "Spec": r["Spec"],
-            "grade": r["grade"], "supplier": r["supplier"],
-            "want": want, "picked": want - left, "short": left,
-            "stock": r["stock"], "lots": alloc,
-            "Loc_ID": alloc[0]["Loc_ID"] if alloc else "ZZ",
-            "loc": alloc[0]["loc"] if alloc else "-",
-            "lot_n": len(alloc),
-        })
-
-    # 창고 구역 → 품번 순으로 정렬 (동선 최소화)
-    picks.sort(key=lambda p: (p["Loc_ID"], p["P_ID"]))
-    for i, p in enumerate(picks, 1):
-        p["seq"] = i
-    return picks, base
-
-
-def picking_summary(picks):
-    zones = {}
-    for p in picks:
-        z = zones.setdefault(p["Loc_ID"], {"loc": p["loc"], "items": 0, "qty": 0, "lots": 0})
-        z["items"] += 1
-        z["qty"] += p["picked"]
-        z["lots"] += p["lot_n"]
-    return {
-        "items": len(picks),
-        "qty": sum(p["picked"] for p in picks),
-        "lots": sum(p["lot_n"] for p in picks),
-        "zones": sorted(zones.items()),
-        "short_items": len([p for p in picks if p["short"] > 0]),
-        "short_qty": sum(p["short"] for p in picks),
-        "multi_lot": len([p for p in picks if p["lot_n"] > 1]),
-    }
 
 
 # ── 입출고 작업 화면 (입고/불출/승인/스캐너) ─────────────────
@@ -4278,6 +4187,23 @@ def next_req_id(conn, date):
     return "%s%04d" % (pre, seq)
 
 
+# 작업지시번호는 사람이 직접 적을 수 있다. 자동 채번은 WO + 날짜 + 순번이지만
+# 현장 번호 체계를 그대로 쓰는 일도 있어 형식을 완전히 못박지는 않는다.
+# 다만 글자 종류는 묶는다 — 이 값은 여러 화면에서 그대로 그려지므로
+# 꺾쇠·따옴표가 섞이면 화면을 깨뜨릴 수 있다.
+WO_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/_.-]{0,29}$")
+
+
+def _check_wo(wo):
+    """작업지시번호 검사. 빈 값은 통과(호출부가 자동 채번한다)."""
+    t = str(wo or "").strip()
+    if not t:
+        return "", []
+    if not WO_OK.match(t):
+        return t, ["작업지시번호는 영문·숫자와 - _ . / 만 쓸 수 있습니다(30자 이내): %s" % t]
+    return t, []
+
+
 def next_wo_id(conn, date):
     """작업지시번호 채번 — WO + YYYYMMDD + 4자리.
 
@@ -4474,7 +4400,10 @@ def preview_request(conn, date, fg_id, plan_qty, items, ep_id, wo=None, note=Non
     plan["site_qty"] = sum(r["site_qty"] for r in rows)
     plan["need_qty"] = sum(r["need_qty"] for r in rows)
     plan["date"] = date
-    plan["Work_Order"] = (wo or "").strip() or next_wo_id(conn, date)
+    wo, we = _check_wo(wo)
+    if we:
+        return None, we
+    plan["Work_Order"] = wo or next_wo_id(conn, date)
     plan["worker"] = {"EP_ID": w["EP_ID"], "Name": w["Name"], "Position": w["Position"]}
     plan["note"] = (note or "").strip()
     return plan, []
@@ -4978,11 +4907,6 @@ def claim_list(conn, limit=80):
     for r in rows:
         r["open"] = r["Status"] == "접수"
     return rows
-
-
-def open_claims(conn):
-    """아직 처리되지 않은 클레임."""
-    return [k for k in claim_list(conn) if k["open"]]
 
 
 def resolve_claim(conn, date, claim_id, resolution, ep_id, reason=None):
@@ -5853,7 +5777,6 @@ def parse_product_file(raw, filename=""):
                     "엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)' 로 "
                     "바꾼 뒤 올리세요."]
     return parse_product_csv(raw)
-
 
 
 def xlsx_template(conn):

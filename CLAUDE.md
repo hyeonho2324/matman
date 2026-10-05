@@ -15,16 +15,16 @@ Python/Flask 기반 자재관리 웹 애플리케이션.
 - **백엔드**: Python + Flask 3.x
 - **프론트엔드**: Jinja2 템플릿 + 순수 HTML/CSS/JS (프레임워크 없음)
 - **DB**: SQLite (`data/erp.db`) — `build_db.py`로 accdb+CSV 병합 생성
-- **아이콘**: Tabler Icons CDN
-- **차트**: Chart.js CDN (필요 시)
+- **아이콘**: Tabler Icons — **자체 호스팅**(`static/vendor/`), CDN 미사용
+- **차트**: 순수 SVG 로 직접 그린다 (차트 라이브러리 미사용)
 
 ---
 
 ## 프로젝트 구조
 ```
 matman/
-├── app.py                      # Flask 앱 · 25개 라우트
-├── requirements.txt            # flask>=3.0.0
+├── app.py                      # Flask 앱 · 33개 GET + 32개 POST 라우트
+├── requirements.txt            # flask · gunicorn · waitress · openpyxl
 ├── CLAUDE.md                   # 이 파일
 ├── static/
 │   ├── css/main.css            # 전역 CSS (사이드바/헤더/카드/테이블/배지 등)
@@ -115,9 +115,9 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | Location_tb | 5 | Loc_ID(PK), Loc_N | accdb |
 | User_tb | 30 | EP_ID(PK,8자리), Name, Birth·Phone(**마스킹**), Position | accdb |
 | Lot_tb | 636 | Lot_ID(PK), P_ID, Lot_Date, Loc_ID, P_Qty, EP_ID, H_ID | CSV |
-| Transaction_tb | 1,075 | T_ID(PK), Lot_ID, T_Type, T_Date, T_Num, EP_ID | CSV |
-| Purchase_Header_tb | 254 | H_ID(PK), BRN, P_Date | CSV |
-| Purchase_Detail_tb | 636 | H_ID+Purchase_num(PK), P_ID, P_Qty | CSV |
+| Transaction_tb | 1,076 | T_ID(PK), Lot_ID, T_Type, T_Date, T_Num, EP_ID | CSV |
+| Purchase_Header_tb | 255 | H_ID(PK), BRN, P_Date | CSV |
+| Purchase_Detail_tb | 639 | H_ID+Purchase_num(PK), P_ID, P_Qty | CSV |
 | Safe_tb | 200 | P_ID(PK), Lead_Time, Sf_Lv, Sf_Num, Price/Sub/Impact/Supply/Usage_Score | CSV |
 | Update_Log_tb | 200 | P_ID+Updated_Date(PK), Next_Date, **Old/New_Lv, Old/New_Num, Old/New_Usage, EP_ID, Note** | CSV |
 | Purchase_Change_tb | 0 | Chg_ID(PK), H_ID+Purchase_num, Ord/In_P_ID, Ord/In_Qty, Ord/In_Amt, Diff_Amt, Chg_Type, Settle, Reason, Chg_Date, EP_ID, Lot_ID | **신설** |
@@ -127,7 +127,7 @@ embed 파일은 CSS 변수 대신 직접 hex 사용 (standalone이므로):
 | Safe_Override_tb | 0 | Ovr_ID(PK), P_ID, Ovr_Lv, Min_Qty, Calc_Lv, Calc_Num, Reason_Cd, Reason, Start/End_Date, Status, EP_ID, Off_Date, Off_Note | **신설** |
 | Production_tb | 4,545 | Prod_ID(PK), FG_ID, P_ID, Lot_ID, Prod_Date, Prod_Qty, EP_ID, **Work_Order**, Note | CSV |
 
-**총 19개 테이블 / 8,098행.**
+**총 19개 테이블 / 8,112행** (시연 데이터 포함 — 발주 1·거래 1·요청 3·클레임 1 등).
 원본 14개 8,081행 + 신설 3개(`Purchase_Change_tb` · `Disburse_Req_tb` · `Disburse_Req_Item_tb` · `Inbound_Claim_tb`) + 시연 데이터(입고용 발주 1건 3라인 · 불출 요청 1건 10라인 · 입고 클레임 1건과 그 불량 거래 1행).
 참조 무결성 점검 15항목 전부 고아 0행.
 
@@ -2002,6 +2002,120 @@ embed 가 아닌 일반 템플릿이라 `EMBED_CONTEXT` 가 아니라 `/` 라우
 
 ---
 
+## 전반 점검 (2026-10-05)
+
+전 화면·전 라우트·데이터·코드를 한 번에 훑었다. 찾은 것과 고친 것.
+
+### 고친 결함 4가지
+
+#### 1. `/products/<품번>` 이 500 이었다 (사용자 도달 가능)
+
+상단 검색창에 품번을 치면 `main.js` 가 `/products/E01010001` 로 보낸다.
+그 라우트가 **`product_detail.html` 을 렌더하는데 그 템플릿은 만든 적이 없다.**
+`TemplateNotFound` → 500.
+
+```python
+# 전
+@app.route("/products/<pid>")
+def product_detail(pid):
+    return render_template("product_detail.html", ...)   # 이 파일이 없다
+
+# 후 — 상세는 목록 화면 오른쪽 패널이 이미 보여 준다
+@app.route("/products")
+@app.route("/products/<pid>")
+def products(pid=None):
+    return render_template("products.html", ..., pid=pid)
+```
+`pid` 가 있으면 iframe 이 `/embed/products?pid=…` 로 열리고, 화면이 그 자재를
+**선택 + 스크롤**한다. 없는 품번이면 `등록되지 않은 품번입니다` 로 안내한다.
+
+> 전수 라우트 점검이 이걸 놓치고 있었다 — `<` 가 들어간 경로를 건너뛰고 있었다.
+> 이제 파라미터 라우트도 함께 본다.
+
+#### 2. embed 라우트가 진짜 오류를 '준비 중' 으로 덮고 있었다
+
+```python
+except Exception:
+    return "embed/… 준비 중..."      # 템플릿 오류·컨텍스트 누락까지 전부 삼킨다
+```
+**이번 세션에서 실제로 당한 함정이다.** `_ctx_safety_stock()` 을 중복 정의해
+변수가 빠졌을 때 화면이 '준비 중' 으로만 떴고 로그에 아무것도 안 남았다.
+**파일이 없는 경우(`TemplateNotFound`)만 안내로 바꾸고 나머지는 그대로 터뜨린다.**
+없는 화면은 이제 200 이 아니라 **404** 다.
+
+#### 3. POST API 32개가 JSON 배열 본문에 500
+
+```python
+request.get_json(silent=True) or {}     # 배열이면 리스트가 그대로 통과한다
+```
+리스트는 truthy 라 `or {}` 를 빠져나가고, 뒤따르는 `.get()` 이 AttributeError 를 낸다.
+32개 엔드포인트가 전부 같은 모양이었다. `_body()` 하나로 모았다.
+
+```python
+def _body():
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
+```
+> 실제로 이런 본문을 보내는 화면은 없다. 다만 **잘못된 입력에 500 이 나는 건
+> 서버 잘못**이고, 한 줄로 막을 수 있으면 막는 게 맞다.
+
+#### 4. 작업지시번호가 아무 글자나 받았다 (저장형 XSS)
+
+`Work_Order` 는 `.strip()` 만 하고 저장됐는데, 생산 실적·입출고 이력 화면에서
+**이스케이프 없이 `innerHTML` 로** 들어간다.
+
+```
+입력:  <img src=x onerror=…>   → DB 저장 → 생산 실적 화면에서 실행
+```
+두 겹으로 막았다.
+- **서버** — `WO_OK = ^[A-Za-z0-9][A-Za-z0-9/_.-]{0,29}$`. 자동 채번 형식은
+  `WO+날짜+순번` 이지만 현장 번호 체계를 쓸 수도 있어 형식 자체는 열어 두고
+  **글자 종류만** 묶는다
+- **화면** — `production.html` 3곳 · `tx_history.html` 1곳에 `esc()` 를 붙였다
+
+> **나머지 자유 입력은 이미 안전했다.** 품명·규격·사유·메모·승인 의견 등
+> 52개 후보를 전수 확인한 결과 **전부 `esc()` 를 거치거나 검색용 문자열**이었고,
+> 실제로 뚫린 건 `Work_Order` 하나였다.
+> 단일 사용자 데모라 실피해는 낮지만, 자재 마스터 등록을 열면서 자유 입력이
+> 늘어난 만큼 지금 막아 두는 게 맞다.
+
+### 함께 정리한 것
+
+| | |
+|---|---|
+| **업로드 상한** | 없었다 → `MAX_CONTENT_LENGTH = 8MB` + 413 핸들러. 큰 파일 하나로 메모리를 통째로 가져갈 수 있었다 |
+| **죽은 코드 98줄** | `picking_list` · `picking_summary`(→`picking_lists` 로 대체됨) · `open_claims`(→`claim_summary`) 제거 |
+| **올림 규칙 중복** | `forecast_list()` 가 `round_order_qty()` 와 **같은 식을 인라인으로 복제**하고 있었다. 문서는 함수를 가리키는데 실제로는 복제본이 돌고 있던 셈. 함수를 쓰게 고쳤다(권장 발주 67종·8.56억 그대로) |
+| **문서 수치** | 시연 데이터가 더해진 뒤의 실제 행수로 갱신(거래 1,075→1,076 · 발주 254→255 · 상세 636→639) |
+
+### 이상 없음을 확인한 것
+
+```
+정적        py_compile 4파일 · GET 33 라우트 전부 200(없는 embed 는 404)
+            POST 32개 × 본문 8종 = 256 케이스 500 0건
+데이터      참조 무결성 21종 고아 0행 · LOT 잔량/현장보유 음수 0
+            단가·포장·리드타임·거래수량 비정상 0 · 입고일<발주일 0 · 거래일<입고일 0
+교차 검증   화면 간 숫자 18항목 전부 일치
+            (자재 수 · 재고자산 3경로 · 미달 종수 · LOT · 거래 · 발주 · 협력사 ·
+             알림=worklist=대시보드 · 요청 3 = 진행 2 + 대기 1 + 종결 0 · 구역 합계)
+SQL 주입    기간 값은 정규식 고정, 테이블명은 상수. 주입 경로 0
+런타임      embed 23개 전 화면 콘솔 오류 0건
+성능        대시보드 39ms · 알림 3ms · 300ms 넘는 embed 0개
+연결        `db.connect()` 쓰는 전 함수가 `finally` 로 닫는다
+의존성      실제 import 3종 = requirements.txt 와 일치
+회귀        99 + 47 + 60 + 39 + 36 + 145 = 426항목 통과
+```
+
+### 남겨 둔 것
+
+| 항목 | 이유 |
+|---|---|
+| **생산일 역전 1,224행** | 원본 더미데이터의 흔적. 고치면 문서화된 수치가 전부 흔들린다. 새 실적은 이미 막혀 있어 시간이 지나면 과거의 흔적으로 굳는다 |
+| **로그인 없음** | 담당자를 드롭다운에서 고른다. 승인 한도·자기결재 금지가 그만큼 헐겁다 — 다음 작업 1순위 |
+| **올림 규칙이 JS 에도 3벌** | `bom` · `disburse_request` · `purchase` 의 미리보기용. 서버가 다시 계산하므로 결과는 서버가 정한다(문서화된 설계) |
+
+---
+
 ## 화면에 DB 데이터 넣는 법
 
 1. `db.py` 에 조회 함수 추가 (SQL은 전부 여기 모음)
@@ -2041,7 +2155,7 @@ py build_db.py
 ```
 
 ### 배포
-[DEPLOY.md](DEPLOY.md) 참조. 런타임 의존성은 `flask` + `gunicorn` 뿐이고
+[DEPLOY.md](DEPLOY.md) 참조. 런타임 의존성은 `flask` + `gunicorn` + `waitress` + `openpyxl` 뿐이고
 `data/erp.db` 파일만 함께 올리면 DB 서버가 따로 필요 없다.
 `build_db.py` 의 `pyodbc` 는 개발 PC 전용이라 배포 환경에서는 설치·실행되지 않는다.
 
