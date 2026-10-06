@@ -253,8 +253,8 @@ function drawKpi(){
         s.long_cnt ? '오래 묶여 있습니다' : '장기 보유 없음', s.long_cnt ? 'wn' : 'ok')
   + kpi('ti-calendar','평균 체류일', nf(s.avg_days) + '<small style="font-size:11px">일</small>',
         '마지막 불출일 기준', '')
-  + kpi('ti-checkbox','고른 것', nf(Object.keys(pick).length),
-        nf(sumQty()) + '개 · ' + won(sumAmt()) + '원', Object.keys(pick).length ? 'ac' : '');
+  + kpi('ti-checkbox','고른 것', nf(Object.keys(pick).filter(k => pick[k] > 0).length),
+        nf(sumQty()) + '개 · ' + won(sumAmt()) + '원', sumQty() ? 'ac' : '');
 }
 function kpi(icon,l,v,s,cls){
   return '<div class="kpi"><div class="kl"><i class="ti ' + icon + '"></i>' + l + '</div>'
@@ -294,7 +294,8 @@ function draw(){
   $('none').style.display = rs.length ? 'none' : 'block';
   $('rows').innerHTML = rs.map(function(r){
     const on = r.Lot_ID in pick;
-    return '<tr class="' + (on?'pick':'') + '" onclick="rowClick(event,\'' + r.Lot_ID + '\')">'
+    return '<tr data-lot="' + r.Lot_ID + '" class="' + (on?'pick':'')
+      + '" onclick="rowClick(event,\'' + r.Lot_ID + '\')">'
       + '<td><input type="checkbox" ' + (on?'checked':'') + ' onclick="event.stopPropagation()"'
       +   ' onchange="toggle(\'' + r.Lot_ID + '\',this.checked)"></td>'
       + '<td><span class="pid">' + esc(r.P_ID) + '</span>'
@@ -313,7 +314,8 @@ function draw(){
       + '<td class="num"><input class="qin" type="number" min="1" max="' + r.site + '"'
       +   ' value="' + (on ? pick[r.Lot_ID] : '') + '" ' + (on?'':'disabled')
       +   ' onclick="event.stopPropagation()" onkeydown="nextRow(event)"'
-      +   ' oninput="setQty(\'' + r.Lot_ID + '\',this.value)"></td>'
+      +   ' oninput="setQty(\'' + r.Lot_ID + '\',this.value,this)"'
+      +   ' onchange="commit()"></td>'
       + badCell(r, on)
       + '</tr>';
   }).join('');
@@ -325,42 +327,87 @@ function draw(){
 function badCell(r, on){
   const b = bad[r.Lot_ID] || {};
   const q = pick[r.Lot_ID] || 0;
-  let h = '<td class="num"><input class="qin" style="width:72px" type="number" min="0" max="' + q + '"'
-        + ' value="' + (b.qty || '') + '" ' + (on ? '' : 'disabled')
-        + ' onclick="event.stopPropagation()"'
-        + ' oninput="setBad(\'' + r.Lot_ID + '\',this.value)"></td>';
-  // 사유 드롭다운은 불량을 넣은 순간 나타난다 (실사의 구역오류와 같은 패턴)
-  h += '<td onclick="event.stopPropagation()">';
+  return '<td class="num"><input class="qin bq" style="width:72px" type="number" min="0" max="' + q + '"'
+       + ' value="' + (b.qty || '') + '" ' + (on ? '' : 'disabled')
+       + ' onclick="event.stopPropagation()" onkeydown="nextRow(event)"'
+       + ' oninput="setBad(\'' + r.Lot_ID + '\',this.value,this)" onchange="commit()"></td>'
+       + '<td class="bcd" onclick="event.stopPropagation()">' + badCdHtml(r, on) + '</td>';
+}
+
+// 사유 드롭다운은 불량을 넣은 순간 나타난다 (실사의 구역오류와 같은 패턴)
+function badCdHtml(r, on){
+  const b = bad[r.Lot_ID] || {};
+  if(on === undefined) on = r.Lot_ID in pick;
   if(b.qty){
-    h += '<select onchange="setBadCd(\'' + r.Lot_ID + '\',this.value)">'
-       + '<option value="">사유 선택</option>'
-       + SRC.bad_reasons.map(function(x){
-           return '<option value="' + x.cd + '" title="' + esc(x.label) + '"'
-                + (b.cd===x.cd ? ' selected' : '') + '>'
-                + x.cd + (x.blame==='협력사' ? ' (협력사)' : '') + '</option>'; }).join('')
-       + '</select>';
+    let h = '<select onchange="setBadCd(\'' + r.Lot_ID + '\',this.value)">'
+          + '<option value="">사유 선택</option>'
+          + SRC.bad_reasons.map(function(x){
+              return '<option value="' + x.cd + '" title="' + esc(x.label) + '"'
+                   + (b.cd===x.cd ? ' selected' : '') + '>'
+                   + x.cd + (x.blame==='협력사' ? ' (협력사)' : '') + '</option>'; }).join('')
+          + '</select>';
     if(b.cd){
       const m = SRC.bad_reasons.filter(function(x){return x.cd===b.cd;})[0];
       h += '<div style="font-size:9px;color:' + (m && m.blame==='협력사' ? 'var(--wn)' : 'var(--txt3)')
          + '">' + (m ? esc(m.blame) + ' 귀책' : '') + '</div>';
     }
-  } else if(on && r.is_long){
-    h += '<span style="font-size:9.5px;color:var(--wn)">⚠ ' + r.days + '일 — 상태 확인</span>';
+    return h;
   }
-  return h + '</td>';
+  if(on && r.is_long){
+    return '<span style="font-size:9.5px;color:var(--wn)">⚠ ' + r.days + '일 — 상태 확인</span>';
+  }
+  return '';
 }
 
-function setBad(id, v){
+/* ── 입력 중에는 표를 다시 그리지 않는다 ────────────────────────────
+   draw() 는 $('rows').innerHTML 을 통째로 갈아끼운다. 타이핑 도중에 부르면
+   지금 커서가 들어 있는 <input> 이 **다른 노드로 교체되어** 포커스가 날아갔다.
+   한 글자 칠 때마다 칸을 다시 클릭해야 했던 원인이다.
+
+   그래서 수량·불량은 바뀐 칸만 손본다. 줄이 사라지거나 순서가 바뀌는 일
+   (필터·정렬·체크 해제)만 draw() 로 간다.                                */
+function rowEl(id){ return $('rows').querySelector('tr[data-lot="' + id + '"]'); }
+
+function syncRow(id){
+  const tr = rowEl(id); if(!tr) return;
+  const r = lotOf(id), on = id in pick;
+  tr.classList.toggle('pick', on);
+  const cb = tr.querySelector('input[type=checkbox]'); if(cb) cb.checked = on;
+  const qi = tr.querySelector('input.qin:not(.bq)');
+  const bi = tr.querySelector('input.qin.bq');
+  const act = document.activeElement;
+  if(qi){
+    qi.disabled = !on;
+    const want = on ? String(pick[id]) : '';
+    if(qi !== act && qi.value !== want) qi.value = want;
+  }
+  if(bi){
+    bi.disabled = !on;
+    bi.max = pick[id] || 0;
+    const want = (bad[id] && bad[id].qty) ? String(bad[id].qty) : '';
+    if(bi !== act && bi.value !== want) bi.value = want;
+  }
+  const cd = tr.querySelector('td.bcd');
+  if(cd && r) cd.innerHTML = badCdHtml(r, on);
+}
+
+function setBad(id, v, el){
   const q = pick[id] || 0;
   let n = parseInt(v, 10);
   if(isNaN(n) || n < 1) delete bad[id];
-  else bad[id] = Object.assign(bad[id] || {}, {qty: Math.min(n, q)});
-  draw();
+  else {
+    n = Math.min(n, q);                       // 반납 수량보다 많은 불량은 있을 수 없다
+    bad[id] = Object.assign(bad[id] || {}, {qty: n});
+    if(el && v !== '' && String(n) !== el.value) el.value = n;   // 깎였으면 그 자리에서 보여 준다
+  }
+  syncRow(id);
+  drawKpi(); footer();
 }
 function setBadCd(id, cd){
   if(!bad[id]) return;
   bad[id].cd = cd || null;
-  draw();
+  syncRow(id);
+  footer();
 }
 
 function sortBy(k){
@@ -384,20 +431,53 @@ function toggle(id, on){
   draw();
 }
 function rowClick(e, id){ toggle(id, !(id in pick)); }
-function setQty(id, v){
+function setQty(id, v, el){
   const r = lotOf(id); if(!r) return;
   let n = parseInt(v, 10);
-  if(isNaN(n) || n < 1){ delete pick[id]; delete bad[id]; }
+  // ⚠️ 비었다고 여기서 지우면 안 된다. `500 → 100` 으로 고쳐 치려면 먼저
+  //    지워야 하는데, 그 순간 선택이 풀리고 **불량 기록까지 같이 사라졌다.**
+  //    비어 있는 동안은 0 으로만 두고, 정말 뺄지는 손을 뗀 뒤 commit() 에서 본다.
+  if(isNaN(n) || n < 1) pick[id] = 0;
   else {
-    pick[id] = Math.min(n, r.site);             // 현장에 없는 수량은 애초에 못 넣는다
-    // 반납 수량을 줄이면 불량이 그보다 클 수 없다
-    if(bad[id] && bad[id].qty > pick[id]) bad[id].qty = pick[id];
+    n = Math.min(n, r.site);                    // 현장에 없는 수량은 애초에 못 넣는다
+    pick[id] = n;
+    if(el && v !== '' && String(n) !== el.value) el.value = n;
   }
-  draw();
+  syncRow(id);
+  drawKpi(); footer();
 }
+
+/* 칸에서 손을 뗀 뒤(change) 한 번만 부른다.
+
+   ⚠️ 불량을 반납 수량에 맞춰 깎는 일을 oninput 에서 하면 안 된다.
+   `500 → 100` 으로 고쳐 치려고 지우고 다시 누르는 동안 수량은
+   1 → 10 → 100 을 **스쳐 간다.** 그 1 에 불량 400 이 깎여 1 이 되고,
+   수량이 100 이 돼도 불량은 1 로 남는다. 손을 뗀 뒤 한 번만 본다.
+
+   '고른 것만' 으로 걸러 보는 중에 체크가 풀리면 그 줄은 목록에서 빠져야
+   하는데, 이것도 타이핑 중에 하면 글자마다 줄이 사라지므로 여기서 한다. */
+function commit(){
+  const touched = [];
+  Object.keys(pick).forEach(function(id){
+    if(pick[id] < 1){                           // 비운 채로 손을 뗐다 = 뺀다
+      delete pick[id]; delete bad[id]; touched.push(id);
+    }
+  });
+  Object.keys(bad).forEach(function(id){
+    const q = pick[id] || 0;
+    if(bad[id].qty > q){ bad[id].qty = q; touched.push(id); }
+  });
+  if(onlySel){ draw(); return; }                // 걸러 보는 중이면 줄이 사라져야 한다
+  if(touched.length){ touched.forEach(syncRow); drawKpi(); footer(); }
+}
+/* Enter 는 **같은 칸(열)의 다음 줄**로 간다.
+   수량은 수량끼리 위에서 아래로 훑어 내려가며 치는 일이라, 같은 줄의 불량
+   칸으로 새면 흐름이 끊긴다. 불량은 몇 줄에만 넣으므로 따로 친다. */
 function nextRow(e){
   if(e.key!=='Enter') return;
-  const all = [...document.querySelectorAll('.qin:not(:disabled)')];
+  e.preventDefault();
+  const sel = e.target.classList.contains('bq') ? '.qin.bq' : '.qin:not(.bq)';
+  const all = [...document.querySelectorAll(sel + ':not(:disabled)')];
   const i = all.indexOf(e.target);
   if(i>=0 && all[i+1]){ all[i+1].focus(); all[i+1].select(); }
 }
@@ -411,11 +491,14 @@ function pickAll(on){
 function clearPick(){ pick = {}; bad = {}; $('all').checked = false; draw(); }
 
 function footer(){
-  const n = Object.keys(pick).length;
+  // 수량 칸을 비워 둔 줄은 세지 않는다 (고쳐 치는 중일 수 있다)
+  const n = Object.keys(pick).filter(k => pick[k] > 0).length;
   $('btnGo').disabled = !n;
   const rc = $('rc');
   const hint = rc.options[rc.selectedIndex] ? rc.options[rc.selectedIndex].title : '';
-  const bq = Object.keys(bad).reduce(function(a,k){ return a + (bad[k].qty||0); }, 0);
+  // 고쳐 치는 중(수량 빈 칸)인 줄은 빼고, 아직 안 깎인 불량도 수량 안으로 본다
+  const bq = Object.keys(bad).reduce(function(a,k){
+    return a + Math.min(bad[k].qty || 0, pick[k] || 0); }, 0);
   $('foot').innerHTML = n
     ? '<b>' + n + ' LOT · ' + nf(sumQty()) + '개</b>를 창고로 되돌립니다'
       + (bq ? ' — 양품 <b>' + nf(sumQty()-bq) + '</b> · <span style="color:var(--dn)">불량 '
@@ -440,7 +523,7 @@ async function post(url, body){
   }catch(e){ return {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
 }
 const payload = () => ({
-  lines: Object.keys(pick).map(function(k){
+  lines: Object.keys(pick).filter(k => pick[k] > 0).map(function(k){
     const b = bad[k] || {};
     return {Lot_ID: k, qty: pick[k],
             bad_qty: b.qty || 0, bad_cd: b.cd || '', bad_note: b.note || ''};
