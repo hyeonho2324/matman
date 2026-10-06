@@ -411,6 +411,8 @@ def _ctx_purchase():
             "prods": db.prod_products(conn),
             "monthly": db.purchase_monthly(conn),
             "summary": db.purchase_summary(orders),
+            # 잔금·클레임이 있는 발주의 최종 정산액 (있는 건에만)
+            "settle": db.po_settlement_map(conn),
             # 발주하기 워크플로우용 — 자재 200종 + 권장 발주량 + 미입고 발주
             "cands": cands,
             "base_date": base,

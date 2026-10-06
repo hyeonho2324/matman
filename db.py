@@ -5098,7 +5098,11 @@ def pending_po(conn):
     rows = _rows(conn, """
         SELECT h.H_ID, h.P_Date, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
                d.Purchase_num, d.P_ID, p.P_N, p.Spec, p.PkgUnit, p.MinOrderQty,
-               p.P_Price, p.MainCat, s.Sf_Lv AS grade, s.Lead_Time AS lead_time,
+               -- ⚠️ 잔금의 기준은 **발주 시점 단가**다. 지금 단가로 잡으면
+               -- 발주 뒤 단가가 오른 것만으로 '초과 입고' 처럼 차액이 생긴다.
+               COALESCE(d.Unit_Price, p.P_Price) AS price,
+               p.P_Price AS cur_price,
+               p.MainCat, s.Sf_Lv AS grade, s.Lead_Time AS lead_time,
                d.P_Qty AS ord_qty
           FROM Purchase_Detail_tb d
           JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
@@ -5124,12 +5128,13 @@ def pending_po(conn):
         g["items"].append({
             "Purchase_num": r["Purchase_num"], "P_ID": r["P_ID"],
             "P_N": r["P_N"], "Spec": r["Spec"], "grade": r["grade"],
-            "ord_qty": r["ord_qty"], "price": r["P_Price"],
+            "ord_qty": r["ord_qty"], "price": r["price"],
+            "cur_price": r["cur_price"],
             "pkg": r["PkgUnit"], "moq": r["MinOrderQty"],
             "Loc_ID": loc, "loc_name": loc_n.get(loc), "lead_time": lt,
         })
         g["qty"] += r["ord_qty"] or 0
-        g["amount"] += round((r["ord_qty"] or 0) * (r["P_Price"] or 0))
+        g["amount"] += round((r["ord_qty"] or 0) * (r["price"] or 0))
         g["lead_max"] = max(g["lead_max"], lt)
 
     out = sorted(groups.values(), key=lambda g: (g["P_Date"], g["H_ID"]))
@@ -5138,6 +5143,86 @@ def pending_po(conn):
         g["eta"] = _add_days(g["P_Date"], g["lead_max"])
         g["items"].sort(key=lambda x: x["Purchase_num"])
     return out
+
+
+# ── 발주 한 건의 정산 요약 ──────────────────────────────────
+#
+# 돈이 움직이는 길이 **둘로 갈라져** 있어 한 곳에서 볼 수가 없었다.
+#
+#   발주 금액
+#     ± 잔금    Purchase_Change_tb   발주 수량 ≠ 실입고 수량 일 때
+#     − 환불    Inbound_Claim_tb     받긴 받았는데 불량이었을 때
+#     = 실제로 낼 돈
+#
+# ⚠️ 불량은 잔금에 들어가지 않는다. 물건은 다 왔고(그래서 입고 금액은
+#    그대로다) 그중 몇 개가 불량이었던 것은 받은 뒤에 따진 결과다.
+#    받자마자 금액에서 빼면 **대체입고로 끝날 때 두 번 빼게 된다.**
+#
+# 클레임 처분별로 돈이 갈린다
+#   대체입고  같은 물건을 다시 받았으니 지급액은 그대로        0
+#   환불      물건을 돌려보내고 돈으로 받는다                 −금액
+#   폐기      반품이 안 돼 버린다 — 협력사에서 못 받는다        0 (우리 손실)
+#   미정      아직 안 정했다 → 확정액에 넣지 않고 따로 적는다
+CLAIM_MONEY = {"환불": -1, "대체입고": 0, "폐기": 0}
+
+
+def po_settlement(conn, hid):
+    """발주 한 건의 최종 정산액. 읽기만 한다."""
+    po = conn.execute(
+        "SELECT h.H_ID, h.P_Date, c.CP_N AS supplier"
+        "  FROM Purchase_Header_tb h LEFT JOIN Company_tb c ON h.BRN = c.BRN"
+        " WHERE h.H_ID = ?", (hid,)).fetchone()
+    if not po:
+        return None
+
+    # 발주 금액 — 그 시점 단가로 (단가를 나중에 고쳐도 안 흔들린다)
+    # Unit_Price 가 REAL 이라 그냥 더하면 38,680,000.0 처럼 실수로 나온다
+    ord_amt = int(conn.execute(
+        "SELECT COALESCE(SUM(ROUND(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price))), 0)"
+        "  FROM Purchase_Detail_tb d JOIN Product_tb p ON d.P_ID = p.P_ID"
+        " WHERE d.H_ID = ?", (hid,)).fetchone()[0])
+
+    chg = _rows(conn, """
+        SELECT Chg_ID, Chg_Type, Settle, Diff_Amt, Ord_Amt, In_Amt,
+               Ord_P_ID, In_P_ID, Chg_Date, Reason
+          FROM Purchase_Change_tb WHERE H_ID = ? ORDER BY Chg_ID
+    """, (hid,))
+    # '정산없음' 은 차액을 청구하지도 깎지도 않기로 한 것이다
+    chg_adj = int(sum(c["Diff_Amt"] or 0 for c in chg if c["Settle"] in ("추가청구", "차감")))
+    chg_skip = int(sum(c["Diff_Amt"] or 0 for c in chg if c["Settle"] == "정산없음"))
+
+    cl = _rows(conn, """
+        SELECT Claim_ID, P_ID, Claim_Qty, Amount, Claim_Type, Resolution,
+               Status, Claim_Date, Done_Date
+          FROM Inbound_Claim_tb WHERE H_ID = ? ORDER BY Claim_ID
+    """, (hid,))
+    for k in cl:
+        k["money"] = (k["Amount"] or 0) * CLAIM_MONEY.get(k["Resolution"], 0)
+    refund = int(sum(k["money"] for k in cl))                   # 음수
+    pending = int(sum(k["Amount"] or 0 for k in cl
+                      if k["Resolution"] not in CLAIM_MONEY))    # 아직 안 정한 것
+
+    return {
+        "H_ID": hid, "P_Date": po["P_Date"], "supplier": po["supplier"],
+        "ord_amount": ord_amt,
+        "chg_adj": chg_adj, "chg_skip": chg_skip, "changes": chg,
+        "refund": refund, "claim_pending": pending, "claims": cl,
+        "final": ord_amt + chg_adj + refund,
+        "settled": not pending,
+        "has_any": bool(chg or cl),
+    }
+
+
+def po_settlement_map(conn):
+    """잔금이나 클레임이 **있는** 발주만 정산 요약을 만든다.
+
+    255건 전부에 붙이면 목록이 그만큼 무거워지는데, 아무 일도 없었던 발주는
+    `최종 = 발주 금액` 이라 화면이 이미 아는 값이다. 있는 것만 보낸다.
+    """
+    hids = {r["H_ID"] for r in _rows(conn,
+        "SELECT DISTINCT H_ID FROM Purchase_Change_tb WHERE H_ID IS NOT NULL"
+        " UNION SELECT DISTINCT H_ID FROM Inbound_Claim_tb WHERE H_ID IS NOT NULL")}
+    return {h: po_settlement(conn, h) for h in sorted(hids)}
 
 
 def sub_products(conn):
@@ -5241,7 +5326,10 @@ def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
                           % (ord_it["P_ID"], in_pid)]
 
         ord_amt = int(round((ord_it["ord_qty"] or 0) * (ord_it["price"] or 0)))
-        in_amt = int(round(qty * (in_p["P_Price"] or 0)))
+        # 같은 품번이면 **발주 때 합의한 단가**로 청구된다. 대체 입고는 그
+        # 품번의 발주 단가가 없으니 마스터 단가밖에 쓸 것이 없다.
+        in_price = in_p["P_Price"] if swapped else (ord_it["price"] or in_p["P_Price"])
+        in_amt = int(round(qty * (in_price or 0)))
         gap = qty - (ord_it["ord_qty"] or 0)
         chg = ("대체+수량변경" if swapped and gap else
                "대체입고" if swapped else
@@ -5254,7 +5342,8 @@ def preview_inbound(conn, date, hid, lines, ep_id, settle=None, note=None):
             "ord_qty": ord_it["ord_qty"], "ord_price": ord_it["price"],
             "ord_amt": ord_amt,
             "P_ID": in_pid, "P_N": in_p["P_N"], "Spec": in_p["Spec"],
-            "in_qty": qty, "price": in_p["P_Price"], "amount": in_amt,
+            "in_qty": qty, "price": in_price, "cur_price": in_p["P_Price"],
+            "amount": in_amt,
             "Loc_ID": in_p["Loc_ID"], "loc_name": in_p["loc_name"],
             "supplier": in_p["supplier"],
             "swapped": swapped, "gap": gap, "diff_amt": in_amt - ord_amt,

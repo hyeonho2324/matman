@@ -388,6 +388,7 @@ const PRODS = {{ prods|tojson }};
 const EMPTY = {};
 // 기준일 = 데이터의 마지막 발주일
 const PBASE = ORD.map(function(o){return o.date||'';}).filter(Boolean).sort().slice(-1)[0] || '';
+const SETL  = {{ settle|tojson }};    // 잔금·클레임이 있는 발주의 정산 요약
 const CANDS = {{ cands|tojson }};      // 발주 후보 200종 (권장 발주량 포함)
 const BASE  = {{ base_date|tojson }};  // 데이터 기준일
 function P(pid){ return PRODS[pid] || EMPTY; }
@@ -634,6 +635,71 @@ document.addEventListener('keydown', function(e){
   if(e.key === 'Escape') shClose();
 });
 
+/* 발주 한 건의 최종 정산액.
+
+   돈이 움직이는 길이 둘로 갈라져 있어 한 곳에서 볼 수가 없었다.
+   잔금(발주 수량 ≠ 실입고 수량)과 클레임(받긴 받았는데 불량)은
+   **서로 다른 테이블**에 쌓이고, 경리가 묻는 "그래서 얼마 내요" 는
+   둘을 합쳐야 나온다.
+
+   아무 일도 없었던 발주에는 안 띄운다 — 발주 금액이 곧 최종이라
+   같은 숫자를 한 번 더 적는 꼴이 된다. */
+function settleBlock(hid){
+  const s = SETL[hid];
+  if(!s) return '';
+
+  const line = function(k, v, cls, sub){
+    return '<div class="ir"><span class="ik">' + k + '</span>'
+      + '<span class="iv ' + (cls||'') + '">' + v
+      + (sub ? '<div style="font-size:9px;color:var(--txt3);font-weight:400">' + sub + '</div>' : '')
+      + '</span></div>';
+  };
+  const sgn = function(n){ return (n>0?'+':'') + nf(n) + '원'; };
+
+  let h = '<div class="pn">'
+    + '<div class="pnh"><i class="ti ti-calculator"></i><span class="pnh-t">정산 요약</span>'
+    +   '<span class="bg ' + (s.settled?'bok':'bwn') + '">'
+    +     (s.settled ? '확정' : '미정 ' + nf(s.claim_pending) + '원') + '</span></div>'
+    + line('발주 금액', nf(s.ord_amount) + '원', 'mono', '발주 시점 단가 기준');
+
+  if(s.chg_adj)  h += line('잔금 조정', sgn(s.chg_adj), 'mono',
+                           s.chg_adj>0 ? '초과 입고 — 추가청구' : '부족 입고 — 차감');
+  if(s.chg_skip) h += line('정산없음', sgn(s.chg_skip), '',
+                           '차액이 있었지만 청구하지 않기로 했습니다');
+  if(s.refund)   h += line('클레임 환불', sgn(s.refund), 'mono', '불량분을 돈으로 돌려받음');
+
+  h += '<div class="ir" style="border-top:1px solid var(--border-s);margin-top:4px;padding-top:6px">'
+    +   '<span class="ik"><b>최종 지급액</b></span>'
+    +   '<span class="iv mono"><b style="font-size:13px">' + nf(s.final) + '원</b></span></div>';
+
+  /* 클레임은 처분을 고를 때 돈이 갈린다 — 그래서 '미정' 은 합계에 못 넣는다 */
+  if(s.claims.length){
+    h += '<div class="note" style="margin-top:6px">';
+    s.claims.forEach(function(k){
+      const how = k.Resolution==='환불'   ? '돈으로 돌려받음'
+                : k.Resolution==='대체입고' ? '같은 물건을 다시 받음 — 지급액 그대로'
+                : k.Resolution==='폐기'   ? '반품 불가 — 협력사에서 못 받음'
+                : '<b style="color:var(--wn)">처리 방법 미정</b> — 정하면 최종이 바뀝니다';
+      h += '<div>· <b>' + k.Claim_ID + '</b> ' + k.P_ID + ' 불량 ' + nf(k.Claim_Qty) + '개 '
+        +  nf(k.Amount||0) + '원 → ' + k.Resolution + ' (' + how + ')</div>';
+    });
+    h += '<div style="margin-top:4px;color:var(--txt3)">불량은 <b>잔금에 들어가지 않습니다</b> — '
+      +  '물건은 다 왔고(그래서 입고 금액은 그대로) 그중 몇 개가 불량이었던 것은 받은 뒤에 '
+      +  '따진 결과입니다. 받자마자 금액에서 빼면 대체입고로 끝날 때 두 번 빼게 됩니다.</div>';
+    h += '</div>';
+  }
+  if(s.changes.length){
+    h += '<div class="note" style="margin-top:6px">';
+    s.changes.forEach(function(c){
+      h += '<div>· <b>' + c.Chg_ID + '</b> ' + c.Chg_Type + ' '
+        +  (c.Ord_P_ID||'') + (c.In_P_ID && c.In_P_ID!==c.Ord_P_ID ? ' → ' + c.In_P_ID : '')
+        +  ' 차액 ' + sgn(c.Diff_Amt||0) + ' → ' + c.Settle + '</div>';
+    });
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
 function pick(hid){
   sel=hid;
   const o=ORD.filter(function(v){return v.H_ID===hid;})[0];
@@ -690,6 +756,8 @@ function pick(hid){
       ? '<div class="note">⚠️ 부족 입고 ' + shorts.length + '건. 부족분이 모두 <b>포장단위의 배수</b>다 — 상자 단위로 출하되므로 낱개 부족은 발생하지 않습니다.</div>'
       : '<div class="note">발주 수량과 입고 수량이 전량 일치합니다.</div>')
   + '</div>'
+
+  + settleBlock(o.H_ID)
 
   + '<div class="pn">'
   +   '<div class="pnh"><i class="ti ti-receipt"></i><span class="pnh-t">발주 정보</span>'
