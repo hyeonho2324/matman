@@ -30,11 +30,10 @@
          inbound   left     + right       calendar     calwrap + detail
      `.side` 가 어떤 화면에선 상세고 어떤 화면에선 **목록**이다. 이름이
      아니라 **순서**로 가린다 — 2단 화면은 예외 없이 [목록, 상세] 둘이다. */
-  .pb, .ik, .sumbox {
-    max-height: 40vh !important;
-    overflow: auto;
-    flex: 0 0 auto !important;
-  }
+  /* ⚠️ 여기에 `.ik` 를 넣었던 것이 사고였다. `.ik` 는 패널이 아니라
+     상세 한 줄의 **라벨 글자**(.ir > .ik + .iv)다. flex:0 0 auto 를 걸자
+     라벨이 18px 로 찌그러져 '협력사'·'재고금액' 같은 글자가 잘려 나갔다.
+     상세는 이제 시트가 통째로 스크롤하므로 칸마다 높이를 묶을 이유도 없다. */
 
   /* 설명 상자 — 폰에서 150px 를 먹는다. 두 줄만 보이고 탭하면 펼친다. */
   /* ⚠️ -webkit-line-clamp 는 여기서 못 쓴다. `.ro` 는 `.wrap`(세로 flex)의
@@ -376,4 +375,47 @@
      바깥 페이지를 내려도 안 보인다).
      wrap 이 넘칠 때만 스스로 스크롤하게 둔다. */
   .wrap { overflow-y: auto; }
+}
+
+
+/* ─────────────────────────────────────────────────────────
+   시트 안 정보 칸을 접었다 편다 (폰 전용)
+
+   상세 하나에 칸이 6개(품번 체계·기본 정보·재고 현황·보유 LOT·완제품
+   사용처·안전재고)라 다 펴 두면 983px 이다. 시트가 86vh(544px)이니
+   절반이 늘 화면 밖이고, 원하는 칸을 찾으려면 매번 굴려야 한다.
+
+   그래서 **폰에서는 머리만 보이게 접어 둔다.** 머리를 누르면 그 칸만 펴진다.
+
+*/
+@media screen and (max-width: 760px) {
+
+  /* 펼 때 자식에게 display 를 되돌려 주지 않는다 — `revert`·`revert-layer`
+     는 작성자 규칙이 아니라 브라우저 기본값으로 돌아가서 줄(.ir)의 flex 가
+     죽는다. **접힌 상태에만** 규칙을 걸면, 펴지는 순간 이 규칙이 아예
+     안 걸리고 화면 자신의 규칙이 그대로 산다. */
+  .main > :last-child:not(:first-child):not(.panel):not(.hist) .pn:not(.fold-on) > *:not(.pnh) { display: none; }
+
+  .main > :last-child:not(:first-child):not(.panel):not(.hist) .pn > .pnh {
+    cursor: pointer;
+    position: relative;
+    padding-right: 26px;
+    -webkit-user-select: none; user-select: none;
+  }
+  /* 펼침 표시 — 접혀 있으면 아래쪽, 펴지면 위쪽 */
+  .main > :last-child:not(:first-child):not(.panel):not(.hist) .pn > .pnh::after {
+    content: "";
+    position: absolute; right: 10px; top: 50%;
+    width: 7px; height: 7px;
+    margin-top: -5px;
+    border-right: 1.5px solid var(--txt3, #898781);
+    border-bottom: 1.5px solid var(--txt3, #898781);
+    transform: rotate(45deg);
+    transition: transform .15s ease;
+  }
+  .main > :last-child:not(:first-child):not(.panel):not(.hist) .pn.fold-on > .pnh::after {
+    margin-top: -2px;
+    transform: rotate(-135deg);
+  }
+  .main > :last-child:not(:first-child):not(.panel):not(.hist) .pn { margin-bottom: 6px; }
 }

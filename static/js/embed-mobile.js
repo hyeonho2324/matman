@@ -122,6 +122,17 @@
     el.scrollTop = 0;
   }
 
+  /* 칸 머리를 누르면 그 칸만 펴진다. 상세는 고를 때마다 통째로 다시
+     그려지므로 **접힌 상태가 기본값**이 된다 — 따로 되돌릴 일이 없다. */
+  document.addEventListener('click', function (e) {
+    if (window.innerWidth > 760) return;
+    var head = e.target.closest && e.target.closest('.pnh');
+    if (!head || !inSheet(head)) return;
+    var card = head.parentElement;
+    if (!card || !card.classList.contains('pn')) return;
+    card.classList.toggle('fold-on');
+  });
+
   function sheetClose() {
     var el = sheetEl();
     if (el) el.classList.remove('sheet-on');
