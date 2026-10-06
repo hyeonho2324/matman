@@ -60,6 +60,108 @@
     else t.dataset.cardFits = '1';
   }
 
+
+  /* ④ 상세 패널을 아래에서 올라오는 시트로 (폰 전용)
+
+     좌우 2단 화면 17개가 폰에서는 위아래로 쌓여 높이를 다퉜다. 시트로
+     띄우면 목록은 목록대로 다 쓰고, 상세는 86vh 까지 올라와 제 내용을
+     스스로 스크롤한다.
+
+     ⚠️ 닫기 버튼을 시트 **안에** 넣으면 안 된다. 화면들이 상세를
+        innerHTML 로 통째로 다시 그리기 때문에 매번 지워진다. 밖에 둔다. */
+  var bd, xbtn;
+
+  /* 상세 패널은 **`.main` 의 둘째(마지막) 칸** 이다.
+     클래스 이름으로는 못 가린다 — `.side` 가 재고 실사·피킹에서는
+     **목록**이고 다른 화면에서는 상세다. 2단 화면은 예외 없이
+     [목록, 상세] 둘이라 순서가 가장 믿을 만하다.
+     `.panel`(발주 시뮬 조작)·`.hist`(스캐너 이력)는 눌러서 여는 상세가
+     아니라 늘 보여야 하는 칸이라 뺀다. */
+  function sheetEl() {
+    var main = document.querySelector('.main');
+    if (!main || main.children.length < 2) return null;
+    var last = main.children[main.children.length - 1];
+    return last.matches('.panel, .hist') ? null : last;
+  }
+  function inSheet(el) {
+    var sh = sheetEl();
+    return !!sh && !!el && (el === sh || sh.contains(el));
+  }
+
+  /* 고를 것을 아직 안 골랐으면 화면이 '.empty' 안내를 그려 둔다 */
+  function sheetHasContent(el) {
+    return !!el && !el.querySelector('.empty') && el.textContent.trim().length > 0;
+  }
+
+  function sheetSetup() {
+    if (bd) return;
+    bd = document.createElement('div');
+    bd.className = 'sheet-bd';
+    bd.addEventListener('click', function () { sheetClose(); });
+    document.body.appendChild(bd);
+
+    xbtn = document.createElement('button');
+    xbtn.className = 'sheet-x';
+    xbtn.type = 'button';
+    xbtn.innerHTML = '<i class="ti ti-chevron-down"></i>닫기';
+    xbtn.addEventListener('click', function (e) { e.stopPropagation(); sheetClose(); });
+    document.body.appendChild(xbtn);
+  }
+
+  function sheetOpen() {
+    var el = sheetEl();
+    if (!el || window.innerWidth > 760 || !sheetHasContent(el)) return;
+    sheetSetup();
+    el.classList.add('sheet-on');
+    bd.classList.add('on');
+    xbtn.classList.add('on');
+    document.body.classList.add('sheet-open');
+    // 닫기 버튼을 시트 머리 위에 올린다
+    var top = el.getBoundingClientRect().top;
+    xbtn.style.top = Math.max(8, Math.round(top) - 34) + 'px';
+    el.scrollTop = 0;
+  }
+
+  function sheetClose() {
+    var el = sheetEl();
+    if (el) el.classList.remove('sheet-on');
+    if (bd) bd.classList.remove('on');
+    if (xbtn) xbtn.classList.remove('on');
+    document.body.classList.remove('sheet-open');
+  }
+
+  /* 언제 올리나.
+
+     처음에는 '목록 안을 눌렀으면' 으로 판정했는데 두 번 걸렸다.
+
+     ① 줄의 onclick="pick(...)" 이 목록을 통째로 다시 그려서, 버블링까지
+        기다리면 e.target 이 이미 DOM 에서 떨어져 나가 closest() 가 아무것도
+        못 찾는다. → **캡처 단계(true)** 에서 봐야 한다.
+     ② 발주 캘린더는 '목록' 이 아니라 **날짜 격자**(.weeks)다. 고르는 자리의
+        이름을 하나씩 열거하는 방식은 화면이 늘 때마다 빠뜨린다.
+
+     그래서 **어디를 눌렀는지는 보지 않는다.** 누른 적이 있고(최근 1.2초)
+     상세에 내용이 들어오면 올린다. 화면 구조와 무관해진다. */
+  var lastTap = 0;
+  document.addEventListener('click', function (e) {
+    if (window.innerWidth > 760) return;
+    if (inSheet(e.target)) return;
+    if (e.target.closest && e.target.closest('.sheet-x, .sheet-bd')) return;
+    lastTap = Date.now();
+    setTimeout(sheetOpen, 80);        // 같은 줄을 다시 눌러 내용이 안 바뀌는 경우
+  }, true);
+
+  function sheetMaybeOpen() {
+    if (Date.now() - lastTap < 1200) sheetOpen();
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') sheetClose();
+  });
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 760) sheetClose();
+  });
+
   var SEL = '.listwrap,.tblwrap,.slist,.sheet,.po-body,.fglist,.left,.mlist';
   function watch() {
     document.querySelectorAll('table').forEach(labelTable);
@@ -77,7 +179,19 @@
       mark(el);
     });
   }
-  document.addEventListener('DOMContentLoaded', watch);
+  function watchSheet() {
+    var el = sheetEl();
+    if (!el || el.dataset.sheetWatched) return;
+    el.dataset.sheetWatched = '1';
+    new MutationObserver(function () {
+      if (window.innerWidth > 760) return;
+      if (!sheetHasContent(el)) { sheetClose(); return; }
+      if (el.classList.contains('sheet-on')) el.scrollTop = 0;
+      else sheetMaybeOpen();          // 누른 직후 내용이 들어왔다 → 올린다
+    }).observe(el, { childList: true, subtree: true });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () { watch(); watchSheet(); });
   // 폰을 가로로 돌리면 들어가던 표가 안 들어가기도 하고 그 반대도 된다
   window.addEventListener('resize', function () {
     document.querySelectorAll('table[data-card-fits]').forEach(function (t) {
@@ -87,7 +201,7 @@
   });
   // 목록은 다시 그려지므로 내용이 바뀔 때마다 다시 본다
   if (window.MutationObserver) {
-    new MutationObserver(watch).observe(document.documentElement,
+    new MutationObserver(function () { watch(); watchSheet(); }).observe(document.documentElement,
       { childList: true, subtree: true });
   }
 })();
