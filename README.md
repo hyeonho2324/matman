@@ -35,7 +35,7 @@ python app.py
 | /tx-history | 입출고 이력 |
 | /picking | 피킹리스트 ★ |
 | /approval | 불출 승인 ✎ |
-| /scanner | 바코드/QR 스캐너 |
+| /scanner | 바코드/QR 스캐너 — 휴대폰 카메라로 직접 읽는다 |
 | /purchase | 구매 발주 ✎ |
 | /suppliers | 협력사 |
 | /calendar | 발주 캘린더 |

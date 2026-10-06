@@ -14,8 +14,11 @@
 <!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
 <div style="flex:1;display:flex;flex-direction:column;gap:14px">
   <div class="embed-box">
+    <!-- ⚠️ allow="camera" 가 없으면 iframe 안에서 getUserMedia 가 거부된다.
+         같은 출처라 기본 허용 범위(self)에 들지만, 명시해 두는 쪽이 안전하다.
+         이게 빠지면 폰에서 '카메라 사용이 거부됐습니다' 만 뜬다. -->
     <iframe
-      src="/embed/scanner" class="embed-frame"
+      src="/embed/scanner" class="embed-frame" allow="camera"
       title="바코드 / QR 스캐너">
     </iframe>
   </div>

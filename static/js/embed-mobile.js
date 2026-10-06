@@ -91,7 +91,7 @@
   /* 화면 위에 뜨는 창들(LOT 이력·단가 이력·발주서·실사표·확인 패널…).
      전부 position:fixed + inset:0 이고 클래스가 다섯 가지뿐이다
      (reg14 가 embed 전수를 훑어 이 목록이 빠짐없는지 검사한다). */
-  var MODAL_SEL = '.ovl, .hv, .po-ovl, .pvl, .shv';
+  var MODAL_SEL = '.ovl, .hv, .po-ovl, .pvl, .shv, .camov';
 
   function modalOpen() {
     var els = document.querySelectorAll(MODAL_SEL);
