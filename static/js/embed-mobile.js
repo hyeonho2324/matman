@@ -88,6 +88,21 @@
     return !!sh && !!el && (el === sh || sh.contains(el));
   }
 
+  /* 화면 위에 뜨는 창들(LOT 이력·단가 이력·발주서·실사표·확인 패널…).
+     전부 position:fixed + inset:0 이고 클래스가 다섯 가지뿐이다
+     (reg14 가 embed 전수를 훑어 이 목록이 빠짐없는지 검사한다). */
+  var MODAL_SEL = '.ovl, .hv, .po-ovl, .pvl, .shv';
+
+  function modalOpen() {
+    var els = document.querySelectorAll(MODAL_SEL);
+    for (var i = 0; i < els.length; i++) {
+      var cs = getComputedStyle(els[i]);
+      if (cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0
+          && els[i].getBoundingClientRect().height > 40) return true;
+    }
+    return false;
+  }
+
   /* 고를 것을 아직 안 골랐으면 화면이 '.empty' 안내를 그려 둔다 */
   function sheetHasContent(el) {
     return !!el && !el.querySelector('.empty') && el.textContent.trim().length > 0;
@@ -111,6 +126,10 @@
   function sheetOpen() {
     var el = sheetEl();
     if (!el || window.innerWidth > 760 || !sheetHasContent(el)) return;
+    /* ⚠️ 모달이 떠 있으면 올리지 않는다. 품번(파란 글자)을 누르면 LOT 이력
+       창이 뜨면서 **상세 패널도 같이 갱신**되는데, 그 내용 변화를 보고
+       시트가 모달 뒤에서 함께 올라왔다. 모달 안에서 LOT 을 눌러도 같다. */
+    if (modalOpen()) return;
     sheetSetup();
     el.classList.add('sheet-on');
     bd.classList.add('on');
@@ -157,7 +176,9 @@
   document.addEventListener('click', function (e) {
     if (window.innerWidth > 760) return;
     if (inSheet(e.target)) return;
-    if (e.target.closest && e.target.closest('.sheet-x, .sheet-bd')) return;
+    if (!e.target.closest) return;
+    if (e.target.closest('.sheet-x, .sheet-bd')) return;
+    if (e.target.closest(MODAL_SEL)) return;      // 모달 안 조작은 시트와 무관하다
     lastTap = Date.now();
     setTimeout(sheetOpen, 80);        // 같은 줄을 다시 눌러 내용이 안 바뀌는 경우
   }, true);
@@ -175,6 +196,7 @@
 
   var SEL = '.listwrap,.tblwrap,.slist,.sheet,.po-body,.fglist,.left,.mlist';
   function watch() {
+    sheetVsModal();
     document.querySelectorAll('table').forEach(labelTable);
     document.querySelectorAll('.kpi-row').forEach(function (el) {
       if (!el.dataset.xWatched) {
@@ -190,6 +212,12 @@
       mark(el);
     });
   }
+  /* 시트가 떠 있는 동안 모달이 열리면 둘이 겹친다 — 시트를 내린다 */
+  function sheetVsModal() {
+    var el = sheetEl();
+    if (el && el.classList.contains('sheet-on') && modalOpen()) sheetClose();
+  }
+
   function watchSheet() {
     var el = sheetEl();
     if (!el || el.dataset.sheetWatched) return;
