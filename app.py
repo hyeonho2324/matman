@@ -193,7 +193,16 @@ def scanner():
 
 @app.route("/purchase")
 def purchase():
-    return render_template("purchase.html", **get_menu_context("purchase"), page_title="구매 발주")
+    """구매 발주. ?id=PO… 로 오면 그 발주를 고른 채 연다 (스캐너에서 넘어온 경우).
+
+    입고가 끝난 발주를 찍으면 더 받을 게 없어 입고 처리로 넘기지 않고
+    여기로 보낸다 — 대조 결과를 보는 자리가 이 화면이다.
+    """
+    hid = (request.args.get("id") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{1,20}", hid or "-"):
+        hid = ""
+    return render_template("purchase.html", **get_menu_context("purchase"),
+                           page_title="구매 발주", hid=hid)
 
 @app.route("/suppliers")
 def suppliers():

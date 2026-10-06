@@ -501,7 +501,8 @@ function render(){
     if(o.pending)    st='<span class="bg bmu">미입고 '+o.pending+'</span>';
     else if(o.short) st='<span class="bg bdn">부족 '+o.short+'/'+o.line_cnt+'</span>';
     else             st='<span class="bg bok">전량 입고</span>';
-    return '<tr onclick="pick(\'' + o.H_ID + '\')" class="' + (sel===o.H_ID?'on':'') + '">'
+    return '<tr onclick="pick(\'' + o.H_ID + '\')" data-hid="' + o.H_ID + '"'
+      + ' class="' + (sel===o.H_ID?'on':'') + '">'
       + '<td class="mono">' + o.date + '</td>'
       + '<td><span class="hid">' + o.H_ID + '</span></td>'
       + '<td>' + esc(o.supplier||'-')
@@ -817,6 +818,37 @@ function dl(){
 
 drawChart();
 render();
+
+// 스캐너에서 '이미 입고가 끝난 발주' 를 읽고 넘어온 경우 (/purchase?id=PO…)
+// 그 발주를 고른 채로 연다 — 255건 중에서 손으로 찾게 두지 않는다.
+(function(){
+  const want = new URLSearchParams(location.search).get('id');
+  if(!want) return;
+  if(!ORD.some(function(o){ return o.H_ID === want; })){
+    flash(want + ' 발주를 찾지 못했습니다.');
+    return;
+  }
+  pick(want);
+  let row = document.querySelector('[data-hid="' + want + '"]');
+  if(!row){
+    // 기간·협력사·pill 에 걸려 목록에 없다 — 범위를 전체로 되돌려야 보인다
+    document.getElementById('ym').value  = '';
+    document.getElementById('sup').value = '';
+    setF('all');
+    row = document.querySelector('[data-hid="' + want + '"]');
+  }
+  if(row) row.scrollIntoView({block:'center'});
+})();
+
+function flash(msg){
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99;'
+    + 'background:var(--bg-wn);color:#854F0B;border:0.5px solid rgba(239,159,39,.45);'
+    + 'border-radius:8px;padding:8px 14px;font-size:11.5px;box-shadow:0 4px 16px rgba(0,0,0,.1)';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 4000);
+}
 
 
 // ══════════════════════════════════════════════════════════

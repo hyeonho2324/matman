@@ -16,7 +16,7 @@
 <div style="flex:1;display:flex;flex-direction:column;gap:14px">
   <div class="embed-box">
     <iframe
-      src="/embed/purchase" class="embed-frame"
+      src="/embed/purchase{% if hid %}?id={{ hid|urlencode }}{% endif %}" class="embed-frame"
       title="구매 발주">
     </iframe>
   </div>
