@@ -21,6 +21,9 @@
     <button class="sb-collapse-btn" id="sidebar-toggle" title="사이드바 접기">
       <i class="ti ti-layout-sidebar-left-collapse"></i>
     </button>
+    <button class="sb-close-btn" id="sidebar-close" title="메뉴 닫기" aria-label="메뉴 닫기">
+      <i class="ti ti-x"></i>
+    </button>
   </div>
 
   <nav class="sb-nav">
@@ -52,6 +55,9 @@
     </div>
   </div>
 </aside>
+
+<!-- 모바일에서 사이드바를 열었을 때 뒤를 덮는 막. 탭하면 닫힌다. -->
+<div class="sb-backdrop" id="sb-backdrop"></div>
 
 <!-- 메인 영역 -->
 <div class="main-wrap" id="main-wrap">

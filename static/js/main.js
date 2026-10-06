@@ -22,11 +22,35 @@ if (toggleBtn) {
   }
 }
 
+// 햄버거로 연 메뉴는 **항목을 누르지 않고도** 닫을 수 있어야 한다.
+// 뒤 막을 탭하거나, X 를 누르거나, Esc 를 치면 닫힌다.
+const backdrop = document.getElementById('sb-backdrop');
+const closeBtn = document.getElementById('sidebar-close');
+
+function setMobileMenu(open) {
+  if (!sidebar) return;
+  sidebar.classList.toggle('mobile-open', open);
+  if (backdrop) backdrop.classList.toggle('on', open);
+  // 메뉴가 떠 있는 동안 뒤 본문이 따라 스크롤되지 않게
+  document.body.style.overflow = open ? 'hidden' : '';
+}
+
 if (mobileBtn) {
   mobileBtn.addEventListener('click', () => {
-    sidebar.classList.toggle('mobile-open');
+    setMobileMenu(!sidebar.classList.contains('mobile-open'));
   });
 }
+if (backdrop) backdrop.addEventListener('click', () => setMobileMenu(false));
+if (closeBtn) closeBtn.addEventListener('click', () => setMobileMenu(false));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sidebar && sidebar.classList.contains('mobile-open')) {
+    setMobileMenu(false);
+  }
+});
+// 폰에서 가로로 돌리거나 창이 넓어지면 열린 채로 남지 않게
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 900) setMobileMenu(false);
+});
 
 // ── 탭 전환 (공통) ───────────────────────────────────────
 document.querySelectorAll('[data-tabs]').forEach(container => {
