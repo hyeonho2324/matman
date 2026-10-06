@@ -360,7 +360,12 @@ function setPid(num, v){
   pickPending(sel);
 }
 function setReason(num, v){ L[num].reason = v; syncIn(); }
-function setSettle(v){ settle = v; syncIn(); }
+/* ⚠️ syncIn() 은 [입고 등록] 버튼의 활성 여부만 바꾼다 — **아무것도 다시
+   그리지 않는다.** 그래서 처리 방식을 눌러도 고른 칩에 불이 안 들어오고
+   안내도 '차액 부호로 자동 선택됨' 에 멈춰 있어, 눌리지 않는 것처럼 보였다.
+   (값 자체는 들어가 있어서 등록하면 고른 대로 저장됐다 — 화면만 가만히 있었다.)
+   보이는 상태가 바뀌는 자리는 setDefect·setPid 처럼 pickPending 으로 다시 그린다. */
+function setSettle(v){ settle = v; pickPending(sel); }
 function setNote(v){ settleNote = v; }
 function setWho(v){ who = v; syncIn(); }
 
