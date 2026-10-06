@@ -303,8 +303,16 @@ function render(){
       + '<td class="num" style="color:' + (live?ac:'var(--txt3)') + ';font-weight:' + (live?'500':'400') + '">'
       +   (live ? x.age_days + '일' : '<span style="font-size:10px">' + (x.hold_days!=null ? x.hold_days+'일 만에 출고' : '-') + '</span>') + '</td>'
       + '<td class="num">' + nf(x.P_Qty) + '</td>'
-      + '<td class="num">' + nf(x.remain)
-      +   '<div class="ubar"><i style="width:' + x.used_pct + '%"></i></div></td>'
+      // ⚠️ 잔여 칸이니 **남은 양**을 칠한다. 소진율(used_pct)을 칠하면
+      //    기름이 불로 차올라올수록 막대가 길어져 눈에 거꾸로 읽힌다.
+      //    남은 것을 칠하면 기름계처럼 줄어든다. (불출 칸의 막대는 그대로 소진량)
+      + (function(){
+          // 100 - 76.2 는 23.799999999999997 이 된다 — 부동소수점이라 끝자리가 틀어진다
+          const left = Math.round((100 - x.used_pct) * 10) / 10;
+          return '<td class="num" title="' + nf(x.remain) + ' / 입고 ' + nf(x.P_Qty)
+            + ' (' + left + '% 남음)">' + nf(x.remain)
+            + '<div class="ubar"><i style="width:' + left + '%"></i></div></td>';
+        })()
       + '<td class="num hide-sm">' + (live ? won(x.value)+'원' : '-') + '</td>'
       + '<td class="hide-sm">' + esc(x.loc_name||'-') + '</td>'
       + '</tr>';
