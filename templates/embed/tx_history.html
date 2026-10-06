@@ -452,7 +452,10 @@ function pick(tid){
   tl += '<div class="step"><div class="dot d-rem"></div>'
       + '<div class="st-b"><div class="st-t">현재 잔량 ' + nf(lot.remain) + '개 '
       + (lot.remain>0 ? '<span class="bg bok">보유중</span>' : '<span class="bg bmu">소진완료</span>') + '</div>'
-      + '<div class="st-d">입고 ' + nf(lot.P_Qty) + ' − 불출 ' + nf(lot.out_qty) + ' = ' + nf(lot.remain) + '</div></div></div>';
+      + '<div class="st-d">입고 ' + nf(lot.P_Qty) + ' − 불출 ' + nf(lot.disb_qty)
+      + (lot.scrap_qty ? ' − 처분 ' + nf(lot.scrap_qty) : '')
+      + (lot.ret_qty   ? ' + 반납 ' + nf(lot.ret_qty)   : '')
+      + ' = ' + nf(lot.remain) + '</div></div></div>';
 
   document.getElementById('db').innerHTML =
     '<div class="pn">'

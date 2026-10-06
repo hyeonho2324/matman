@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>재고 실사</title>
+<link rel="stylesheet" href="/static/vendor/tabler-icons.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--s2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.btnp:hover:not(:disabled){background:#2168bd}
+.btnd{border-color:rgba(224,75,74,.45);color:#9B1C1C}
+.btnd:hover:not(:disabled){background:var(--bg-dn)}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 12px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+.kv{font-size:19px;font-weight:600;margin-top:2px}
+.ks{font-size:10px;color:var(--txt3);margin-top:1px}
+.ok{color:var(--ok)}.wn{color:var(--wn)}.dn{color:var(--dn)}.ac{color:var(--acc)}
+
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
+.side{width:264px;border-right:0.5px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;background:var(--s1)}
+.sh{padding:8px 12px;font-size:11px;font-weight:600;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px}
+.slist{flex:1;overflow:auto}
+.ci{padding:9px 12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.ci:hover{background:var(--s2)}
+.ci.on{background:var(--bg-ac);box-shadow:inset 3px 0 0 var(--acc)}
+.ci-h{display:flex;align-items:center;gap:6px}
+.cid{font-family:ui-monospace,monospace;font-size:11px;color:var(--acc);font-weight:600}
+.ci-s{font-size:10px;color:var(--txt3);margin-top:2px;line-height:1.5}
+.right{flex:1;overflow:auto;padding:12px;min-width:0}
+
+.bg{display:inline-block;padding:1px 6px;border-radius:9px;font-size:9.5px;font-weight:500}
+.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bac{background:var(--bg-ac);color:#185FA5}
+.bmu{background:var(--s2);color:var(--txt3)}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9.5px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+
+.pn{background:var(--s1);border:0.5px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.pnh{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:0.5px solid var(--border);font-size:12px;font-weight:600}
+.pnh-t{flex:1}
+.note{padding:8px 12px;font-size:10px;color:var(--txt3);line-height:1.7}
+
+/* 범위 고르기 */
+.scopes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
+.sc{border:0.5px solid var(--border);border-radius:8px;padding:9px 11px;background:var(--s0);cursor:pointer;text-align:left;font-family:inherit}
+.sc:hover{border-color:var(--border-s);background:var(--s2)}
+.sc.on{border-color:var(--acc);background:var(--bg-ac)}
+.sc-l{font-size:12px;font-weight:600}
+.sc-v{font-size:11px;color:var(--txt2);margin-top:3px}
+.sc-c{font-size:10px;color:var(--txt3);margin-top:2px}
+
+.tblwrap{overflow:auto;max-height:none}
+table{width:100%;border-collapse:collapse}
+.tblwrap table:not([class]){min-width:900px}
+th{position:sticky;top:0;background:var(--s1);font-size:10px;color:var(--txt3);font-weight:500;text-align:left;padding:6px 8px;white-space:nowrap;border-bottom:0.5px solid var(--border);z-index:1}
+td{padding:5px 8px;font-size:11.5px;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.diff td{background:var(--bg-wn)}
+tr.done td{background:var(--bg-ok)}
+.lid{font-family:ui-monospace,monospace;font-size:10px;color:var(--txt2)}
+.qin{width:76px;text-align:right;font-family:inherit;font-size:11.5px;border:0.5px solid var(--border-s);border-radius:4px;padding:3px 6px;background:var(--s0);color:var(--txt);font-variant-numeric:tabular-nums}
+.qin:focus{outline:none;border-color:var(--acc)}
+.qin.filled{background:#fff}
+select,input[type=text]{font-family:inherit;font-size:11px;border:0.5px solid var(--border-s);border-radius:4px;padding:3px 6px;background:var(--s0);color:var(--txt)}
+select:focus,input:focus{outline:none;border-color:var(--acc)}
+.dq{font-weight:600}
+
+.bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:0.5px solid var(--border);background:var(--s1);flex-wrap:wrap}
+.bar .m{flex:1;min-width:180px;font-size:11px;color:var(--txt3);line-height:1.6}
+.msg{border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.7;margin:0 12px 12px;display:none}
+.msg.on{display:block}
+.msg.err{background:var(--bg-dn);color:#9B1C1C}
+.msg.ok{background:var(--bg-ok);color:#1D6E52}
+.msg.wn{background:var(--bg-wn);color:#854F0B}
+.msg ul{margin:3px 0 0 16px}
+.empty{padding:46px 20px;text-align:center;color:var(--txt3);font-size:12px}
+.empty i{display:block;font-size:34px;color:var(--border-s);margin-bottom:9px}
+
+/* 실사표 인쇄 */
+.shv{position:fixed;inset:0;background:rgba(26,25,23,.45);display:none;align-items:flex-start;justify-content:flex-start;padding:18px;z-index:80;overflow:auto}
+@media(min-width:850px){ .shv{justify-content:center} }
+.shv.on{display:flex}
+.shw{background:#fff;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.25);width:210mm;flex-shrink:0;display:flex;flex-direction:column}
+.shb{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);border-radius:10px 10px 0 0}
+.shb .t{font-size:13px;font-weight:600;flex:1}
+.sheet{padding:14mm;font-size:10px;color:#1A1917}
+.sh-h{display:flex;align-items:flex-end;gap:12px;border-bottom:2px solid #1A1917;padding-bottom:7px;margin-bottom:10px}
+.sh-h h1{font-size:21px;letter-spacing:7px;flex:1}
+.sh-m{font-size:10px;color:#4A4946;text-align:right;line-height:1.6}
+table.pt-tb{width:100%;border-collapse:collapse;margin-bottom:9px}
+.pt-tb th{background:#EFEEEA;border:1px solid #9b9a96;padding:4px 5px;font-size:9px;white-space:nowrap}
+.pt-tb td{border:1px solid #d4d3ce;padding:4px 5px;font-size:9.5px}
+.pt-tb .bc img{height:9mm;display:block}
+.sh-sg{display:flex;gap:10px;margin-top:8px}
+.sh-sg div{flex:1;border:1px solid #9b9a96;height:50px;position:relative}
+.sh-sg span{position:absolute;top:0;left:0;right:0;background:#EFEEEA;border-bottom:1px solid #9b9a96;padding:2px 6px;font-size:9px;font-weight:600}
+@media print{
+  @page{size:A4 portrait;margin:0}
+  body *{visibility:hidden !important}
+  .shv,.shv *{visibility:visible !important}
+  .shv{position:absolute;inset:auto;padding:0;background:#fff;display:block !important;overflow:visible}
+  .shw{box-shadow:none;border-radius:0;width:100%}
+  .shb{display:none !important}
+  .pt-tb{page-break-inside:auto}
+  .pt-tb tr{page-break-inside:avoid}
+  .pt-tb thead{display:table-header-group}
+}
+@media(max-width:900px){
+  .main{flex-direction:column}
+  .side{width:100%;max-height:30%;border-right:none;border-bottom:0.5px solid var(--border)}
+  .kpi-row{grid-template-columns:repeat(3,1fr)}
+  .scopes{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-clipboard-check" style="color:var(--acc)"></i>재고 실사
+      <span class="tag">실제 DB · 차수 {{ counts|length }}건</span></div>
+    <button class="btn" id="btnPrint" onclick="shOpen()" disabled><i class="ti ti-printer"></i>실사표</button>
+    <button class="btn btnp" id="btnNew" onclick="newOpen()"><i class="ti ti-plus"></i>실사 시작</button>
+  </div>
+
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>재고는 거래로만 움직입니다.</b> 실물과 장부가 어긋나면(파손·분실·오출고·전표 누락)
+    고칠 방법이 이 화면뿐입니다. 차이는 <b>숫자를 덮어쓰지 않고 거래로</b> 남겨
+    "왜 줄었는지"가 이력에 남습니다.
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="main">
+    <div class="side">
+      <div class="sh"><i class="ti ti-list"></i>실사 차수
+        <span id="scnt" style="margin-left:auto;font-weight:400;color:var(--txt3)"></span></div>
+      <div class="slist" id="clist"></div>
+    </div>
+    <div class="right" id="right"></div>
+  </div>
+</div>
+
+<!-- 실사 시작 -->
+<div class="shv" id="nvl" onclick="if(event.target===this) newClose()">
+  <div class="shw" style="width:620px;max-width:100%">
+    <div class="shb"><i class="ti ti-clipboard-plus" style="color:var(--acc);font-size:16px"></i>
+      <span class="t">실사 시작</span>
+      <button class="btn" onclick="newClose()"><i class="ti ti-x"></i></button></div>
+    <div style="padding:0 0 12px">
+      <div class="note" style="padding:10px 12px 4px">
+        범위를 고르면 그 시점의 <b>장부 재고가 동결</b>됩니다. 실사 도는 동안 불출이
+        일어나도 기준이 흔들리지 않습니다. 잔량 0인 LOT 은 셀 것이 없어 빠집니다.
+      </div>
+      <div class="scopes" id="scopes"></div>
+      <div style="padding:0 12px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--txt3);width:62px">담당자</label>
+          <select id="nEp" style="flex:1;min-width:140px"></select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--txt3);width:62px">메모</label>
+          <input type="text" id="nNote" style="flex:1;min-width:140px" placeholder="예) 1분기 A등급 순환 실사">
+        </div>
+      </div>
+      <div class="msg" id="nMsg" style="margin-top:10px"></div>
+    </div>
+    <div class="bar" style="border-radius:0 0 10px 10px">
+      <div class="m" id="nFoot">범위를 고르세요.</div>
+      <button class="btn" onclick="newClose()">취소</button>
+      <button class="btn btnp" id="nOk" onclick="newSubmit()" disabled><i class="ti ti-check"></i>실사 시작</button>
+    </div>
+  </div>
+</div>
+
+<!-- 차이 반영 확인 -->
+<div class="shv" id="avl" onclick="if(event.target===this) applyClose()">
+  <div class="shw" style="width:820px;max-width:100%">
+    <div class="shb"><i class="ti ti-checkup-list" style="color:var(--acc);font-size:16px"></i>
+      <span class="t">차이 반영</span>
+      <button class="btn" onclick="applyClose()"><i class="ti ti-x"></i></button></div>
+    <div style="padding:0 0 12px">
+      <div class="note" style="padding:10px 12px 6px">
+        재고는 <b>거래로만</b> 움직입니다. 장부 숫자를 덮어쓰지 않고 아래 거래를 남겨
+        "왜 줄었는지" 가 입출고 이력에 남습니다. <b>되돌릴 수 없습니다.</b>
+      </div>
+      <div id="aSum" style="padding:0 12px 8px"></div>
+      <div class="tblwrap" style="max-height:300px;border-top:0.5px solid var(--border);
+                                  border-bottom:0.5px solid var(--border)">
+        <table id="aTb" class="at"></table>
+      </div>
+      <div style="padding:10px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--txt3);width:62px">조정 승인</label>
+        <select id="aEp" style="flex:1;min-width:170px"></select>
+      </div>
+      <div style="padding:7px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--txt3);width:62px">메모</label>
+        <input type="text" id="aNote" style="flex:1;min-width:170px"
+               placeholder="예) 1분기 A등급 순환 실사 결과">
+      </div>
+      <div class="msg" id="aMsg" style="margin-top:10px"></div>
+    </div>
+    <div class="bar" style="border-radius:0 0 10px 10px">
+      <div class="m" id="aFoot"></div>
+      <button class="btn" onclick="applyClose()">취소</button>
+      <button class="btn btnp" id="aOk" onclick="applyGo()"><i class="ti ti-check"></i>반영</button>
+    </div>
+  </div>
+</div>
+
+<!-- 실사표 (A4) -->
+<div class="shv" id="shv" onclick="if(event.target===this) shClose()">
+  <div class="shw">
+    <div class="shb"><i class="ti ti-file-text" style="color:var(--acc);font-size:16px"></i>
+      <span class="t">실사표</span>
+      <button class="btn" onclick="window.print()"><i class="ti ti-printer"></i>인쇄</button>
+      <button class="btn" onclick="shClose()"><i class="ti ti-x"></i>닫기</button></div>
+    <div class="sheet" id="shBody"></div>
+  </div>
+</div>
+
+<script>
+const SRC    = {{ src|tojson }};
+const COUNTS = {{ counts|tojson }};
+const CUR0   = {{ cur|tojson }};
+
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const $   = id => document.getElementById(id);
+
+let sheet = CUR0;                       // 지금 보고 있는 차수
+let sel   = CUR0 ? CUR0.Count_ID : (COUNTS[0] ? COUNTS[0].Count_ID : null);
+let dirty = {};                         // 아직 저장 안 한 실물 수량
+let zonePick = {};                      // 구역오류를 고르고 아직 구역을 안 댄 줄
+
+// ── 차수 목록 ───────────────────────────────────────────
+function drawList(){
+  $('scnt').textContent = COUNTS.length + '건';
+  if(!COUNTS.length){
+    $('clist').innerHTML = '<div class="empty" style="padding:30px 14px">'
+      + '<i class="ti ti-clipboard-off"></i>실사 이력이 없습니다.<br>[실사 시작]을 눌러 여세요.</div>';
+    return;
+  }
+  $('clist').innerHTML = COUNTS.map(function(c){
+    const st = c.Status==='진행' ? 'bac' : (c.Status==='완료' ? 'bok' : 'bmu');
+    return '<div class="ci ' + (sel===c.Count_ID?'on':'') + '" onclick="pick(\'' + c.Count_ID + '\')">'
+      + '<div class="ci-h"><span class="cid">' + c.Count_ID + '</span>'
+      +   '<span class="bg ' + st + '">' + c.Status + '</span>'
+      +   (c.diff_cnt ? '<span class="bg bwn" style="margin-left:auto">차이 ' + c.diff_cnt + '</span>' : '')
+      + '</div>'
+      + '<div class="ci-s">' + esc(c.scope_label) + ' · ' + c.counted_cnt + '/' + c.line_cnt + '줄'
+      +   '<br>' + c.Count_Date + ' · ' + esc(c.worker||'-') + '</div></div>';
+  }).join('');
+}
+
+async function pick(cid){
+  sel = cid; dirty = {}; zonePick = {}; drawList();
+  try{
+    const r = await fetch('/api/count/sheet?id=' + encodeURIComponent(cid));
+    const d = await r.json();
+    sheet = d.ok ? d.sheet : null;
+  }catch(e){ sheet = null; }
+  draw();
+}
+
+// ── KPI ─────────────────────────────────────────────────
+function drawKpi(){
+  const s = sheet;
+  if(!s){ $('kpis').innerHTML = ''; return; }
+  const acc = s.accuracy==null ? '-' : s.accuracy;
+  $('kpis').innerHTML =
+    kpi('ti-list-numbers','센 줄', s.counted_cnt + '<small style="font-size:11px;color:var(--txt3)">/' + s.line_cnt + '</small>',
+        s.line_cnt - s.counted_cnt ? (s.line_cnt-s.counted_cnt) + '줄 남음' : '전부 셌습니다', '')
+  + kpi('ti-target','재고 정확도', acc + '<small style="font-size:11px">%</small>',
+        '센 것 중 장부와 맞은 비율', acc!=='-' && acc>=98 ? 'ok' : (acc!=='-' && acc<90 ? 'dn':'wn'))
+  + kpi('ti-alert-triangle','차이', s.diff_cnt,
+        '부족 ' + s.short_cnt + ' · 과다 ' + s.over_cnt, s.diff_cnt?'wn':'ok')
+  + kpi('ti-coin','차이 금액', (s.diff_amt<0?'-':'') + won(Math.abs(s.diff_amt)),
+        '장부 대비 증감', s.diff_amt<0?'dn':(s.diff_amt>0?'ok':''))
+  + kpi('ti-checkup-list','반영', s.applied_cnt,
+        s.Status==='완료' ? '조정 완료' : '아직 재고 미반영', s.applied_cnt?'ac':'');
+}
+function kpi(icon,l,v,s,cls){
+  return '<div class="kpi"><div class="kl"><i class="ti ' + icon + '"></i>' + l + '</div>'
+       + '<div class="kv ' + (cls||'') + '">' + v + '</div><div class="ks">' + s + '</div></div>';
+}
+
+// ── 본문 ────────────────────────────────────────────────
+function draw(){
+  drawKpi();
+  cancelArmed = 0;
+  $('btnPrint').disabled = !sheet;
+  if(!sheet){
+    $('right').innerHTML = '<div class="empty"><i class="ti ti-clipboard-check"></i>'
+      + '실사 차수를 고르거나 <b>[실사 시작]</b>으로 새로 여세요.</div>';
+    return;
+  }
+  const s = sheet, run = s.Status==='진행';
+
+  const rows = s.items.map(function(r){
+    const d = r.diff;
+    const cls = r.T_ID ? 'done' : (d ? 'diff' : '');
+    return '<tr class="' + cls + '">'
+      + '<td class="num">' + r.Line + '</td>'
+      + '<td><span class="lid">' + esc(r.Lot_ID) + '</span>'
+      +   (r.moved ? ' <span class="bg bwn" title="실사를 연 뒤 이 LOT 이 움직였습니다">변동</span>' : '') + '</td>'
+      + '<td>' + esc(r.P_ID) + (r.grade ? ' <span class="gr gr'+r.grade+'">'+r.grade+'</span>' : '')
+      +   '<div style="font-size:10px;color:var(--txt3)">' + esc(r.P_N||'') + '</div></td>'
+      + '<td>' + esc(r.loc_name||'-') + '</td>'
+      + '<td class="num">' + nf(r.Book_Qty) + '</td>'
+      + '<td class="num">' + (run && !r.T_ID
+          ? '<input class="qin ' + (r.Real_Qty!=null?'filled':'') + '" type="number" min="0" '
+            + 'value="' + (r.Real_Qty==null?'':r.Real_Qty) + '" '
+            + 'oninput="mark(' + r.Line + ',this.value)" onkeydown="nextRow(event)">'
+          : nf(r.Real_Qty)) + '</td>'
+      + '<td class="num dq ' + (d==null?'':(d<0?'dn':(d>0?'ok':''))) + '">'
+      +   (d==null ? '-' : (d>0?'+':'') + nf(d)) + '</td>'
+      + '<td>' + reasonCell(r, run) + '</td>'
+      + '<td>' + (r.T_ID ? '<span class="bg bok">' + esc(r.T_ID) + '</span>' : '') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  $('right').innerHTML =
+    '<div class="pn">'
+  +   '<div class="pnh"><i class="ti ti-clipboard-list"></i>'
+  +     '<span class="pnh-t">' + esc(s.Count_ID) + ' · ' + esc(s.Scope) + ' ' + esc(s.Scope_Val||'')
+  +     ' <span class="bg ' + (s.Status==='진행'?'bac':(s.Status==='완료'?'bok':'bmu')) + '">' + s.Status + '</span></span>'
+  +     '<span style="font-size:10px;color:var(--txt3);font-weight:400">'
+  +       s.Count_Date + ' · ' + esc(s.worker||'-') + (s.approver ? ' → 승인 ' + esc(s.approver) : '') + '</span></div>'
+  +   '<div class="tblwrap"><table><thead><tr>'
+  +     '<th>#</th><th>LOT</th><th>자재</th><th>구역</th>'
+  +     '<th class="num">장부</th><th class="num">실물</th><th class="num">차이</th>'
+  +     '<th>사유</th><th>거래</th>'
+  +   '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+  +   (s.moved_cnt ? '<div class="note">⚠️ <b>변동</b> 표시 ' + s.moved_cnt + '건 — 실사를 연 뒤 그 LOT 에 '
+      + '입출고가 있었습니다. 장부 수량은 <b>실사를 연 시점으로 동결</b>돼 있어 차이 계산은 그대로 맞습니다.</div>' : '')
+  + '</div>'
+  + '<div class="msg" id="msg"></div>'
+  + (run
+     ? '<div class="bar" style="border:0.5px solid var(--border);border-radius:10px">'
+       + '<div class="m" id="foot"></div>'
+       + '<button class="btn" onclick="saveAll()"><i class="ti ti-device-floppy"></i>실물 수량 저장</button>'
+       + '<button class="btn btnd" id="cancel" onclick="cancelCount()"><i class="ti ti-x"></i>실사 취소</button>'
+       + '<button class="btn btnp" id="apply" onclick="applyAll()"><i class="ti ti-check"></i>차이 반영</button>'
+       + '</div>'
+     : '<div class="note" style="border:0.5px solid var(--border);border-radius:10px;background:var(--s1)">'
+       + (s.Status==='완료'
+          ? '조정이 끝난 실사입니다. 생성된 거래는 <b>입출고 이력</b>에서 LOT 으로 추적할 수 있습니다.'
+          : '취소된 실사입니다. 재고에 아무 영향이 없습니다.')
+       + (s.Appr_Note ? '<br>메모: ' + esc(s.Appr_Note) : '') + '</div>');
+
+  if(run) footer();
+}
+
+function reasonCell(r, run){
+  if(r.diff==null) return '<span style="color:var(--txt3);font-size:10px">미실사</span>';
+  if(!r.diff && r.Reason_Cd!=='구역오류' && !run)
+    return r.Reason_Cd ? esc(r.Reason_Cd) : '<span style="color:var(--txt3);font-size:10px">일치</span>';
+  if(!run) return r.Reason_Cd ? esc(r.Reason_Cd) + (r.Loc_To ? ' → ' + esc(r.Loc_To) : '') : '';
+  if(r.T_ID) return esc(r.Reason_Cd||'') + (r.Loc_To ? ' → ' + esc(r.Loc_To) : '');
+
+  // 부호에 맞는 사유만 내려보낸다 — 고를 수 없는 걸 보여주면 헷갈린다
+  const fit = SRC.reasons.filter(function(x){
+    return r.diff ? (x.sign>0) === (r.diff>0) && x.sign!==0 : x.sign===0;
+  });
+  if(!fit.length) return '<span style="color:var(--txt3);font-size:10px">일치</span>';
+  let h = '<select onchange="setReason(' + r.Line + ',this.value)">'
+    + '<option value="">선택</option>'
+    + fit.map(function(x){
+        return '<option value="' + x.cd + '"' + (r.Reason_Cd===x.cd?' selected':'') + '>'
+             + x.cd + ' (' + x.tx + ')</option>';
+      }).join('') + '</select>';
+  if(r.Reason_Cd==='구역오류' || zonePick[r.Line]){
+    h += ' <select onchange="setReason(' + r.Line + ',\'구역오류\',this.value)">'
+      + '<option value="">구역</option>'
+      + SRC.zones.filter(function(z){return z.Loc_ID!==r.Loc_ID;}).map(function(z){
+          return '<option value="' + z.Loc_ID + '"' + (r.Loc_To===z.Loc_ID?' selected':'') + '>'
+               + z.Loc_ID + '</option>';
+        }).join('') + '</select>';
+  }
+  return h;
+}
+
+// 실물 수량을 적는 동안은 화면에만 들고 있다가 한 번에 저장한다
+function mark(line, v){ dirty[line] = v; footer(); }
+function nextRow(e){
+  if(e.key!=='Enter') return;
+  const all = [...document.querySelectorAll('.qin')];
+  const i = all.indexOf(e.target);
+  if(i>=0 && all[i+1]){ all[i+1].focus(); all[i+1].select(); }
+}
+function footer(){
+  const n = Object.keys(dirty).length;
+  const f = $('foot');
+  if(f) f.innerHTML = n ? '<b>' + n + '줄</b>이 저장되지 않았습니다.'
+    : '실물 수량을 적고 저장하세요. 차이에는 사유를 달아야 반영됩니다.';
+}
+
+function msg(kind, lines){
+  const el = $('msg'); if(!el) return;
+  if(!lines || !lines.length){ el.className='msg'; el.innerHTML=''; return; }
+  el.className = 'msg on ' + (kind||'err');
+  el.innerHTML = lines.length===1 ? esc(lines[0])
+    : '<ul>' + lines.map(function(x){return '<li>'+esc(x)+'</li>';}).join('') + '</ul>';
+}
+
+async function post(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body)});
+    return await r.json();
+  }catch(e){ return {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
+}
+
+async function saveAll(){
+  if(!Object.keys(dirty).length){ msg('wn',['저장할 내용이 없습니다.']); return; }
+  const d = await post('/api/count/save',
+    {Count_ID: sheet.Count_ID, lines: dirty, EP_ID: sheet.EP_ID});
+  if(!d.ok) return msg('err', d.errors);
+  const n = Object.keys(dirty).length;
+  dirty = {}; sheet = d.sheet; draw();
+  msg('ok', [n + '줄을 저장했습니다. 차이 ' + d.sheet.diff_cnt + '건 · 정확도 ' + d.sheet.accuracy + '%']);
+}
+
+async function setReason(line, cd, locTo){
+  const row = sheet.items.filter(function(r){return r.Line===line;})[0];
+  const to  = locTo || (row ? row.Loc_To : null);
+  // 구역을 대야 저장되는데 저장돼야 구역이 나오면 영원히 못 고른다.
+  // 보내 보기 전에 구역 드롭다운부터 띄운다
+  if(cd==='구역오류' && !to){
+    zonePick[line] = 1; draw();
+    return msg('wn', ['실제로 있던 구역을 고르세요.']);
+  }
+  if(cd && cd!=='구역오류') delete zonePick[line];
+  const d = await post('/api/count/reason', {Count_ID: sheet.Count_ID, line: line,
+      reason_cd: cd || (row?row.Reason_Cd:''), loc_to: to});
+  if(!d.ok) return msg('err', d.errors);
+  delete zonePick[line];
+  sheet = d.sheet; draw(); msg('',[]);
+}
+
+function applyClose(){ $('avl').classList.remove('on'); }
+
+async function applyAll(){
+  if(Object.keys(dirty).length){ msg('wn',['저장하지 않은 수량이 있습니다. 먼저 저장하세요.']); return; }
+  const pv = await post('/api/count/apply/preview', {Count_ID: sheet.Count_ID});
+  if(!pv.ok) return msg('err', pv.errors);
+  const p = pv.plan;
+  // 사유가 없는 차이는 조용히 빠지지 않는다 — 몇 번 줄인지 짚어 준다
+  if(p.blocked.length)
+    return msg('err', ['사유가 없는 차이가 ' + p.blocked.length + '건 있습니다. 전부 사유를 달아야 반영됩니다.']
+      .concat(p.blocked.slice(0,5).map(function(b){
+        return b.Line + '번 줄 ' + b.Lot_ID + ' (' + (b.diff>0?'+':'') + b.diff + '개)'; })));
+  if(!p.cnt) return msg('wn',['반영할 차이가 없습니다. 전부 장부와 일치합니다.']);
+  msg('',[]);
+  applyDraw(p);
+}
+
+function applyDraw(p){
+  const chips = Object.keys(p.by_tx).sort().map(function(k){
+    return '<span class="bg bac" style="font-size:10.5px;margin-right:4px">'
+         + k + ' ' + p.by_tx[k] + '건</span>';
+  }).join('');
+  $('aSum').innerHTML = chips
+    + '<span style="font-size:11px;color:var(--txt3);margin-left:4px">'
+    + '차이 ' + p.cnt + '건 · 금액 ' + nf(p.amount) + '원</span>';
+
+  $('aTb').innerHTML = '<thead><tr><th>#</th><th>LOT</th><th>자재</th>'
+    + '<th class="num">장부</th><th class="num">실물</th><th class="num">차이</th>'
+    + '<th>사유</th><th>생길 거래</th></tr></thead><tbody>'
+    + p.todo.map(function(t){
+        return '<tr><td class="num">' + t.Line + '</td>'
+          + '<td><span class="lid">' + esc(t.Lot_ID) + '</span></td>'
+          + '<td>' + esc(t.P_ID) + '<div style="font-size:10px;color:var(--txt3)">'
+          +   esc(t.P_N||'') + '</div></td>'
+          + '<td class="num">' + nf(t.book) + '</td>'
+          + '<td class="num">' + nf(t.real) + '</td>'
+          + '<td class="num dq ' + (t.diff<0?'dn':(t.diff>0?'ok':'')) + '">'
+          +   (t.diff>0?'+':'') + nf(t.diff) + '</td>'
+          + '<td>' + esc(t.reason_cd) + '</td>'
+          + '<td><span class="bg bac">' + esc(t.tx) + ' ' + nf(t.qty) + '</span>'
+          +   (t.loc_to ? ' <span style="font-size:10px;color:var(--txt3)">'
+                        + esc(t.loc_from||'-') + ' → ' + esc(t.loc_to) + '</span>' : '')
+          + '</td></tr>';
+      }).join('') + '</tbody>';
+
+  // 실사한 사람은 스스로 승인할 수 없다 — 목록에서 아예 뺀다
+  const ap = SRC.approvers.filter(function(w){ return w.EP_ID !== sheet.EP_ID; });
+  $('aEp').innerHTML = ap.length
+    ? ap.map(function(w){
+        return '<option value="' + w.EP_ID + '">' + esc(w.Name) + ' ' + esc(w.Position)
+             + ' (한도 ' + (w.limit==null ? '무제한' : nf(w.limit) + '원') + ')</option>';
+      }).join('')
+    : '<option value="">승인 가능한 사람이 없습니다</option>';
+  $('aNote').value = '';
+  $('aMsg').className = 'msg';
+  $('aOk').disabled = !ap.length;
+  $('aFoot').innerHTML = '거래 <b>' + p.cnt + '건</b>이 생깁니다. 되돌릴 수 없습니다.';
+  $('avl').classList.add('on');
+}
+
+async function applyGo(){
+  $('aOk').disabled = true;
+  const d = await post('/api/count/apply',
+    {Count_ID: sheet.Count_ID, EP_ID: $('aEp').value, note: $('aNote').value});
+  if(!d.ok){
+    $('aOk').disabled = false;
+    const el = $('aMsg'); el.className = 'msg on err';
+    el.innerHTML = d.errors.map(function(x){return esc(x);}).join('<br>');
+    return;
+  }
+  applyClose();
+  msg('ok', [d.sheet.applied + '건을 반영했습니다. 재고에 적용됐습니다. 잠시 후 새로 읽습니다.']);
+  setTimeout(function(){ location.reload(); }, 1200);
+}
+
+// 적어 둔 수량을 통째로 버리는 일이라 한 번 더 묻는다
+let cancelArmed = 0;
+async function cancelCount(){
+  const b = $('cancel');
+  if(!cancelArmed){
+    cancelArmed = 1;
+    b.classList.add('btnd');
+    b.innerHTML = '<i class="ti ti-alert-triangle"></i>한 번 더 누르면 취소';
+    msg('wn', [sheet.Count_ID + ' 실사를 접습니다. 적어 둔 실물 수량도 함께 버려집니다.']);
+    setTimeout(function(){
+      if(!cancelArmed) return;
+      cancelArmed = 0;
+      if($('cancel')) $('cancel').innerHTML = '<i class="ti ti-x"></i>실사 취소';
+      msg('',[]);
+    }, 6000);
+    return;
+  }
+  cancelArmed = 0;
+  const d = await post('/api/count/cancel', {Count_ID: sheet.Count_ID, EP_ID: sheet.EP_ID});
+  if(!d.ok) return msg('err', d.errors);
+  location.reload();
+}
+
+// ── 실사 시작 ───────────────────────────────────────────
+let nScope = null;
+function newOpen(){
+  if(SRC.open_id){
+    pick(SRC.open_id);
+    msg('wn', ['진행 중인 실사가 있습니다: ' + SRC.open_id
+               + '. 끝내거나 취소한 뒤 새로 여세요.']);
+    return;
+  }
+  nScope = null;
+  $('scopes').innerHTML = SRC.scopes.map(function(s,i){
+    return '<button class="sc" data-i="' + i + '" onclick="pickScope(' + i + ')">'
+      + '<div class="sc-l">' + esc(s.label) + '</div>'
+      + '<div class="sc-v">LOT ' + s.lot_cnt + ' · 품목 ' + s.item_cnt + '</div>'
+      + '<div class="sc-c">' + nf(s.qty) + '개 · ' + won(s.amount) + '원'
+      + (s.cycle ? ' · ' + s.cycle + '일 주기' : '') + '</div></button>';
+  }).join('');
+  $('nEp').innerHTML = SRC.workers.map(function(w){
+    return '<option value="' + w.EP_ID + '">' + esc(w.Name) + ' ' + esc(w.Position) + '</option>';
+  }).join('');
+  $('nNote').value = '';
+  $('nOk').disabled = true;
+  $('nFoot').textContent = '범위를 고르세요.';
+  $('nMsg').className = 'msg';
+  $('nvl').classList.add('on');
+}
+function newClose(){ $('nvl').classList.remove('on'); }
+function pickScope(i){
+  nScope = SRC.scopes[i];
+  [...document.querySelectorAll('.sc')].forEach(function(b){
+    b.classList.toggle('on', +b.dataset.i===i);
+  });
+  $('nOk').disabled = !nScope.lot_cnt;
+  $('nFoot').innerHTML = nScope.lot_cnt
+    ? '<b>' + esc(nScope.label) + '</b> — LOT ' + nScope.lot_cnt + '건을 셉니다. '
+      + '장부 ' + nf(nScope.qty) + '개 · ' + won(nScope.amount) + '원이 동결됩니다.'
+    : '이 범위에는 셀 LOT 이 없습니다.';
+}
+async function newSubmit(){
+  if(!nScope) return;
+  $('nOk').disabled = true;
+  const d = await post('/api/count', {scope: nScope.scope, scope_val: nScope.val,
+      EP_ID: $('nEp').value, note: $('nNote').value});
+  if(!d.ok){
+    $('nOk').disabled = false;
+    const el = $('nMsg'); el.className='msg on err';
+    el.innerHTML = d.errors.map(function(x){return esc(x);}).join('<br>');
+    return;
+  }
+  location.reload();
+}
+
+// ── 실사표 (A4) ─────────────────────────────────────────
+function shClose(){ $('shv').classList.remove('on'); }
+function shOpen(){
+  if(!sheet) return;
+  const s = sheet;
+  const rows = s.items.map(function(r){
+    return '<tr>'
+      + '<td style="text-align:center">' + r.Line + '</td>'
+      + '<td class="bc"><img src="/api/barcode?v=' + encodeURIComponent(r.Lot_ID) + '&w=46&h=9&t=0" alt="">'
+      +   '<div style="font-size:7.5px;font-family:ui-monospace,monospace">' + esc(r.Lot_ID) + '</div></td>'
+      + '<td>' + esc(r.P_ID) + '<div style="font-size:8.5px;color:#6b6a66">' + esc(r.P_N||'') + '</div></td>'
+      + '<td style="text-align:center">' + esc(r.Loc_ID||'-') + '</td>'
+      + '<td style="text-align:right">' + nf(r.Book_Qty) + '</td>'
+      + '<td style="width:62px"></td><td style="width:72px"></td></tr>';
+  }).join('');
+  $('shBody').innerHTML =
+    '<div class="sh-h"><h1>재고 실사표</h1>'
+  +   '<div class="sh-m">' + esc(s.Count_ID) + '<br>' + esc(s.Scope) + ' ' + esc(s.Scope_Val||'')
+  +     ' · ' + s.line_cnt + '줄<br>' + s.Count_Date + ' · ' + esc(s.worker||'-') + '</div></div>'
+  + '<table class="pt-tb"><thead><tr>'
+  +   '<th style="width:22px">#</th><th style="width:50mm">LOT (바코드)</th><th>자재</th>'
+  +   '<th style="width:30px">구역</th><th style="width:52px">장부</th>'
+  +   '<th style="width:62px">실물</th><th style="width:72px">비고</th>'
+  + '</tr></thead><tbody>' + rows + '</tbody></table>'
+  + '<div style="font-size:9px;color:#4A4946;line-height:1.7;border:1px solid #d4d3ce;padding:6px 8px">'
+  +   '<b>1.</b> LOT 바코드를 스캐너로 찍고 실물 수량을 적습니다.<br>'
+  +   '<b>2.</b> 장부와 다르면 비고에 사유를 적습니다 — 파손·분실·구역오류 등.<br>'
+  +   '<b>3.</b> 장부 수량은 <b>' + s.Count_Date + ' 실사 시작 시점</b>으로 동결돼 있습니다.</div>'
+  + '<div class="sh-sg"><div><span>실사 담당</span></div><div><span>입회</span></div>'
+  +   '<div><span>조정 승인</span></div></div>';
+  $('shv').classList.add('on');
+}
+
+document.addEventListener('keydown', function(e){
+  if(e.key!=='Escape') return;
+  shClose(); newClose(); applyClose();
+});
+
+// 한 번에 한 차수만 돈다 — 두 사람이 같은 LOT 을 동시에 세면 기준이 갈린다
+if(SRC.open_id){
+  $('btnNew').disabled = true;
+  $('btnNew').title = '진행 중인 실사가 있습니다: ' + SRC.open_id;
+}
+
+drawList();
+draw();
+// 진행 중인 차수가 없으면 서버가 sheet 를 안 보낸다. 목록만 켜 두면
+// 왼쪽은 골라져 있는데 오른쪽은 빈 화면이 된다 — 가장 최근 차수를 읽어 온다
+if(!sheet && sel) pick(sel);
+</script>
+</body>
+</html>

@@ -334,6 +334,14 @@ function pick(id){
   +     '<div class="ggbar"><div class="ggfill" style="width:' + x.used_pct + '%"></div>'
   +       '<div class="ggtxt">' + nf(x.out_qty) + ' / ' + nf(x.P_Qty) + '</div></div>'
   +     '<div class="ggsub"><span>입고 ' + nf(x.P_Qty) + '</span><span>잔여 ' + nf(x.remain) + '</span></div>'
+  +     ((x.ret_qty || x.scrap_qty || x.move_cnt)
+        ? '<div class="ggsub" style="margin-top:3px">'
+          + '<span>불출 ' + nf(x.disb_qty) + '</span>'
+          + (x.ret_qty   ? '<span style="color:var(--ok)">↩ 반납 ' + nf(x.ret_qty) + '</span>' : '')
+          + (x.scrap_qty ? '<span style="color:var(--dn)">✕ 처분 ' + nf(x.scrap_qty) + '</span>' : '')
+          + (x.move_cnt  ? '<span style="color:var(--wn)">⇄ 이동 ' + x.move_cnt + '건</span>' : '')
+          + '</div>'
+        : '')
   +   '</div>'
   +   '<div class="ir"><span class="ik">재고금액</span><span class="iv">' + nf(x.value) + '원</span></div>'
   +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(x.P_Price) + '원</span></div>'

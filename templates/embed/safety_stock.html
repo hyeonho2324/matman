@@ -39,6 +39,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
    감싸는 컨테이너에 overflow:auto 가 이미 있어 표에 min-width 만 주면 된다. */
 .listwrap table:not([class]){min-width:820px}
 table{width:100%;border-collapse:collapse;font-size:12px}
+.hv{position:fixed;inset:0;background:rgba(26,25,23,.42);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+.hv.on{display:flex}
+.hw{background:var(--s0);border-radius:10px;width:100%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.22)}
+.hh{padding:11px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--s2);flex-shrink:0}
+.ht{font-size:13px;font-weight:600;flex:1;min-width:0}
+.hb{flex:1;overflow-y:auto;padding:12px 14px}
+.hsum{display:grid;grid-template-columns:repeat(4,1fr);border:0.5px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.hs{padding:8px 11px;border-right:0.5px solid var(--border)}
+.hs:last-child{border-right:none}
+.hs-l{font-size:10px;color:var(--txt3)}
+.hs-v{font-size:17px;font-weight:600;margin-top:2px}
+.hs-s{font-size:10px;color:var(--txt3);margin-top:1px}
+.hl{display:flex;gap:9px;padding:9px 2px;border-bottom:0.5px solid var(--border)}
+.hl:last-child{border-bottom:none}
+.hl-d{width:74px;flex-shrink:0;font-size:10px;color:var(--txt3);padding-top:2px}
+.hl-i{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;flex-shrink:0}
+.k-log{background:var(--acc)}.k-ovr{background:#7C5CD3}.k-ovr_off{background:var(--txt3)}
+.k-org{background:var(--border-s)}
+.hl-b{flex:1;min-width:0}
+.hl-t{font-size:12px;font-weight:500}
+.hl-s{font-size:10.5px;color:var(--txt2);margin-top:2px;line-height:1.6}
+.hl-w{font-size:10px;color:var(--txt3);margin-top:2px}
+.ar{color:var(--txt3)}
+.up{color:var(--dn);font-weight:600}.dn2{color:var(--acc);font-weight:600}
+.hnote{padding:8px 10px;font-size:10px;color:var(--txt3);line-height:1.7;background:var(--s1);border-radius:8px;margin-top:10px}
 thead th{position:sticky;top:0;background:var(--s1);border-bottom:0.5px solid var(--border-s);padding:7px 10px;text-align:left;font-weight:500;font-size:11px;color:var(--txt2);white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
 thead th:hover{background:var(--s2)}
 thead th.num,tbody td.num{text-align:right}
@@ -364,6 +389,9 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">다음 예정</span><span class="iv">' + (x.next_date||'-') + '</span></div>'
   +   '<div class="ir"><span class="ik">불출 실적</span><span class="iv">' + nf(x.used_qty) + ' (' + x.used_cnt + '건)</span></div>'
   +   '<div class="note">고가·핵심 자재(A)일수록 자주 검토합니다.</div>'
+  +   '<div style="padding:7px 10px 9px"><button class="btn" style="width:100%;justify-content:center"'
+  +     ' onclick="hOpen(&quot;' + x.P_ID + '&quot;)">'
+  +     '<i class="ti ti-history"></i>안전재고 변경 이력</button></div>'
   + '</div>'
 
   + ovPanel(x);
@@ -566,7 +594,122 @@ function dl(){
   a.click();
 }
 
+// ── 안전재고 변경 이력 ──────────────────────────────────────
+// 안전재고가 바뀌는 길은 넷이다 — 원본 등록 · 자재 수정 · 일괄 갱신 · 수동 조정.
+// 한 화면에서 시간순으로 봐야 "왜 지금 이 숫자인가" 를 설명할 수 있다.
+const HICON = {log:'ti-refresh', ovr:'ti-hand-stop', ovr_off:'ti-circle-off',
+               org:'ti-database-import'};
+
+function hClose(){ document.getElementById('hv').classList.remove('on'); }
+
+function arrow(a, b, unit){
+  if(a == null && b == null) return '<span class="ar">기록 없음</span>';
+  if(a == null) return '<b>' + nf(b) + (unit||'') + '</b>';
+  if(b == null) return nf(a) + (unit||'');
+  if(a === b)   return nf(a) + (unit||'') + ' <span class="ar">(변동 없음)</span>';
+  const cls = b > a ? 'up' : 'dn2';
+  return nf(a) + (unit||'') + ' <span class="ar">→</span> <span class="' + cls + '">'
+       + nf(b) + (unit||'') + '</span> <span class="' + cls + '">('
+       + (b > a ? '+' : '') + nf(b - a) + ')</span>';
+}
+function lvArrow(a, b){
+  if(!a && !b) return '';
+  if(a === b)  return '등급 ' + a;
+  if(!a) return '등급 <b>' + b + '</b>';
+  return '등급 ' + a + ' <span class="ar">→</span> <b>' + b + '</b>';
+}
+
+async function hOpen(pid){
+  document.getElementById('h-t').textContent = pid + ' 안전재고 변경 이력';
+  document.getElementById('h-b').innerHTML = '<div class="hnote">불러오는 중...</div>';
+  document.getElementById('hv').classList.add('on');
+  let d;
+  try{ d = await (await fetch('/api/safety/history?P_ID=' + encodeURIComponent(pid))).json(); }
+  catch(e){ d = {ok:false, errors:['서버에 연결할 수 없습니다.']}; }
+  if(!d.ok){
+    document.getElementById('h-b').innerHTML = '<div class="hnote">' + esc(d.errors.join(' ')) + '</div>';
+    return;
+  }
+  const h = d.data;
+
+  const rows = h.events.map(function(e){
+    const org = e.origin === '원본';
+    const tone = org ? 'org' : e.kind;
+    let title, sub = '';
+    if(e.kind === 'log'){
+      title = org ? '원본 등록' : (e.origin === '최초' ? '최초 등록' : '갱신');
+      sub = org
+        ? '<span class="ar">변경 전/후 값과 담당자가 없습니다 — 원본 데이터에 날짜만 있습니다.</span>'
+        : lvArrow(e.lv_from, e.lv_to) + ' · 안전재고 ' + arrow(e.num_from, e.num_to, '개')
+          + (e.usage_from == null && e.usage_to != null
+             ? ' · <span class="ar">Usage 점수 채움 ' + e.usage_to + '</span>' : '');
+      if(e.next_date) sub += '<br><span class="ar">다음 재검토 ' + esc(e.next_date) + '</span>';
+    } else if(e.kind === 'ovr'){
+      title = '수동 조정 ' + (e.status === '적용' ? '' : '(' + esc(e.status) + ')');
+      sub = lvArrow(e.lv_from, e.lv_to)
+          + (e.min_qty ? ' · 최소 보유량 ' + nf(e.min_qty) + '개' : '')
+          + ' · <span class="ar">계산값 ' + nf(e.num_from) + '개 동결</span>'
+          + (e.reason_cd ? '<br><span class="bg bac">' + esc(e.reason_cd) + '</span> ' : '<br>')
+          + esc(e.note || '')
+          + (e.end_date ? ' <span class="ar">· 만료 ' + esc(e.end_date) + '</span>' : '');
+    } else {
+      title = '조정 ' + esc(e.origin);
+      sub = lvArrow(e.lv_from, e.lv_to) + (e.note ? ' · ' + esc(e.note) : '');
+    }
+    return '<div class="hl">'
+      + '<div class="hl-d">' + esc(e.date || '-') + '</div>'
+      + '<div class="hl-i k-' + tone + '"><i class="ti ' + (HICON[tone] || 'ti-point') + '"></i></div>'
+      + '<div class="hl-b"><div class="hl-t">' + title + '</div>'
+      +   '<div class="hl-s">' + sub + '</div>'
+      +   (e.worker ? '<div class="hl-w">' + esc(e.worker) + ' ' + esc(e.pos || '')
+          + (e.note && e.kind === 'log' ? ' · ' + esc(e.note) : '')
+          + (e.ref ? ' · ' + esc(e.ref) : '') + '</div>' : '')
+      + '</div></div>';
+  }).join('');
+
+  document.getElementById('h-b').innerHTML =
+    '<div class="hsum">'
+  +   '<div class="hs"><div class="hs-l">현재 안전재고</div><div class="hs-v">' + nf(h.safe_qty)
+  +     '<span style="font-size:10px;color:var(--txt3)">개</span></div>'
+  +     '<div class="hs-s">' + esc(h.grade) + '등급 · ' + h.cycle + '일 주기</div></div>'
+  +   '<div class="hs"><div class="hs-l">지금 공식값</div>'
+  +     '<div class="hs-v ' + (h.matches_formula ? '' : 'up') + '">'
+  +       (h.calc == null ? '-' : nf(h.calc)) + '</div>'
+  +     '<div class="hs-s">' + (h.matches_formula ? '저장값과 일치'
+        : (h.calc == null ? '실적이 없어 계산 불가' : '저장값과 다릅니다')) + '</div></div>'
+  +   '<div class="hs"><div class="hs-l">계산 근거</div>'
+  +     '<div class="hs-v" style="font-size:13px">L ' + h.lead_time + '일 · d ' + h.daily + '</div>'
+  +     '<div class="hs-s">리드타임 ' + esc(h.lead_src) + (h.lead_src === '실측' ? ' (계획 ' + h.lead_plan + '일)' : '')
+  +       ' · 불출 ' + nf(h.used_qty) + '개 ÷ ' + h.days + '일</div></div>'
+  +   '<div class="hs"><div class="hs-l">변경 이력</div><div class="hs-v">' + h.cnt
+  +     '<span style="font-size:10px;color:var(--txt3)">건</span></div>'
+  +     '<div class="hs-s">' + (h.num_min == null ? '값 기록 없음'
+        : nf(h.num_min) + ' ~ ' + nf(h.num_max) + '개') + '</div></div>'
+  + '</div>'
+  + rows
+  + '<div class="hnote">'
+  +   '안전재고가 바뀌는 길은 넷입니다 — <b>원본 등록 · 자재 등록/수정 · 일괄 갱신 · 수동 조정</b>.<br>'
+  +   '등급이나 수량이 <b>실제로 바뀐 경우에만</b> 이력이 쌓입니다. 안 바뀌었는데 이력만 남기면 '
+  +   '재검토 주기가 계속 뒤로 밀립니다.'
+  +   (h.origin_only
+      ? '<br>⚠️ 이 자재는 <b>원본 등록 기록뿐</b>입니다. 저장된 값은 공식 산출물이 아니라 '
+        + '원본 데이터에 들어 있던 숫자이고, 변경 전/후 값도 담당자도 없습니다. '
+        + '<b>안전재고 일괄 갱신</b>을 한 번 돌리면 공식값으로 정리되고 근거가 남습니다.'
+      : '')
+  + '</div>';
+}
+
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') hClose(); });
+
 render();
 </script>
+<div class="hv" id="hv" onclick="if(event.target===this) hClose()">
+  <div class="hw">
+    <div class="hh"><i class="ti ti-history" style="color:var(--acc);font-size:16px"></i>
+      <div class="ht" id="h-t">안전재고 변경 이력</div>
+      <button class="btn" onclick="hClose()"><i class="ti ti-x"></i>닫기</button></div>
+    <div class="hb" id="h-b"></div>
+  </div>
+</div>
 </body>
 </html>

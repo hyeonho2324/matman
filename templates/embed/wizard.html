@@ -458,7 +458,8 @@ function render(){
               +   (r.note ? ' · ' + esc(r.note) : '') + '</span>'
               + (idx === 0
                   ? '<button class="btn btnd" data-d="' + esc(r.run_date) + '"'
-                    + ' onclick="doRevert(this.dataset.d)">'
+                    + ' data-ep="' + esc(r.EP_ID||'') + '"'
+                    + ' onclick="doRevert(this.dataset.d, this.dataset.ep)">'
                     + '<i class="ti ti-arrow-back-up"></i>되돌리기</button>'
                   : '<span class="note" style="padding:0">최근 것부터 되돌립니다</span>')
               + '</div>';
@@ -515,12 +516,14 @@ async function doApply(){
   }
 }
 
-async function doRevert(runDate){
+async function doRevert(runDate, runEp){
   if(busy) return;
   busy = true;
   try{
+    // 되돌릴 '실행' 은 (날짜, 실행자) 한 쌍이다. 날짜만 보내면 같은 날
+    // 누가 자재를 고쳐 남긴 이력까지 함께 지워진다.
     const d = await post('/api/safety/revert',
-      {run_date: runDate, EP_ID: document.getElementById('who').value});
+      {run_date: runDate, run_ep: runEp, EP_ID: document.getElementById('who').value});
     if(!d.ok){
       busy = false;
       say('err', '<b>되돌리지 못했습니다</b>' + errList(d.errors));

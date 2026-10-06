@@ -156,6 +156,7 @@ tbody tr.on{background:var(--bg-ac)}
 .k-move{background:var(--wn)}
 .k-prod{background:#7C5CD3}
 .k-claim{background:#D35C9E}
+.k-ret{background:#2FA87C}          /* 현장 복귀 — 최초 입고와 구분한다 */
 .tlsum{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px}
 .tlchip{font-size:10px;padding:2px 8px;border-radius:99px;background:var(--s2);color:var(--txt2)}
 @media(max-width:820px){
@@ -375,6 +376,12 @@ tbody tr.on{background:var(--bg-ac)}
           <select id="f-brn" onchange="mDraw()"></select></div>
         <div class="frow"><label>단가<i class="rq">*</i></label>
           <input type="number" id="f-price" min="1" step="100" placeholder="원" oninput="mDraw()"></div>
+        <!-- 단가가 실제로 바뀔 때만 나타난다. 바뀐 뒤엔 아무도 왜였는지 모른다 -->
+        <div class="frow" id="row-prc" style="display:none"><label>단가 변경 사유<i class="rq">*</i></label>
+          <select id="f-prc-cd" onchange="mDraw()"></select></div>
+        <div class="frow" id="row-prc2" style="display:none"><label>설명</label>
+          <input type="text" id="f-prc-why" placeholder="예) 2026 연간계약 인상 (선택)"></div>
+        <div id="prc-imp" style="display:none"></div>
         <div class="frow"><label>최소 발주량</label>
           <input type="number" id="f-moq" min="0" step="1" placeholder="0" oninput="mDraw()"></div>
         <div class="frow"><label>포장단위<i class="rq">*</i></label>
@@ -448,6 +455,18 @@ tbody tr.on{background:var(--bg-ac)}
       <button class="btn" onclick="cClose()">닫기</button>
       <button class="btn btnp" id="c-ok" onclick="cSubmit()" disabled><i class="ti ti-check"></i>일괄 등록</button>
     </div>
+  </div>
+</div>
+
+<!-- 단가 이력 모달 — LOT 이력 모달과 같은 껍데기를 쓴다 -->
+<div class="ovl" id="prcv" onclick="if(event.target===this) prcClose()">
+  <div class="modal">
+    <div class="mh">
+      <i class="ti ti-coin" style="color:var(--acc);font-size:17px"></i>
+      <div class="mh-t" id="prc-t">단가 이력</div>
+      <button class="mx" onclick="prcClose()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="mb" id="prc-b"></div>
   </div>
 </div>
 
@@ -530,7 +549,8 @@ function mBody(){
     BRN: $('f-brn').value, P_Price: $('f-price').value,
     MinOrderQty: $('f-moq').value, PkgUnit: $('f-pkg').value,
     Lead_Time: $('f-lt').value, month_qty: $('f-mon').value,
-    EP_ID: $('f-ep').value, note: $('f-note').value
+    EP_ID: $('f-ep').value, note: $('f-note').value,
+    price_reason_cd: $('f-prc-cd').value, price_reason: $('f-prc-why').value
   };
   SRC.scores.forEach(function(sc){ b[sc.key] = mScoreGet(sc.key); });
   if (mPid) { b.P_ID = mPid; }
@@ -538,8 +558,59 @@ function mBody(){
   return b;
 }
 
+let mOldPrice = null;      // 수정 들어올 때의 단가
+let mImpTimer = null;
+
+// 단가가 실제로 달라졌을 때만 사유를 받는다. 다른 칸만 고치는데
+// 매번 사유를 묻게 하면 "변경" 만 쌓인다.
+function mPriceRow(){
+  const now = parseInt($('f-price').value, 10);
+  const on  = mPid && mOldPrice != null && !isNaN(now) && now !== mOldPrice;
+  $('row-prc').style.display  = on ? '' : 'none';
+  $('row-prc2').style.display = on ? '' : 'none';
+  if(!on){
+    $('f-prc-cd').value = ''; $('f-prc-why').value = '';
+    $('prc-imp').style.display = 'none';
+    return;
+  }
+  clearTimeout(mImpTimer);
+  mImpTimer = setTimeout(function(){ mImpact(now); }, 260);
+}
+
+async function mImpact(newPrice){
+  let d;
+  try{
+    const r = await fetch('/api/price/impact', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({P_ID: mPid, P_Price: newPrice})});
+    d = await r.json();
+  }catch(e){ return; }
+  if(!d.ok) return;
+  const i = d.impact, up = i.diff > 0;
+  const box = $('prc-imp');
+  box.style.display = '';
+  box.innerHTML =
+    '<div class="mnote" style="margin:6px 0 0">'
+  +   '<b>단가 ' + nf(i.old) + '원 → ' + nf(i.new) + '원</b> '
+  +   '<span style="color:' + (up ? 'var(--dn)' : 'var(--ok)') + '">'
+  +     (up ? '+' : '') + nf(i.diff) + '원'
+  +     (i.pct == null ? '' : ' (' + (up ? '+' : '') + i.pct + '%)') + '</span>'
+  +   (Math.abs(i.pct || 0) >= 30
+      ? ' <span class="bg bdn">변동이 큽니다</span>' : '')
+  +   '<div style="margin-top:4px">따라 바뀌는 것 — '
+  +     i.moves.map(function(m){
+          return esc(m.what) + ' ' + won(m.before) + ' → <b>' + won(m.after) + '</b>원'; })
+        .join(' · ')
+  +   '</div>'
+  +   '<div style="margin-top:3px;color:var(--ok)">그대로인 것 — '
+  +     i.frozen.map(function(f){
+          return esc(f.what) + ' ' + f.cnt + '건 (' + esc(f.why) + ')'; }).join(' · ')
+  +   '</div></div>';
+}
+
 // 입력할 때마다 서버에 묻되, 타자 중에는 묻지 않는다
 function mDraw(){
+  mPriceRow();
   clearTimeout(mTimer);
   mTimer = setTimeout(mPreview, 220);
 }
@@ -619,7 +690,14 @@ function mOpen(pid){
     : '등록하면 자재 정보(Product_tb) · 안전재고 기준(Safe_tb) · 등록 이력(Update_Log_tb) 세 곳에 함께 기록됩니다. '
       + '월 예상 소요량은 안전재고 공식의 일평균 사용량으로 쓰이며, 실제 불출이 쌓이면 일괄 갱신에서 실적값으로 바뀝니다.';
 
-  ['f-name','f-spec','f-price','f-moq','f-pkg','f-lt','f-mon','f-note','f-pid'].forEach(function(i){ $(i).value=''; });
+  ['f-name','f-spec','f-price','f-moq','f-pkg','f-lt','f-mon','f-note','f-pid',
+   'f-prc-why'].forEach(function(i){ $(i).value=''; });
+  mOldPrice = null;
+  $('f-prc-cd').innerHTML = '<option value="">선택</option>'
+    + (SRC.price_reasons || []).map(function(r){
+        return '<option value="' + r.cd + '" title="' + esc(r.label) + '">'
+             + r.cd + '</option>'; }).join('');
+  mPriceRow();
   $('f-cat').value = ''; $('f-brn').value = '';
   document.querySelectorAll('.scb button').forEach(function(b){ b.classList.remove('on'); });
   mMsg('', []); $('m-ok').disabled = true; $('m-foot').textContent = '';
@@ -629,6 +707,7 @@ function mOpen(pid){
     const r = ROWS.find(function(x){ return x.P_ID === mPid; }) || {};
     $('f-name').value = r.P_N || ''; $('f-spec').value = r.Spec || '';
     $('f-brn').value = r.BRN || ''; $('f-price').value = r.P_Price || '';
+    mOldPrice = r.P_Price == null ? null : Math.round(r.P_Price);
     $('f-moq').value = r.MinOrderQty == null ? '' : r.MinOrderQty;
     $('f-pkg').value = r.PkgUnit || ''; $('f-lt').value = r.lead_time || '';
     $('f-pid').value = mPid;
@@ -968,7 +1047,9 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">규격</span><span class="iv">' + esc(x.Spec||'-') + '</span></div>'
   +   '<div class="ir"><span class="ik">협력사</span><span class="iv">' + esc(x.supplier||'-')
   +     (x.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</span></div>'
-  +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(x.P_Price) + '원</span></div>'
+  +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(x.P_Price) + '원 '
+  +     '<a href="#" onclick="prcOpen(&quot;' + x.P_ID + '&quot;);return false"'
+  +     ' style="font-size:10px;color:var(--acc);text-decoration:none">이력 ▸</a></span></div>'
   +   '<div class="ir"><span class="ik">최소발주 · 포장단위</span><span class="iv">'
   +     nf(x.MinOrderQty) + ' · ' + nf(x.PkgUnit) + '</span></div>'
   +   '<div class="ir"><span class="ik">리드타임</span><span class="iv">' + (x.lead_time||'-') + '일</span></div>'
@@ -1059,9 +1140,114 @@ function toggleAllEv(on){
   drawLots();
 }
 
+// ── 단가 이력 ───────────────────────────────────────────
+function prcClose(){ $('prcv').classList.remove('on'); }
+
+async function prcOpen(pid){
+  $('prc-t').textContent = pid + ' 단가 이력';
+  $('prc-b').innerHTML = '<div class="mnote">불러오는 중...</div>';
+  $('prcv').classList.add('on');
+  let d;
+  try{ d = await (await fetch('/api/price/history?P_ID=' + encodeURIComponent(pid))).json(); }
+  catch(e){ d = {ok:false, errors:['서버에 연결할 수 없습니다.']}; }
+  if(!d.ok){ $('prc-b').innerHTML = '<div class="mnote">' + esc(d.errors.join(' ')) + '</div>'; return; }
+  const h = d.data;
+
+  const logs = h.logs.length
+    ? '<table class="lt2"><thead><tr><th>적용일</th><th>이력번호</th>'
+      + '<th class="num">전</th><th class="num">후</th><th class="num">변동</th>'
+      + '<th>사유</th><th>담당</th></tr></thead><tbody>'
+      + h.logs.map(function(g){
+          const up = (g.Diff || 0) > 0;
+          return '<tr><td>' + esc(g.Start_Date) + '</td>'
+            + '<td><span class="lid">' + esc(g.Price_ID) + '</span></td>'
+            + '<td class="num">' + (g.Old_Price==null ? '-' : nf(g.Old_Price)) + '</td>'
+            + '<td class="num"><b>' + nf(g.New_Price) + '</b></td>'
+            + '<td class="num" style="color:' + (up?'var(--dn)':'var(--ok)') + '">'
+            +   (up?'+':'') + nf(g.Diff)
+            +   (g.Diff_Pct==null ? '' : '<div style="font-size:9px">' + (up?'+':'')
+                 + g.Diff_Pct + '%</div>') + '</td>'
+            + '<td><span class="bg bac">' + esc(g.Reason_Cd) + '</span>'
+            +   (g.Reason ? '<div style="font-size:9px;color:var(--txt3)">' + esc(g.Reason) + '</div>' : '')
+            +   '</td>'
+            + '<td>' + esc(g.worker||'-') + ' ' + esc(g.worker_pos||'') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+    : '<div class="mnote">단가가 바뀐 적이 없습니다. 자재 정보 수정에서 단가를 고치면 '
+      + '사유와 함께 여기에 쌓입니다.</div>';
+
+  const ords = h.orders.length
+    ? '<table class="lt2"><thead><tr><th>발주일</th><th>발주번호</th><th>협력사</th>'
+      + '<th class="num">수량</th><th class="num">발주 시점 단가</th>'
+      + '<th class="num">금액</th><th class="num">지금 단가와 차이</th></tr></thead><tbody>'
+      + h.orders.map(function(o){
+          const g = o.gap;
+          return '<tr><td>' + esc(o.P_Date) + '</td>'
+            + '<td><span class="lid">' + esc(o.H_ID) + '</span></td>'
+            + '<td>' + esc(o.supplier||'-') + '</td>'
+            + '<td class="num">' + nf(o.qty) + '</td>'
+            + '<td class="num">' + (o.price==null ? '-' : nf(o.price)) + '</td>'
+            + '<td class="num">' + nf(o.amount) + '</td>'
+            + '<td class="num" style="color:' + (g ? (g>0?'var(--dn)':'var(--ok)') : 'var(--txt3)') + '">'
+            +   (g==null ? '-' : (g>0?'+':'') + nf(g)) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+    : '<div class="mnote">발주 이력이 없습니다.</div>';
+
+  $('prc-b').innerHTML =
+    '<div class="mkpi" style="grid-template-columns:repeat(3,1fr);border-bottom:none;'
+  +   'border:0.5px solid var(--border);border-radius:8px;margin-bottom:10px">'
+  +   '<div class="mk"><div class="mk-l">현재 단가</div><div class="mk-v">' + nf(h.price)
+  +     '<span style="font-size:10px;color:var(--txt3)">원</span></div>'
+  +     '<div class="mk-s">' + esc(h.supplier||'-') + '</div></div>'
+  +   '<div class="mk"><div class="mk-l">변경 이력</div><div class="mk-v">' + h.log_cnt
+  +     '<span style="font-size:10px;color:var(--txt3)">건</span></div>'
+  +     '<div class="mk-s">' + (h.log_cnt ? '최근 ' + esc(h.logs[0].Start_Date) : '변경 없음') + '</div></div>'
+  +   '<div class="mk"><div class="mk-l">발주 시점 단가</div>'
+  +     '<div class="mk-v" style="font-size:13px">'
+  +       (h.min_price==null ? '-' : nf(h.min_price) + ' ~ ' + nf(h.max_price)) + '</div>'
+  +     '<div class="mk-s">' + (h.avg_price==null ? '발주 없음' : '평균 ' + nf(h.avg_price) + '원')
+  +       ' · ' + h.order_cnt + '건</div></div>'
+  + '</div>'
+  + '<div class="tl" style="margin-top:0"><div class="mh-s">'
+  +   '<b style="font-size:12px;color:var(--txt)">단가 변경 이력</b></div></div>'
+  + logs
+  + '<div class="tl"><div class="mh-s">'
+  +   '<b style="font-size:12px;color:var(--txt)">발주 시점 단가</b> '
+  +   '<span>발주서·입고 대조·정산이 쓰는 값입니다</span></div></div>'
+  + ords
+  + '<div class="mnote">'
+  +   '<b>발주 시점 단가는 발주를 넣는 순간 박힙니다.</b> 나중에 단가를 고쳐도 '
+  +   '지난 발주서 금액은 바뀌지 않습니다 — "그때 얼마에 샀나" 와 "지금 얼마짜리인가" 는 '
+  +   '다른 질문이기 때문입니다.<br>'
+  +   '재고자산 · ABC 분석 · 연간 사용금액은 <b>현재 단가</b>를 씁니다. 지금 창고에 묶인 '
+  +   '돈을 말해야 하므로 과거 단가로 매길 수 없습니다.<br>'
+  +   '⚠️ 원본 데이터에는 단가 컬럼이 없었습니다. 기존 발주 639행의 발주 시점 단가는 '
+  +   '지금 알 수 있는 최선인 <b>현재 단가로 채워</b> 두었습니다.'
+  + '</div>';
+}
+
 const EVICON = {order:'ti-file-text', in:'ti-arrow-bar-to-down', out:'ti-arrow-bar-up',
                 bad:'ti-alert-octagon', move:'ti-arrows-exchange',
                 prod:'ti-settings-automation', claim:'ti-message-report'};
+
+// 같은 kind 라도 부호가 다르면 다른 일이다 — 최초 입고(0)와 현장 복귀(+1).
+// 유형명('반납')을 여기 박지 않는다. 새 유형이 들어와도 부호로 갈린다.
+function evIcon(e){
+  if(e.kind==='in' && e.sign>0) return 'ti-arrow-back-up';
+  return EVICON[e.tone] || 'ti-point';
+}
+function evTone(e){
+  return (e.kind==='in' && e.sign>0) ? 'ret' : e.tone;
+}
+
+// 순차감량 한 덩어리로 보여주면 그 안에 섞인 반납·처분·이동이 묻힌다.
+// 불출 4,000 뒤에 반납 3,456 이 오면 '불출 544' 라는 없던 숫자가 된다.
+function flowSub(l){
+  const p = [];
+  if(l.ret_qty)   p.push('<span style="color:var(--ok)">↩ 반납 ' + nf(l.ret_qty) + '</span>');
+  if(l.scrap_qty) p.push('<span style="color:var(--dn)">✕ 처분 ' + nf(l.scrap_qty) + '</span>');
+  if(l.move_cnt)  p.push('<span style="color:var(--wn)">⇄ 이동 ' + l.move_cnt + '건</span>');
+  return p.length ? '<div style="font-size:9px;line-height:1.5">' + p.join(' · ') + '</div>' : '';
+}
 
 // LOT 한 건의 이벤트 묶음. 표의 행 아래에 끼워 넣는다.
 function evBlock(lotId){
@@ -1074,7 +1260,7 @@ function evBlock(lotId){
   return '<div class="tlb">' + l.events.map(function(e){
       return '<div class="ev">'
         + '<span class="ev-d">' + (e.date||'-') + '</span>'
-        + '<span class="ev-i k-' + e.tone + '"><i class="ti ' + (EVICON[e.tone]||'ti-point') + '"></i></span>'
+        + '<span class="ev-i k-' + evTone(e) + '"><i class="ti ' + evIcon(e) + '"></i></span>'
         + '<span><span class="ev-t">' + esc(e.title) + '</span>'
         +   (e.desc ? '<div class="ev-s">' + esc(e.desc) + '</div>' : '')
         +   (e.warn ? '<div class="ev-w"><i class="ti ti-alert-triangle"></i> ' + esc(e.warn) + '</div>' : '')
@@ -1108,6 +1294,9 @@ function drawLots(){
       + '<td><div class="tlw"><i class="ti ' + (on ? 'ti-chevron-down' : 'ti-chevron-right') + ' cv"></i>'
       +   '<span class="lid">' + l.Lot_ID + '</span></div>'
       +   (e && e.event_cnt ? '<div class="evn">이벤트 ' + e.event_cnt + '건'
+            + (l.ret_qty    ? ' · <b style="color:var(--ok)">반납</b>' : '')
+            + (l.scrap_qty  ? ' · <b style="color:var(--dn)">처분</b>' : '')
+            + (l.move_cnt   ? ' · <b style="color:var(--wn)">이동</b>' : '')
             + (e.has_defect ? ' · <b style="color:var(--dn)">불량</b>' : '')
             + (e.is_swap_in ? ' · <b style="color:var(--wn)">대체품</b>' : '') + '</div>' : '')
       +   (l.fifo_ok ? '' : '<div style="font-size:9px;color:var(--dn)">' + l.fifo_skipped + '회 건너뜀</div>') + '</td>'
@@ -1115,7 +1304,7 @@ function drawLots(){
       +   '<div style="font-size:9px;color:var(--txt3)">발주 ' + (l.order_date||'-')
       +   (l.lead_days!=null ? ' · LT ' + l.lead_days + '일' : '') + '</div></td>'
       + '<td class="num">' + nf(l.P_Qty) + '</td>'
-      + '<td class="num">' + nf(l.out_qty)
+      + '<td class="num">' + nf(l.disb_qty) + flowSub(l)
       +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
       + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
       + '<td>' + (isLive
@@ -1144,11 +1333,16 @@ function drawLots(){
   + '</div>'
   + '<table class="lt2"><thead><tr>'
   +   '<th>순</th><th>LOT 번호</th><th>입고일 / 발주</th><th class="num">입고</th>'
-  +   '<th class="num">불출</th><th class="num">잔여</th><th>상태</th>'
+  +   '<th class="num">불출 / 되돌아옴</th><th class="num">잔여</th><th>상태</th>'
   +   '<th class="hide-m">창고</th><th class="hide-m">입고담당</th><th class="hide-m">생산투입</th>'
   + '</tr></thead><tbody>' + rows + '</tbody></table>'
   + '<div class="mnote">'
-  +   '<b>LOT 행을 누르면</b> 그 LOT 의 이벤트(발주·입고·불출·불량·생산투입·클레임)가 펼쳐집니다.<br>'
+  +   '<b>LOT 행을 누르면</b> 그 LOT 의 모든 이벤트가 시간순으로 펼쳐집니다 — '
+  +   '발주 · 입고 · 불출 · <b style="color:var(--ok)">반납</b> · '
+  +   '<b style="color:var(--dn)">불량 · 폐기</b> · <b style="color:var(--wn)">이동 · 교환</b> · '
+  +   '생산투입 · 클레임.<br>'
+  +   '<b>불출 칸은 실제로 나간 양</b>입니다. 되돌아온 양(반납)과 처분된 양(불량·폐기)은 '
+  +   '그 아래 따로 적습니다 — 합쳐서 한 숫자로 보이면 일어난 적 없는 수량이 됩니다.<br>'
   +   '<b>최근 입고가 위</b>, 오래된 LOT 일수록 아래입니다. '
   +   '<b>순</b> = 입고 순서(FIFO) — 1번이 가장 오래된 LOT 입니다. '
   +   '<b style="color:var(--ok)">초록</b> 보유중 · '
@@ -1166,8 +1360,12 @@ function openLots(pid){
                  .sort(function(a,b){ return b.fifo_seq - a.fifo_seq; });
   const live = ls.filter(function(l){return l.remain>0;});
   const viol = ls.filter(function(l){return !l.fifo_ok;});
-  const inQty  = ls.reduce(function(a,l){return a+(l.P_Qty||0);},0);
-  const outQty = ls.reduce(function(a,l){return a+(l.out_qty||0);},0);
+  const sumOf  = function(k){ return ls.reduce(function(a,l){return a+(l[k]||0);},0); };
+  const inQty  = sumOf('P_Qty');
+  const outQty = sumOf('disb_qty');          // 실제 불출. 순차감량(out_qty)이 아니다
+  const retQty = sumOf('ret_qty');
+  const scrQty = sumOf('scrap_qty');
+  const netQty = sumOf('out_qty');
   const holds  = ls.filter(function(l){return l.hold_days!=null;}).map(function(l){return l.hold_days;});
   const avgHold = holds.length ? Math.round(holds.reduce(function(a,b){return a+b;},0)/holds.length) : null;
   const maxAge  = live.length ? Math.max.apply(null, live.map(function(l){return l.age_days;})) : 0;
@@ -1184,7 +1382,12 @@ function openLots(pid){
   +   '<div class="mk-s">잔여 ' + live.length + ' · 소진 ' + (ls.length-live.length) + '</div></div>'
   + '<div class="mk"><div class="mk-l">누적 입고 / 불출</div>'
   +   '<div class="mk-v" style="font-size:13px">' + nf(inQty) + ' / ' + nf(outQty) + '</div>'
-  +   '<div class="mk-s">소진율 ' + (inQty ? Math.round(outQty/inQty*100) : 0) + '%</div></div>'
+  +   '<div class="mk-s">'
+  +     (retQty || scrQty
+        ? (retQty ? '반납 ' + nf(retQty) : '') + (retQty && scrQty ? ' · ' : '')
+          + (scrQty ? '처분 ' + nf(scrQty) : '')
+        : '소진율 ' + (inQty ? Math.round(netQty/inQty*100) : 0) + '%')
+  +   '</div></div>'
   + '<div class="mk"><div class="mk-l">현재고</div>'
   +   '<div class="mk-v ' + (p.stock>0?'ok':'dn') + '">' + nf(p.stock) + '</div>'
   +   '<div class="mk-s">' + won(p.stock_value||0) + '원</div></div>'

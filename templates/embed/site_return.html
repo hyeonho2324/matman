@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>현장 반납</title>
+<link rel="stylesheet" href="/static/vendor/tabler-icons.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--s0:#F8F7F4;--s1:#EFEEEA;--s2:#E5E4DF;--border:#D4D3CE;--border-s:#B8B7B2;--acc:#2a78d6;--ok:#1D9E75;--wn:#EF9F27;--dn:#E24B4A;--txt:#1A1917;--txt2:#4A4946;--txt3:#898781;--r:6px;--bg-ok:rgba(29,158,117,.1);--bg-wn:rgba(239,159,39,.1);--bg-dn:rgba(224,75,74,.1);--bg-ac:rgba(42,120,214,.09)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;font-size:13px;color:var(--txt);background:var(--s0);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:var(--s1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.pt{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:6px}
+.tag{font-size:10px;color:var(--txt3);font-weight:400}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);font-size:12px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt);font-family:inherit;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--s2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.btnp:hover:not(:disabled){background:#2168bd}
+.ro{padding:7px 14px;background:var(--bg-ac);border-bottom:0.5px solid var(--border);font-size:10px;color:#185FA5;line-height:1.6;flex-shrink:0}
+
+.tabs{display:flex;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.tab{padding:8px 15px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--txt2);display:flex;align-items:center;gap:5px}
+.tab:hover{background:var(--s2)}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc);font-weight:500;background:var(--s0)}
+.tab .cnt{font-size:10px;color:var(--txt3)}
+.tc{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tc.on{display:flex}
+
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:0.5px solid var(--border);flex-shrink:0}
+.kpi{padding:9px 12px;border-right:0.5px solid var(--border)}
+.kpi:last-child{border-right:none}
+.kl{font-size:10px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+.kv{font-size:19px;font-weight:600;margin-top:2px}
+.ks{font-size:10px;color:var(--txt3);margin-top:1px}
+.ok{color:var(--ok)}.wn{color:var(--wn)}.dn{color:var(--dn)}.ac{color:var(--acc)}
+
+.filt{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:0.5px solid var(--border);background:var(--s1);flex-wrap:wrap;flex-shrink:0}
+.pill{padding:3px 9px;border-radius:12px;font-size:11px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;color:var(--txt2);font-family:inherit;white-space:nowrap}
+.pill:hover{background:var(--s2)}
+.pill.on{background:var(--acc);border-color:var(--acc);color:#fff}
+input[type=text],input[type=search],select{font-family:inherit;font-size:11.5px;border:0.5px solid var(--border-s);border-radius:4px;padding:4px 7px;background:var(--s0);color:var(--txt)}
+input:focus,select:focus{outline:none;border-color:var(--acc)}
+
+.listwrap{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse}
+.listwrap table:not([class]){min-width:1120px}
+.ar{color:var(--txt3)}
+th{position:sticky;top:0;background:var(--s1);font-size:10px;color:var(--txt3);font-weight:500;text-align:left;padding:6px 8px;white-space:nowrap;border-bottom:0.5px solid var(--border);z-index:1;cursor:pointer}
+th.nos{cursor:default}
+td{padding:5px 8px;font-size:11.5px;border-bottom:0.5px solid var(--border);vertical-align:middle}
+tbody tr:hover td{background:var(--s1)}
+tr.pick td{background:var(--bg-ac)}
+tr.pick:hover td{background:rgba(42,120,214,.14)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.lid{font-family:ui-monospace,monospace;font-size:10px;color:var(--txt2)}
+.pid{font-family:ui-monospace,monospace;color:var(--acc)}
+.qin{width:84px;text-align:right;font-family:inherit;font-size:11.5px;border:0.5px solid var(--border-s);border-radius:4px;padding:3px 6px;background:#fff;color:var(--txt);font-variant-numeric:tabular-nums}
+.qin:focus{outline:none;border-color:var(--acc)}
+.qin:disabled{background:var(--s2);color:var(--txt3)}
+input[type=checkbox]{accent-color:var(--acc);cursor:pointer;width:14px;height:14px}
+
+.bg{display:inline-block;padding:1px 6px;border-radius:9px;font-size:9.5px;font-weight:500}
+.bok{background:var(--bg-ok);color:#1D6E52}.bwn{background:var(--bg-wn);color:#854F0B}
+.bdn{background:var(--bg-dn);color:#9B1C1C}.bac{background:var(--bg-ac);color:#185FA5}
+.bmu{background:var(--s2);color:var(--txt3)}
+.gr{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;font-size:9.5px;font-weight:600}
+.grA{background:var(--bg-dn);color:#9B1C1C}.grB{background:var(--bg-wn);color:#854F0B}.grC{background:var(--bg-ok);color:#1D6E52}
+
+.bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:0.5px solid var(--border);background:var(--s1);flex-wrap:wrap;flex-shrink:0}
+.bar .m{flex:1;min-width:170px;font-size:11px;color:var(--txt3);line-height:1.6}
+.bar label{font-size:10px;color:var(--txt3)}
+.msg{border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.7;margin:10px 12px 0;display:none}
+.msg.on{display:block}
+.msg.err{background:var(--bg-dn);color:#9B1C1C}
+.msg.ok{background:var(--bg-ok);color:#1D6E52}
+.msg.wn{background:var(--bg-wn);color:#854F0B}
+.msg ul{margin:3px 0 0 16px}
+.empty{padding:46px 20px;text-align:center;color:var(--txt3);font-size:12px}
+.empty i{display:block;font-size:34px;color:var(--border-s);margin-bottom:9px}
+.note{padding:8px 12px;font-size:10px;color:var(--txt3);line-height:1.7}
+
+/* 확인 패널 */
+.ovl{position:fixed;inset:0;background:rgba(26,25,23,.45);display:none;align-items:flex-start;justify-content:center;padding:18px;z-index:80;overflow:auto}
+.ovl.on{display:flex}
+.ow{background:var(--s0);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.25);width:820px;max-width:100%;flex-shrink:0;display:flex;flex-direction:column}
+.oh{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--s1);border-radius:10px 10px 0 0}
+.oh .t{font-size:13px;font-weight:600;flex:1}
+.obody{max-height:320px;overflow:auto;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border)}
+@media(max-width:900px){ .kpi-row{grid-template-columns:repeat(3,1fr)} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="pt"><i class="ti ti-arrow-back-up" style="color:var(--acc)"></i>현장 반납
+      <span class="tag">실제 DB · 현장 {{ src.lot_cnt }} LOT</span></div>
+    <button class="btn btnp" id="btnGo" onclick="openConfirm()" disabled>
+      <i class="ti ti-arrow-back-up"></i>반납 등록</button>
+  </div>
+
+  <div class="ro">
+    <i class="ti ti-info-circle"></i>
+    <b>반납은 불출의 취소가 아닙니다.</b> 불출 거래를 지우면 "그때 나갔다"는 사실이 사라지고
+    요청서 진행률·생산 투입 이력이 어긋납니다. 되돌리는 대신 <b>반대 방향 거래를 새로</b> 남겨
+    현장 보유가 줄고 창고 잔량이 되살아납니다.
+    돌아온 물건이 쓸 수 있는 상태인지는 <b>줄마다 검수</b>합니다 — 불량분은 창고에 올라가지 않습니다.
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-t="new" onclick="tab('new')">
+      <i class="ti ti-arrow-back-up"></i>반납 등록 <span class="cnt">{{ src.lot_cnt }} LOT</span></div>
+    <div class="tab" data-t="hist" onclick="tab('hist')">
+      <i class="ti ti-history"></i>반납 이력 <span class="cnt">{{ rets|length }}건</span></div>
+  </div>
+
+  <!-- 반납 등록 -->
+  <div class="tc on" id="tc-new">
+    <div class="kpi-row" id="kpis"></div>
+    <div class="filt">
+      <span style="font-size:10px;color:var(--txt3)">대분류</span>
+      <button class="pill on" data-c="" onclick="setCat('')">전체</button>
+      {% for c in src.cats %}
+      <button class="pill" data-c="{{ c.MainCat }}" onclick="setCat('{{ c.MainCat }}')">{{ c.MainCat }}</button>
+      {% endfor %}
+      <button class="pill" id="pLong" onclick="toggleLong()" style="margin-left:6px">
+        <i class="ti ti-clock-exclamation"></i> {{ src.long_days }}일+ 만</button>
+      <button class="pill" id="pSel" onclick="toggleSel()">고른 것만</button>
+      <input type="search" id="q" placeholder="품번 · 품명 · LOT · 작업지시" style="flex:1;min-width:150px"
+             oninput="draw()">
+      <span style="font-size:10px;color:var(--txt3)" id="cnt"></span>
+    </div>
+    <div class="listwrap">
+      <table>
+        <thead><tr>
+          <th class="nos" style="width:28px"><input type="checkbox" id="all" onchange="pickAll(this.checked)"></th>
+          <th onclick="sortBy('P_ID')">자재</th>
+          <th onclick="sortBy('Lot_ID')">LOT</th>
+          <th onclick="sortBy('loc_name')">창고 구역</th>
+          <th onclick="sortBy('last_out')">마지막 불출</th>
+          <th class="num" onclick="sortBy('days')">체류일</th>
+          <th class="num" onclick="sortBy('site')">현장 보유</th>
+          <th class="num" onclick="sortBy('amount')">금액</th>
+          <th class="num nos" style="width:98px">반납 수량</th>
+          <th class="num nos" style="width:86px">검수 불량</th>
+          <th class="nos" style="width:150px">불량 사유</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="none" style="display:none"><i class="ti ti-package-off"></i>
+        조건에 맞는 LOT 이 없습니다.</div>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="bar">
+      <div class="m" id="foot"></div>
+      <label>사유</label>
+      <select id="rc" style="min-width:130px" onchange="footer()">
+        {% for r in src.reasons %}
+        <option value="{{ r.cd }}" title="{{ r.label }}">{{ r.cd }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" id="note" placeholder="설명 (선택)" style="width:150px">
+      <input type="text" id="wo" placeholder="작업지시 (선택)" style="width:140px">
+      <label>담당자</label>
+      <select id="ep" style="min-width:140px">
+        {% for w in src.workers %}
+        <option value="{{ w.EP_ID }}">{{ w.Name }} {{ w.Position }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn" onclick="clearPick()"><i class="ti ti-eraser"></i>선택 해제</button>
+    </div>
+  </div>
+
+  <!-- 반납 이력 -->
+  <div class="tc" id="tc-hist">
+    <div class="listwrap">
+      <table>
+        <thead><tr>
+          <th class="nos">반납번호</th><th class="nos">일자</th><th class="nos">사유</th>
+          <th class="nos">작업지시</th><th class="num nos">줄</th>
+          <th class="num nos">수량</th><th class="num nos">양품</th><th class="num nos">불량</th>
+          <th class="num nos">불량률</th><th class="num nos">금액</th><th class="nos">담당</th>
+        </tr></thead>
+        <tbody id="hrows"></tbody>
+      </table>
+      <div class="empty" id="hnone" style="display:none"><i class="ti ti-history-off"></i>
+        반납 이력이 없습니다.</div>
+    </div>
+    <div class="note">반납 전표를 누르면 그 전표가 남긴 LOT 과 거래번호를 볼 수 있습니다.</div>
+  </div>
+</div>
+
+<!-- 확인 -->
+<div class="ovl" id="cvl" onclick="if(event.target===this) closeConfirm()">
+  <div class="ow">
+    <div class="oh"><i class="ti ti-arrow-back-up" style="color:var(--acc);font-size:16px"></i>
+      <span class="t">반납 등록</span>
+      <button class="btn" onclick="closeConfirm()"><i class="ti ti-x"></i></button></div>
+    <div class="note" style="padding:10px 12px 6px">
+      서버가 현장 보유를 <b>다시 계산한</b> 결과입니다. 등록하면 LOT 마다 <b>반납 거래</b>가
+      생기고 창고 잔량이 그만큼 되살아납니다.
+    </div>
+    <div id="cSum" style="padding:0 12px 8px"></div>
+    <div class="obody"><table id="cTb" class="ct"></table></div>
+    <div class="msg" id="cMsg"></div>
+    <div class="bar" style="border-radius:0 0 10px 10px">
+      <div class="m" id="cFoot"></div>
+      <button class="btn" onclick="closeConfirm()">취소</button>
+      <button class="btn btnp" id="cOk" onclick="go()"><i class="ti ti-check"></i>반납 등록</button>
+    </div>
+  </div>
+</div>
+
+<!-- 전표 상세 -->
+<div class="ovl" id="dvl" onclick="if(event.target===this) closeDetail()">
+  <div class="ow" style="width:760px">
+    <div class="oh"><i class="ti ti-file-text" style="color:var(--acc);font-size:16px"></i>
+      <span class="t" id="dTitle">반납 전표</span>
+      <button class="btn" onclick="closeDetail()"><i class="ti ti-x"></i></button></div>
+    <div class="obody" style="max-height:420px"><table id="dTb" class="ct"></table></div>
+    <div class="note" id="dFoot"></div>
+  </div>
+</div>
+
+<script>
+let SRC  = {{ src|tojson }};
+let RETS = {{ rets|tojson }};
+
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
+const $   = id => document.getElementById(id);
+
+let pick = {};                 // {Lot_ID: 반납 수량}
+let bad  = {};                 // {Lot_ID: {qty, cd, note}}  — 검수 불량
+let cat = '', onlyLong = false, onlySel = false;
+let sortK = 'days', sortD = -1;
+let plan = null;
+
+function tab(t){
+  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('on', e.dataset.t===t));
+  document.querySelectorAll('.tc').forEach(e => e.classList.toggle('on', e.id==='tc-'+t));
+}
+
+// ── KPI ─────────────────────────────────────────────────
+function drawKpi(){
+  const s = SRC;
+  $('kpis').innerHTML =
+    kpi('ti-package','현장 보유 LOT', nf(s.lot_cnt), s.item_cnt + '품목 · ' + nf(s.qty) + '개', '')
+  + kpi('ti-coin','현장 자산', won(s.amount), '창고로 돌아오면 재고자산이 됩니다', 'ac')
+  + kpi('ti-clock-exclamation', s.long_days + '일+ 장기', nf(s.long_cnt),
+        s.long_cnt ? '오래 묶여 있습니다' : '장기 보유 없음', s.long_cnt ? 'wn' : 'ok')
+  + kpi('ti-calendar','평균 체류일', nf(s.avg_days) + '<small style="font-size:11px">일</small>',
+        '마지막 불출일 기준', '')
+  + kpi('ti-checkbox','고른 것', nf(Object.keys(pick).length),
+        nf(sumQty()) + '개 · ' + won(sumAmt()) + '원', Object.keys(pick).length ? 'ac' : '');
+}
+function kpi(icon,l,v,s,cls){
+  return '<div class="kpi"><div class="kl"><i class="ti ' + icon + '"></i>' + l + '</div>'
+       + '<div class="kv ' + (cls||'') + '">' + v + '</div><div class="ks">' + s + '</div></div>';
+}
+const lotOf = id => SRC.lots.filter(r => r.Lot_ID===id)[0];
+function sumQty(){ return Object.keys(pick).reduce((a,k) => a + (pick[k]||0), 0); }
+function sumAmt(){
+  return Object.keys(pick).reduce((a,k) => {
+    const r = lotOf(k); return a + Math.round((pick[k]||0) * (r ? r.P_Price||0 : 0)); }, 0);
+}
+
+// ── 목록 ────────────────────────────────────────────────
+function rowsNow(){
+  const q = ($('q').value || '').trim().toLowerCase();
+  let rs = SRC.lots.filter(function(r){
+    if(cat && r.MainCat !== cat) return false;
+    if(onlyLong && !r.is_long) return false;
+    if(onlySel && !(r.Lot_ID in pick)) return false;
+    if(!q) return true;
+    return (r.P_ID + ' ' + (r.P_N||'') + ' ' + (r.Spec||'') + ' ' + r.Lot_ID
+            + ' ' + (r.last_wo||'')).toLowerCase().indexOf(q) >= 0;
+  });
+  rs.sort(function(a,b){
+    const x = a[sortK], y = b[sortK];
+    if(x===y) return a.Lot_ID < b.Lot_ID ? -1 : 1;
+    if(x==null) return 1;
+    if(y==null) return -1;
+    return (x > y ? 1 : -1) * sortD;
+  });
+  return rs;
+}
+
+function draw(){
+  const rs = rowsNow();
+  $('cnt').textContent = rs.length + ' / ' + SRC.lots.length + ' LOT';
+  $('none').style.display = rs.length ? 'none' : 'block';
+  $('rows').innerHTML = rs.map(function(r){
+    const on = r.Lot_ID in pick;
+    return '<tr class="' + (on?'pick':'') + '" onclick="rowClick(event,\'' + r.Lot_ID + '\')">'
+      + '<td><input type="checkbox" ' + (on?'checked':'') + ' onclick="event.stopPropagation()"'
+      +   ' onchange="toggle(\'' + r.Lot_ID + '\',this.checked)"></td>'
+      + '<td><span class="pid">' + esc(r.P_ID) + '</span>'
+      +   (r.grade ? ' <span class="gr gr'+r.grade+'">'+r.grade+'</span>' : '')
+      +   '<div style="font-size:10px;color:var(--txt3)">' + esc(r.P_N||'')
+      +   (r.Spec ? ' · ' + esc(r.Spec) : '') + '</div></td>'
+      + '<td><span class="lid">' + esc(r.Lot_ID) + '</span>'
+      +   (r.last_wo ? '<div style="font-size:9.5px;color:var(--txt3)">' + esc(r.last_wo) + '</div>' : '')
+      +   '</td>'
+      + '<td>' + esc(r.loc_name || r.Loc_ID || '-') + '</td>'
+      + '<td>' + esc(r.last_out || '-') + '</td>'
+      + '<td class="num">' + nf(r.days)
+      +   (r.is_long ? ' <span class="bg bwn">장기</span>' : '') + '</td>'
+      + '<td class="num">' + nf(r.site) + '</td>'
+      + '<td class="num">' + nf(r.amount) + '</td>'
+      + '<td class="num"><input class="qin" type="number" min="1" max="' + r.site + '"'
+      +   ' value="' + (on ? pick[r.Lot_ID] : '') + '" ' + (on?'':'disabled')
+      +   ' onclick="event.stopPropagation()" onkeydown="nextRow(event)"'
+      +   ' oninput="setQty(\'' + r.Lot_ID + '\',this.value)"></td>'
+      + badCell(r, on)
+      + '</tr>';
+  }).join('');
+  drawKpi();
+  footer();
+}
+
+// 검수 — 돌아온 물건이 쓸 수 있는 상태인지. 안 넣으면 전량 양품이다.
+function badCell(r, on){
+  const b = bad[r.Lot_ID] || {};
+  const q = pick[r.Lot_ID] || 0;
+  let h = '<td class="num"><input class="qin" style="width:72px" type="number" min="0" max="' + q + '"'
+        + ' value="' + (b.qty || '') + '" ' + (on ? '' : 'disabled')
+        + ' onclick="event.stopPropagation()"'
+        + ' oninput="setBad(\'' + r.Lot_ID + '\',this.value)"></td>';
+  // 사유 드롭다운은 불량을 넣은 순간 나타난다 (실사의 구역오류와 같은 패턴)
+  h += '<td onclick="event.stopPropagation()">';
+  if(b.qty){
+    h += '<select onchange="setBadCd(\'' + r.Lot_ID + '\',this.value)">'
+       + '<option value="">사유 선택</option>'
+       + SRC.bad_reasons.map(function(x){
+           return '<option value="' + x.cd + '" title="' + esc(x.label) + '"'
+                + (b.cd===x.cd ? ' selected' : '') + '>'
+                + x.cd + (x.blame==='협력사' ? ' (협력사)' : '') + '</option>'; }).join('')
+       + '</select>';
+    if(b.cd){
+      const m = SRC.bad_reasons.filter(function(x){return x.cd===b.cd;})[0];
+      h += '<div style="font-size:9px;color:' + (m && m.blame==='협력사' ? 'var(--wn)' : 'var(--txt3)')
+         + '">' + (m ? esc(m.blame) + ' 귀책' : '') + '</div>';
+    }
+  } else if(on && r.is_long){
+    h += '<span style="font-size:9.5px;color:var(--wn)">⚠ ' + r.days + '일 — 상태 확인</span>';
+  }
+  return h + '</td>';
+}
+
+function setBad(id, v){
+  const q = pick[id] || 0;
+  let n = parseInt(v, 10);
+  if(isNaN(n) || n < 1) delete bad[id];
+  else bad[id] = Object.assign(bad[id] || {}, {qty: Math.min(n, q)});
+  draw();
+}
+function setBadCd(id, cd){
+  if(!bad[id]) return;
+  bad[id].cd = cd || null;
+  draw();
+}
+
+function sortBy(k){
+  if(sortK===k) sortD = -sortD;
+  else { sortK = k; sortD = (k==='days'||k==='site'||k==='amount') ? -1 : 1; }
+  draw();
+}
+function setCat(c){
+  cat = c;
+  document.querySelectorAll('.pill[data-c]').forEach(b => b.classList.toggle('on', b.dataset.c===c));
+  draw();
+}
+function toggleLong(){ onlyLong = !onlyLong; $('pLong').classList.toggle('on', onlyLong); draw(); }
+function toggleSel(){ onlySel = !onlySel; $('pSel').classList.toggle('on', onlySel); draw(); }
+
+// 체크하면 현장 보유 전량이 기본값이다 — 대개 남은 걸 통째로 되돌린다
+function toggle(id, on){
+  const r = lotOf(id);
+  if(on && r) pick[id] = r.site;
+  else { delete pick[id]; delete bad[id]; }     // 빼면 검수 기록도 같이 지운다
+  draw();
+}
+function rowClick(e, id){ toggle(id, !(id in pick)); }
+function setQty(id, v){
+  const r = lotOf(id); if(!r) return;
+  let n = parseInt(v, 10);
+  if(isNaN(n) || n < 1){ delete pick[id]; delete bad[id]; }
+  else {
+    pick[id] = Math.min(n, r.site);             // 현장에 없는 수량은 애초에 못 넣는다
+    // 반납 수량을 줄이면 불량이 그보다 클 수 없다
+    if(bad[id] && bad[id].qty > pick[id]) bad[id].qty = pick[id];
+  }
+  draw();
+}
+function nextRow(e){
+  if(e.key!=='Enter') return;
+  const all = [...document.querySelectorAll('.qin:not(:disabled)')];
+  const i = all.indexOf(e.target);
+  if(i>=0 && all[i+1]){ all[i+1].focus(); all[i+1].select(); }
+}
+function pickAll(on){
+  rowsNow().forEach(r => {
+    if(on) pick[r.Lot_ID] = r.site;
+    else { delete pick[r.Lot_ID]; delete bad[r.Lot_ID]; }
+  });
+  draw();
+}
+function clearPick(){ pick = {}; bad = {}; $('all').checked = false; draw(); }
+
+function footer(){
+  const n = Object.keys(pick).length;
+  $('btnGo').disabled = !n;
+  const rc = $('rc');
+  const hint = rc.options[rc.selectedIndex] ? rc.options[rc.selectedIndex].title : '';
+  const bq = Object.keys(bad).reduce(function(a,k){ return a + (bad[k].qty||0); }, 0);
+  $('foot').innerHTML = n
+    ? '<b>' + n + ' LOT · ' + nf(sumQty()) + '개</b>를 창고로 되돌립니다'
+      + (bq ? ' — 양품 <b>' + nf(sumQty()-bq) + '</b> · <span style="color:var(--dn)">불량 '
+            + nf(bq) + '</span>' : '')
+      + (hint ? ' <span style="color:var(--txt3)">· ' + esc(hint) + '</span>' : '')
+    : '되돌릴 LOT 을 고르세요. 체크하면 현장 보유 전량이 들어가고, 수량은 줄일 수 있습니다.';
+}
+
+function msg(el, kind, lines){
+  const m = $(el);
+  if(!lines || !lines.length){ m.className = 'msg'; m.innerHTML = ''; return; }
+  m.className = 'msg on ' + (kind||'err');
+  m.innerHTML = lines.length===1 ? esc(lines[0])
+    : '<ul>' + lines.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+}
+
+async function post(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body)});
+    return await r.json();
+  }catch(e){ return {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
+}
+const payload = () => ({
+  lines: Object.keys(pick).map(function(k){
+    const b = bad[k] || {};
+    return {Lot_ID: k, qty: pick[k],
+            bad_qty: b.qty || 0, bad_cd: b.cd || '', bad_note: b.note || ''};
+  }),
+  EP_ID: $('ep').value, reason_cd: $('rc').value,
+  reason: $('note').value, Work_Order: $('wo').value});
+
+// ── 확인 ────────────────────────────────────────────────
+function closeConfirm(){ $('cvl').classList.remove('on'); }
+async function openConfirm(){
+  msg('msg', '', []);
+  const d = await post('/api/return/preview', payload());
+  if(!d.ok) return msg('msg', 'err', d.errors);
+  plan = d.plan;
+  $('cSum').innerHTML =
+    '<span class="bg bac" style="font-size:10.5px;margin-right:4px">' + esc(plan.tx)
+    + ' ' + plan.cnt + '건</span>'
+    + (plan.bad_qty ? '<span class="bg bdn" style="font-size:10.5px;margin-right:4px">불량 '
+        + plan.bad_cnt + '건</span>' : '')
+    + (plan.claim_cnt ? '<span class="bg bwn" style="font-size:10.5px;margin-right:4px">협력사 클레임 '
+        + plan.claim_cnt + '건</span>' : '')
+    + '<span class="bg bmu" style="font-size:10.5px;margin-right:4px">' + esc(plan.reason_cd) + '</span>'
+    + '<span style="font-size:11px;color:var(--txt3)">' + plan.item_cnt + '품목 · '
+    + nf(plan.qty) + '개 (양품 ' + nf(plan.good_qty) + ' · 불량 ' + nf(plan.bad_qty)
+    + (plan.bad_qty ? ' · ' + plan.bad_pct + '%' : '') + ') · 반납일 ' + esc(plan.date) + '</span>';
+  $('cTb').innerHTML = '<thead><tr><th class="nos">LOT</th><th class="nos">자재</th>'
+    + '<th class="num nos">반납</th><th class="num nos">양품</th><th class="num nos">불량</th>'
+    + '<th class="nos">사유</th>'
+    + '<th class="num nos">현장</th><th class="num nos">창고 가용</th></tr></thead><tbody>'
+    + plan.items.map(function(t){
+        return '<tr><td><span class="lid">' + esc(t.Lot_ID) + '</span></td>'
+          + '<td>' + esc(t.P_ID) + '<div style="font-size:10px;color:var(--txt3)">'
+          +   esc(t.P_N||'') + '</div></td>'
+          + '<td class="num"><b>' + nf(t.qty) + '</b></td>'
+          + '<td class="num ok">' + nf(t.good_qty) + '</td>'
+          + '<td class="num ' + (t.bad_qty ? 'dn' : '') + '">' + (t.bad_qty ? nf(t.bad_qty) : '-') + '</td>'
+          + '<td>' + (t.bad_cd
+              ? '<span class="bg ' + (t.blame==='협력사' ? 'bwn' : 'bdn') + '">' + esc(t.bad_cd) + '</span>'
+                + '<div style="font-size:9px;color:var(--txt3)">' + esc(t.blame) + ' 귀책'
+                + (t.blame==='협력사' ? ' · 클레임' : ' · 폐기') + '</div>'
+              : (t.stale ? '<span style="font-size:9.5px;color:var(--wn)">⚠ ' + t.days
+                 + '일 묵음 — 검수 안 함</span>' : '<span class="ar">전량 양품</span>')) + '</td>'
+          + '<td class="num" style="color:var(--txt3)">' + nf(t.site) + ' → ' + nf(t.site_after) + '</td>'
+          + '<td class="num ok">' + nf(t.stock_before) + ' → <b>' + nf(t.stock_after) + '</b></td>'
+          + '</tr>';
+      }).join('') + '</tbody>';
+  $('cFoot').innerHTML = '거래 <b>' + plan.tx_cnt + '건</b>이 생깁니다'
+    + (plan.bad_qty ? ' — 반납 ' + plan.cnt + ' · 불량 ' + plan.bad_cnt : '')
+    + (plan.bad_qty ? '<br><b>불량 ' + nf(plan.bad_qty) + '개는 창고 가용재고에 올라가지 않습니다.</b>'
+        + (plan.claim_cnt ? ' 협력사 귀책 ' + plan.claim_cnt + '건은 불량·반품 탭으로 넘어갑니다.' : '')
+        : '')
+    + (plan.stale_cnt ? '<br><span style="color:var(--wn)">⚠ ' + plan.stale_cnt
+        + '건은 ' + SRC.long_days + '일 넘게 묵었는데 검수하지 않았습니다.</span>' : '')
+    + '<br>' + esc(plan.worker.Name) + ' ' + esc(plan.worker.Position);
+  msg('cMsg', '', []);
+  $('cOk').disabled = false;
+  $('cvl').classList.add('on');
+}
+
+async function go(){
+  $('cOk').disabled = true;
+  const d = await post('/api/return', payload());
+  if(!d.ok){ $('cOk').disabled = false; return msg('cMsg', 'err', d.errors); }
+  closeConfirm();
+  const p = d.plan;
+  pick = {}; bad = {}; $('note').value = ''; $('wo').value = ''; $('all').checked = false;
+  await refresh();
+  msg('msg', 'ok', [p.Ret_ID + ' — ' + p.cnt + ' LOT · ' + nf(p.qty) + '개를 되돌렸습니다. '
+      + '양품 ' + nf(p.good_qty) + '개가 가용재고로 올라갔고'
+      + (p.bad_qty ? ', 불량 ' + nf(p.bad_qty) + '개는 빠졌습니다'
+          + (p.claim_cnt ? ' (협력사 클레임 ' + p.claim_cnt + '건 접수)' : '') : '')
+      + '. 거래 ' + p.tx_cnt + '건이 생겼습니다.']);
+}
+
+async function refresh(){
+  try{
+    const r = await fetch('/api/return/targets');
+    const d = await r.json();
+    if(d.ok){ SRC = d.src; RETS = d.rets; }
+  }catch(e){ /* 그대로 둔다 */ }
+  draw(); drawHist();
+  document.querySelectorAll('.tab .cnt')[0].textContent = SRC.lot_cnt + ' LOT';
+  document.querySelectorAll('.tab .cnt')[1].textContent = RETS.length + '건';
+}
+
+// ── 이력 ────────────────────────────────────────────────
+function drawHist(){
+  $('hnone').style.display = RETS.length ? 'none' : 'block';
+  $('hrows').innerHTML = RETS.map(function(r){
+    return '<tr style="cursor:pointer" onclick="detail(\'' + r.Ret_ID + '\')">'
+      + '<td><span class="lid" style="color:var(--acc)">' + esc(r.Ret_ID) + '</span></td>'
+      + '<td>' + esc(r.Ret_Date) + '</td>'
+      + '<td><span class="bg bac">' + esc(r.Reason_Cd) + '</span>'
+      +   (r.Reason ? '<div style="font-size:10px;color:var(--txt3)">' + esc(r.Reason) + '</div>' : '')
+      +   '</td>'
+      + '<td>' + esc(r.Work_Order || '-') + '</td>'
+      + '<td class="num">' + nf(r.line_cnt) + '</td>'
+      + '<td class="num">' + nf(r.qty) + '</td>'
+      + '<td class="num ok">' + nf(r.good_qty) + '</td>'
+      + '<td class="num ' + (r.bad_qty ? 'dn' : '') + '">' + (r.bad_qty ? nf(r.bad_qty) : '-')
+      +   (r.claim_cnt ? ' <span class="bg bwn">클레임 ' + r.claim_cnt + '</span>' : '') + '</td>'
+      + '<td class="num">' + (r.qty ? Math.round(r.bad_qty / r.qty * 1000) / 10 : 0) + '%</td>'
+      + '<td class="num">' + nf(r.amount) + '</td>'
+      + '<td>' + esc(r.worker||'-') + ' ' + esc(r.worker_pos||'') + '</td></tr>';
+  }).join('');
+}
+
+function closeDetail(){ $('dvl').classList.remove('on'); }
+async function detail(rid){
+  $('dTitle').textContent = rid;
+  $('dTb').innerHTML = '';
+  $('dFoot').textContent = '불러오는 중…';
+  $('dvl').classList.add('on');
+  let d;
+  try{ d = await (await fetch('/api/return/detail?id=' + encodeURIComponent(rid))).json(); }
+  catch(e){ d = {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
+  if(!d.ok){ $('dFoot').textContent = d.errors.join(' '); return; }
+  const r = d.ret;
+  $('dTb').innerHTML = '<thead><tr><th class="nos">#</th><th class="nos">LOT</th>'
+    + '<th class="nos">자재</th><th class="num nos">반납</th><th class="num nos">양품</th>'
+    + '<th class="num nos">불량</th><th class="nos">사유</th>'
+    + '<th class="nos">거래번호</th></tr></thead><tbody>'
+    + r.items.map(function(t){
+        return '<tr><td class="num">' + t.Line + '</td>'
+          + '<td><span class="lid">' + esc(t.Lot_ID) + '</span></td>'
+          + '<td>' + esc(t.P_ID) + (t.grade ? ' <span class="gr gr'+t.grade+'">'+t.grade+'</span>' : '')
+          +   '<div style="font-size:10px;color:var(--txt3)">' + esc(t.P_N||'') + '</div></td>'
+          + '<td class="num">' + nf(t.Ret_Qty) + '</td>'
+          + '<td class="num ok">' + nf(t.Good_Qty==null ? t.Ret_Qty : t.Good_Qty) + '</td>'
+          + '<td class="num ' + (t.Bad_Qty ? 'dn' : '') + '">' + (t.Bad_Qty ? nf(t.Bad_Qty) : '-') + '</td>'
+          + '<td>' + (t.Bad_Cd
+              ? '<span class="bg ' + (t.blame==='협력사' ? 'bwn' : 'bdn') + '">' + esc(t.Bad_Cd) + '</span>'
+                + (t.Bad_Note ? '<div style="font-size:9px;color:var(--txt3)">' + esc(t.Bad_Note) + '</div>' : '')
+              : '<span class="ar">—</span>') + '</td>'
+          + '<td><span class="bg bok">' + esc(t.T_ID) + '</span>'
+          +   (t.Bad_T_ID ? '<div><span class="bg bdn">' + esc(t.Bad_T_ID) + '</span></div>' : '')
+          +   (t.Claim_ID ? '<div><span class="bg bwn">' + esc(t.Claim_ID) + '</span></div>' : '')
+          +   '</td></tr>';
+      }).join('') + '</tbody>';
+  $('dFoot').innerHTML = r.items.length + '줄 · ' + nf(r.qty) + '개 (양품 ' + nf(r.good_qty)
+    + ' · 불량 ' + nf(r.bad_qty) + ' · ' + r.bad_pct + '%) · ' + nf(r.amount) + '원.<br>'
+    + '<b>불량은 창고에 올라가지 않습니다</b> — 반납 거래로 들어왔다가 불량 거래로 다시 빠집니다. '
+    + (r.claim_cnt ? '협력사 귀책 ' + r.claim_cnt + '건은 <b>입고 처리 → 불량·반품</b> 탭에서 처리합니다. ' : '')
+    + '거래번호를 <b>입출고 이력</b>에서 찾으면 그 LOT 의 전체 흐름을 볼 수 있습니다.';
+}
+
+document.addEventListener('keydown', function(e){
+  if(e.key!=='Escape') return;
+  closeConfirm(); closeDetail();
+});
+
+draw();
+drawHist();
+</script>
+</body>
+</html>

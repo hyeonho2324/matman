@@ -61,6 +61,15 @@ TX_DISBURSE = TX_DEMAND[0] if TX_DEMAND else "불출"
 # 입고 등록이 Transaction_tb 에 남기는 T_Type 이 이 값이다.
 # 재고 부호가 0 인 in 유형은 이것 하나다 (반납은 +1).
 TX_RECEIPT = next((t for t, sg, _, _, k in TX_TYPES if k == "in" and sg == 0), "입고")
+# 재고를 깎되 '현장이 쓴 것' 은 아닌 유형 (불량·폐기).
+#   TX_MINUS 에서 수요(불출)를 뺀 나머지로 정의한다 — 빼먹는 유형이 생기지 않는다.
+TX_SCRAP = [t for t in TX_MINUS if t not in TX_DEMAND]
+# 창고 총량이 변하지 않는 유형 (이동·교환). 수량 합은 뜻이 없어 건수로 센다.
+TX_MOVE = [t for t, _, _, _, k in TX_TYPES if k == "move"]
+
+# 현장에서 자재창고로 되돌아오는 유형. 창고로 들어오면서(+1) 잔량을 되살린다.
+# in 유형 중 부호가 +1 인 것은 이것 하나다 (입고는 0 — 이미 P_Qty 에 들어 있다).
+TX_RETURN = next((t for t, sg, _, _, k in TX_TYPES if k == "in" and sg > 0), "반납")
 
 
 def _inlist(vals):
@@ -74,6 +83,40 @@ def _inlist(vals):
 LOT_DELTA = ("SUM(CASE WHEN T_Type IN ({m}) THEN T_Num "
              "WHEN T_Type IN ({p}) THEN -T_Num ELSE 0 END)").format(
                  m=_inlist(TX_MINUS), p=_inlist(TX_PLUS))
+
+# LOT 하나의 흐름을 **성분별로** 쪼갠 조각.
+#
+# ⚠️ 순차감량(LOT_DELTA) 한 덩어리를 '불출' 이라고 보여주면 그 안에 섞인
+#    반납·불량·폐기가 통째로 묻힌다. 실제로 이런 일이 벌어진다 —
+#
+#      입고 4,000 → 불출 4,000 → 반납 3,456
+#      LOT_DELTA = 4,000 − 3,456 = 544
+#      화면 표시 "불출 544"        ← 일어난 적 없는 숫자다
+#
+#    그래서 잔여 계산용 합계(out_qty)는 그대로 두되 성분을 함께 내려보낸다.
+#    불변식: out_qty = disb_qty + scrap_qty − ret_qty
+LOT_FLOW_SQL = """
+    SELECT Lot_ID,
+           {delta}                                                   AS out_qty,
+           SUM(CASE WHEN T_Type IN ({demand}) THEN T_Num ELSE 0 END) AS disb_qty,
+           SUM(CASE WHEN T_Type IN ({scrap})  THEN T_Num ELSE 0 END) AS scrap_qty,
+           SUM(CASE WHEN T_Type IN ({ret})    THEN T_Num ELSE 0 END) AS ret_qty,
+           SUM(CASE WHEN T_Type IN ({demand}) THEN 1 ELSE 0 END)     AS out_cnt,
+           SUM(CASE WHEN T_Type IN ({scrap})  THEN 1 ELSE 0 END)     AS scrap_cnt,
+           SUM(CASE WHEN T_Type IN ({ret})    THEN 1 ELSE 0 END)     AS ret_cnt,
+           SUM(CASE WHEN T_Type IN ({move})   THEN 1 ELSE 0 END)     AS move_cnt,
+           MIN(CASE WHEN T_Type IN ({demand}) THEN T_Date END)       AS out_date,
+           MAX(CASE WHEN T_Type IN ({ret})    THEN T_Date END)       AS ret_date
+      FROM Transaction_tb GROUP BY Lot_ID
+"""
+
+
+def lot_flow():
+    """LOT 흐름 조각을 SQL 에 끼워 넣는다. 유형명을 쿼리에 직접 쓰지 않는다."""
+    return LOT_FLOW_SQL.format(
+        delta=LOT_DELTA, demand=_inlist(TX_DEMAND), scrap=_inlist(TX_SCRAP),
+        ret=_inlist(TX_PLUS), move=_inlist(TX_MOVE))
+
 
 # 현장 실소비 조건 (수요 지표 전용)
 DEMAND_IN = "T_Type IN (%s)" % _inlist(TX_DEMAND)
@@ -272,7 +315,10 @@ def lot_list(conn):
                h.P_Date AS order_date,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
                u.Name AS receiver,
-               x.out_date, COALESCE(x.out_qty, 0) AS out_qty,
+               x.out_date, x.ret_date, COALESCE(x.out_qty, 0) AS out_qty,
+               COALESCE(x.disb_qty, 0) AS disb_qty, COALESCE(x.scrap_qty, 0) AS scrap_qty,
+               COALESCE(x.ret_qty, 0)  AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
+               COALESCE(x.out_cnt, 0)  AS out_cnt,  COALESCE(x.ret_cnt, 0)   AS ret_cnt,
                l.P_Qty - COALESCE(x.out_qty, 0)  AS remain,
                CAST(julianday(?) - julianday(l.Lot_Date) AS INT)          AS age_days,
                CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
@@ -280,8 +326,7 @@ def lot_list(conn):
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, MIN(CASE WHEN T_Type IN ('불출') THEN T_Date END) AS out_date FROM Transaction_tb GROUP BY Lot_ID) x
-                 ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
          ORDER BY l.P_ID, l.Lot_Date
     """, (base,))
 
@@ -616,16 +661,18 @@ def lot_trace(conn):
                u.Name             AS receiver,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
                l.P_Qty - COALESCE(x.out_qty, 0) AS remain,
-               COALESCE(x.out_qty, 0)  AS out_qty,
-               COALESCE(x.out_cnt, 0)  AS out_cnt
+               COALESCE(x.out_qty, 0)   AS out_qty,
+               COALESCE(x.disb_qty, 0)  AS disb_qty, COALESCE(x.scrap_qty, 0) AS scrap_qty,
+               COALESCE(x.ret_qty, 0)   AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
+               COALESCE(x.ret_cnt, 0)   AS ret_cnt,
+               COALESCE(x.out_cnt, 0)   AS out_cnt
           FROM Lot_tb l
           JOIN Product_tb p ON l.P_ID = p.P_ID
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN Company_tb c ON h.BRN = c.BRN
           LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, SUM(CASE WHEN T_Type IN ('불출') THEN 1 ELSE 0 END) out_cnt FROM Transaction_tb GROUP BY Lot_ID) x
-                 ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
     """)
     # 생산 투입 이력 (그 LOT이 어느 완제품에 쓰였나)
     used = {}
@@ -1273,8 +1320,10 @@ def po_sheet(conn, hid):
 
     items = _rows(conn, """
         SELECT d.Purchase_num AS num, d.P_ID, p.P_N, p.Spec,
-               d.P_Qty AS qty, p.P_Price AS price,
-               ROUND(d.P_Qty * p.P_Price) AS amount,
+               d.P_Qty AS qty,
+               COALESCE(d.Unit_Price, p.P_Price) AS price,      -- 발주 시점 단가
+               p.P_Price AS cur_price,                          -- 지금 단가 (대조용)
+               ROUND(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price)) AS amount,
                p.PkgUnit AS pkg, p.MinOrderQty AS moq,
                s.Lead_Time AS lead_time,
                cat.Cat_Name AS cat_name
@@ -1489,6 +1538,10 @@ def worklist(conn):
         "   AND CAST(julianday(End_Date) - julianday(?) AS INT) BETWEEN 0 AND 14",
         (base,)).fetchone()[0]
 
+    # 현장에 오래 묶여 있는 자재 — 밀린 일이 아니라 정기 점검이다
+    site = [r for r in return_targets(conn, base) if r["is_long"]]
+    site_long, site_amt = len(site), sum(r["amount"] for r in site)
+
     return [
         {"key": "inbound",  "label": "입고 대기",    "n": len(pending),    "unit": "건",
          "sub": "발주는 나갔는데 아직 안 받은 건", "url": "/inbound",
@@ -1508,6 +1561,9 @@ def worklist(conn):
         {"key": "safety",   "label": "안전재고 재검토", "n": due,           "unit": "종",
          "sub": ("조정 만료 임박 %d종" % ovr_soon) if ovr_soon else "등급별 주기 도래",
          "url": "/wizard", "tone": "wn" if due else "mu"},
+        {"key": "site",     "label": "현장 장기 보유", "n": site_long,       "unit": "건",
+         "sub": "%d일 넘게 현장에 묶인 LOT · %s원" % (SITE_LONG_DAYS, format(site_amt, ",")),
+         "url": "/return", "tone": "wn" if site_long else "mu"},
     ]
 
 
@@ -1531,12 +1587,13 @@ ALERT_MENU = {
     "picking":  "picking",
     "disburse": "disburse",
     "safety":   "wizard",
+    "site":     "site_return",
 }
 
 # 정기 점검은 '밀린 일' 이 아니다. 199종이 주기 도래라고 종에 199가 뜨면
 # 다른 숫자가 묻힌다. 목록에는 두되 배지 합계에서는 뺀다
 # (대시보드 todo_total 이 이미 같은 기준을 쓴다).
-ALERT_ROUTINE = ("safety",)
+ALERT_ROUTINE = ("safety", "site")
 
 _TONE_RANK = {"mu": 0, "ac": 1, "wn": 2, "dn": 3}
 
@@ -1581,6 +1638,450 @@ def alerts(conn):
     total = sum(t["n"] for t in todo)
     return {"todo": todo, "routine": routine, "menu": menu,
             "total": total, "txt": _badge_txt(total)}
+
+
+# ── 재고 실사 ────────────────────────────────────────────────
+#
+# 재고는 거래로만 움직인다. 그래서 실물과 장부가 어긋나면 — 파손·분실·
+# 오출고·전표 누락 — **고칠 방법이 없었다.** 시스템이 영원히 틀린 숫자를 든다.
+# 실사가 그 유일한 수단이다.
+#
+# ⚠️ 차이를 Lot_tb.P_Qty 에 덮어쓰지 않는다. 숫자를 고치면 이력이 끊겨
+#    "왜 400이 380이 됐나" 를 아무도 설명하지 못한다. **거래로 반영**한다.
+#    덕분에 설계만 있고 안 쓰이던 유형 셋이 실제로 돌기 시작한다.
+
+COUNT_ID_PRE = "CNT"
+
+# 실사 범위. 전수는 창고를 세우므로 등급별 순환 실사가 기본이다
+# (A 를 자주, C 를 느슨하게 — 안전재고 재검토 주기와 같은 사고)
+COUNT_SCOPES = ("등급", "구역", "전수")
+
+# 차이 사유 → 어떤 거래로 반영되는가
+#   qty  부족(-1) · 과다(+1) · 수량 불변(0)
+COUNT_REASONS = {
+    "폐기":       {"sign": -1, "tx": "폐기",  "label": "파손·변질로 못 씀"},
+    "분실":       {"sign": -1, "tx": "폐기",  "label": "찾을 수 없음"},
+    "미기록불출":  {"sign": -1, "tx": "불출",  "label": "현장에 나갔는데 기록이 없음"},
+    "미기록반납":  {"sign": +1, "tx": "반납",  "label": "현장에서 돌아왔는데 기록이 없음"},
+    "과다입고":   {"sign": +1, "tx": "반납",  "label": "입고가 덜 잡혀 있었음"},
+    "구역오류":   {"sign": 0,  "tx": "이동",  "label": "수량은 맞고 다른 구역에 있음"},
+}
+
+
+def next_count_id(conn, date):
+    pre = COUNT_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Count_ID) FROM Stock_Count_tb WHERE Count_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def count_targets(conn, scope, scope_val=None):
+    """실사 대상 LOT. 잔량이 있는 것만 — 0 인 LOT 은 셀 게 없다."""
+    scope = str(scope or "").strip()
+    scope_val = str(scope_val or "").strip().upper() or None
+    if scope not in COUNT_SCOPES:
+        return None, ["실사 범위가 잘못됐습니다: %s" % scope]
+
+    where, args = [], []
+    if scope == "등급":
+        if scope_val not in ("A", "B", "C"):
+            return None, ["등급은 A·B·C 중 하나여야 합니다."]
+        where.append("s.Sf_Lv = ?")
+        args.append(scope_val)
+    elif scope == "구역":
+        if conn.execute("SELECT 1 FROM Location_tb WHERE Loc_ID = ?",
+                        (scope_val,)).fetchone() is None:
+            return None, ["등록되지 않은 창고 구역입니다: %s" % scope_val]
+        where.append("l.Loc_ID = ?")
+        args.append(scope_val)
+
+    rows = _rows(conn, f"""
+        SELECT l.Lot_ID, l.P_ID, l.Loc_Date AS x, l.Lot_Date, l.Loc_ID,
+               lo.Loc_N AS loc_name, p.P_N, p.Spec, p.P_Price,
+               s.Sf_Lv AS grade,
+               l.P_Qty - COALESCE((SELECT {LOT_DELTA} FROM Transaction_tb t
+                                    WHERE t.Lot_ID = l.Lot_ID), 0) AS book_qty
+          FROM Lot_tb l
+          JOIN Product_tb p    ON l.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s  ON s.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON lo.Loc_ID = l.Loc_ID
+         {"WHERE " + " AND ".join(where) if where else ""}
+         ORDER BY l.Loc_ID, p.P_ID, l.Lot_Date
+    """.replace("l.Loc_Date AS x,", ""), tuple(args))
+
+    live = [r for r in rows if (r["book_qty"] or 0) > 0]
+    return {
+        "scope": scope, "scope_val": scope_val,
+        "lots": live,
+        "lot_cnt": len(live),
+        "item_cnt": len({r["P_ID"] for r in live}),
+        "qty": sum(r["book_qty"] for r in live),
+        "amount": round(sum(r["book_qty"] * (r["P_Price"] or 0) for r in live)),
+        "zones": sorted({r["Loc_ID"] for r in live if r["Loc_ID"]}),
+        "skipped": len(rows) - len(live),      # 잔량 0 이라 뺀 LOT
+    }, []
+
+
+def create_count(conn, date, scope, scope_val, ep_id, note=None):
+    """실사 차수를 연다. 이 시점의 장부 재고를 **동결**한다."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    plan, e = count_targets(conn, scope, scope_val)
+    if e:
+        return None, e
+    if not plan["lots"]:
+        return None, ["셀 대상이 없습니다. 잔량이 있는 LOT 이 한 건도 없습니다."]
+
+    open_one = conn.execute(
+        "SELECT Count_ID FROM Stock_Count_tb WHERE Status = '진행'").fetchone()
+    if open_one:
+        return None, ["진행 중인 실사가 있습니다: %s. 끝내거나 취소한 뒤 여세요."
+                      % open_one[0]]
+
+    cid = next_count_id(conn, date)
+    with conn:
+        conn.execute(
+            "INSERT INTO Stock_Count_tb (Count_ID, Count_Date, Scope, Scope_Val,"
+            " Status, EP_ID, Note) VALUES (?,?,?,?,'진행',?,?)",
+            (cid, date, plan["scope"], plan["scope_val"], w["EP_ID"],
+             (note or "").strip() or None))
+        for n, r in enumerate(plan["lots"], start=1):
+            conn.execute(
+                "INSERT INTO Stock_Count_Item_tb (Count_ID, Line, Lot_ID, P_ID,"
+                " Book_Qty) VALUES (?,?,?,?,?)",
+                (cid, n, r["Lot_ID"], r["P_ID"], r["book_qty"]))
+    plan["Count_ID"] = cid
+    plan["date"] = date
+    plan["worker"] = w["Name"]
+    return plan, []
+
+
+def count_sheet(conn, cid):
+    """실사 한 차수 — 머리글 + 라인 + 차이 집계."""
+    cid = str(cid or "").strip().upper()
+    head = conn.execute("""
+        SELECT c.*, u.Name AS worker, u.Position AS worker_pos,
+               a.Name AS approver, a.Position AS appr_pos
+          FROM Stock_Count_tb c
+          LEFT JOIN User_tb u ON c.EP_ID = u.EP_ID
+          LEFT JOIN User_tb a ON c.Appr_EP_ID = a.EP_ID
+         WHERE c.Count_ID = ?""", (cid,)).fetchone()
+    if head is None:
+        return None, ["등록되지 않은 실사번호입니다: %s" % cid]
+
+    items = _rows(conn, f"""
+        SELECT i.*, p.P_N, p.Spec, p.P_Price, s.Sf_Lv AS grade,
+               l.Loc_ID, lo.Loc_N AS loc_name, l.Lot_Date,
+               l.P_Qty - COALESCE((SELECT {LOT_DELTA} FROM Transaction_tb t
+                                    WHERE t.Lot_ID = l.Lot_ID), 0) AS now_qty
+          FROM Stock_Count_Item_tb i
+          JOIN Lot_tb l        ON i.Lot_ID = l.Lot_ID
+          JOIN Product_tb p    ON i.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s  ON s.P_ID = p.P_ID
+          LEFT JOIN Location_tb lo ON lo.Loc_ID = l.Loc_ID
+         WHERE i.Count_ID = ?
+         ORDER BY i.Line""", (cid,))
+
+    for r in items:
+        r["diff"] = None if r["Real_Qty"] is None else r["Real_Qty"] - r["Book_Qty"]
+        r["diff_amt"] = None if r["diff"] is None else round(r["diff"] * (r["P_Price"] or 0))
+        # 실사 도는 동안 그 LOT 이 움직였으면 알려 준다
+        # 이미 반영한 줄은 '우리가' 움직인 것이다. 그걸 경고로 띄우면
+        # 반영이 끝난 실사가 전부 변동으로 보인다
+        r["moved"] = 1 if (r["T_ID"] is None and r["now_qty"] != r["Book_Qty"]) else 0
+
+    counted = [r for r in items if r["Real_Qty"] is not None]
+    diffs = [r for r in counted if r["diff"]]
+    out = dict(head)
+    out.update({
+        "items": items,
+        "line_cnt": len(items),
+        "counted_cnt": len(counted),
+        "diff_cnt": len(diffs),
+        "short_cnt": len([r for r in diffs if r["diff"] < 0]),
+        "over_cnt": len([r for r in diffs if r["diff"] > 0]),
+        "diff_qty": sum(r["diff"] for r in diffs),
+        "diff_amt": sum(r["diff_amt"] for r in diffs),
+        "book_qty": sum(r["Book_Qty"] for r in items),
+        "real_qty": sum(r["Real_Qty"] for r in counted),
+        "moved_cnt": len([r for r in items if r["moved"]]),
+        "applied_cnt": len([r for r in items if r["T_ID"]]),
+        # 정확도 — 센 것 중 맞은 비율. 실사의 핵심 지표다
+        "accuracy": _pct(len(counted) - len(diffs), len(counted)) if counted else None,
+    })
+    return out, []
+
+
+def save_count(conn, cid, lines, ep_id):
+    """실물 수량을 적는다. 아직 재고는 건드리지 않는다."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    if head["Status"] != "진행":
+        return None, ["진행 중인 실사가 아닙니다 (%s)." % head["Status"]]
+    if not isinstance(lines, dict) or not lines:
+        return None, ["적을 내용이 없습니다."]
+
+    by_line = {r["Line"]: r for r in head["items"]}
+    saved, errors = 0, []
+    rows = []
+    for k, v in lines.items():
+        try:
+            ln = int(k)
+        except (TypeError, ValueError):
+            errors.append("줄 번호가 잘못됐습니다: %s" % k)
+            continue
+        if ln not in by_line:
+            errors.append("%s 에 없는 줄입니다: %s" % (cid, ln))
+            continue
+        if v is None or str(v).strip() == "":
+            rows.append((ln, None))
+            continue
+        q = _pos_int(v, "%d번 줄 실물 수량" % ln, errors, lo=0)
+        if q is None:
+            continue
+        rows.append((ln, q))
+    if errors:
+        return None, errors
+
+    with conn:
+        for ln, q in rows:
+            conn.execute(
+                "UPDATE Stock_Count_Item_tb SET Real_Qty = ?, Counted_At = ?"
+                " WHERE Count_ID = ? AND Line = ?",
+                (q, _now_stamp(), cid, ln))
+            saved += 1
+    out, _ = count_sheet(conn, cid)
+    out["saved"] = saved
+    return out, []
+
+
+def set_count_reason(conn, cid, line, reason_cd, reason=None, loc_to=None):
+    """차이 한 줄에 사유를 단다. 사유가 없으면 조정되지 않는다."""
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    if head["Status"] != "진행":
+        return None, ["진행 중인 실사가 아닙니다 (%s)." % head["Status"]]
+    row = [r for r in head["items"] if r["Line"] == _as_int(line)]
+    if not row:
+        return None, ["%s 에 없는 줄입니다: %s" % (cid, line)]
+    row = row[0]
+    if row["Real_Qty"] is None:
+        return None, ["아직 세지 않은 줄입니다."]
+
+    cd = str(reason_cd or "").strip()
+    if cd not in COUNT_REASONS:
+        return None, ["사유 분류가 잘못됐습니다. %s 중에서 고르세요."
+                      % " · ".join(COUNT_REASONS)]
+    meta = COUNT_REASONS[cd]
+    diff = row["Real_Qty"] - row["Book_Qty"]
+    if meta["sign"] and diff and (diff > 0) != (meta["sign"] > 0):
+        return None, ["'%s'%s %s 쓰는 사유입니다. 이 줄은 %+d개입니다."
+                      % (cd, _josa(cd, "은는"),
+                         "실물이 많을 때" if meta["sign"] > 0 else "실물이 모자랄 때", diff)]
+    if meta["sign"] == 0 and diff:
+        return None, ["'구역오류'는 수량이 맞을 때만 쓸 수 있습니다. 이 줄은 %+d개입니다." % diff]
+    if meta["sign"] and not diff:
+        return None, ["차이가 없는 줄입니다. 사유가 필요 없습니다."]
+
+    to = str(loc_to or "").strip().upper() or None
+    if cd == "구역오류":
+        if not to:
+            return None, ["실제로 있던 구역을 지정하세요."]
+        if conn.execute("SELECT 1 FROM Location_tb WHERE Loc_ID = ?", (to,)).fetchone() is None:
+            return None, ["등록되지 않은 구역입니다: %s" % to]
+        if to == row["Loc_ID"]:
+            return None, ["장부와 같은 구역입니다. 옮길 것이 없습니다."]
+
+    with conn:
+        conn.execute(
+            "UPDATE Stock_Count_Item_tb SET Reason_Cd = ?, Reason = ?, Loc_To = ?"
+            " WHERE Count_ID = ? AND Line = ?",
+            (cd, (reason or "").strip() or None, to, cid, _as_int(line)))
+    return count_sheet(conn, cid)[0], []
+
+
+def preview_count_apply(conn, cid):
+    """반영하면 무엇이 어떻게 바뀌는지 (저장 안 함)."""
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    todo, blocked = [], []
+    for r in head["items"]:
+        if r["Real_Qty"] is None or not (r["diff"] or r["Reason_Cd"] == "구역오류"):
+            continue
+        if r["T_ID"]:
+            continue
+        if not r["Reason_Cd"]:
+            blocked.append({"Line": r["Line"], "Lot_ID": r["Lot_ID"],
+                            "P_N": r["P_N"], "diff": r["diff"],
+                            "why": "사유가 없습니다"})
+            continue
+        m = COUNT_REASONS[r["Reason_Cd"]]
+        todo.append({
+            "Line": r["Line"], "Lot_ID": r["Lot_ID"], "P_ID": r["P_ID"],
+            "P_N": r["P_N"], "grade": r["grade"],
+            "book": r["Book_Qty"], "real": r["Real_Qty"], "diff": r["diff"],
+            "reason_cd": r["Reason_Cd"], "tx": m["tx"],
+            "qty": abs(r["diff"]) if r["diff"] else r["Book_Qty"],
+            "loc_from": r["Loc_ID"], "loc_to": r["Loc_To"],
+            "amt": r["diff_amt"] or 0,
+        })
+    amt = sum(abs(t["amt"]) for t in todo)
+    return {"Count_ID": cid, "todo": todo, "blocked": blocked,
+            "cnt": len(todo), "amount": amt,
+            "by_tx": {t: len([x for x in todo if x["tx"] == t])
+                      for t in {x["tx"] for x in todo}},
+            "head": head}, []
+
+
+def apply_count(conn, date, cid, ep_id, note=None):
+    """차이를 **거래로** 반영하고 실사를 닫는다.
+
+    ⚠️ Lot_tb.P_Qty 를 고치지 않는다. 숫자를 덮어쓰면 "왜 줄었나" 가 사라진다.
+       부족은 폐기·불출, 과다는 반납, 구역 오류는 이동으로 남긴다.
+    """
+    plan, e = preview_count_apply(conn, cid)
+    if e:
+        return None, e
+    head = plan["head"]
+    if head["Status"] != "진행":
+        return None, ["이미 처리된 실사입니다 (%s)." % head["Status"]]
+    if plan["blocked"]:
+        return None, ["사유가 없는 차이가 %d건 있습니다. 전부 사유를 달아야 반영됩니다."
+                      % len(plan["blocked"])]
+    uncounted = head["line_cnt"] - head["counted_cnt"]
+    if uncounted:
+        return None, ["아직 세지 않은 줄이 %d개 있습니다." % uncounted]
+
+    # 재고를 바꾸는 일이라 직급을 본다. 금액은 차이의 절대값 합이다
+    w, e = _approver(conn, ep_id, plan["amount"], "재고 조정")
+    if e:
+        return None, e
+    if head["EP_ID"] == w["EP_ID"]:
+        return None, ["실사한 사람이 스스로 조정을 승인할 수 없습니다. 다른 사람이 처리하세요."]
+
+    made = []
+    with conn:
+        for t in plan["todo"]:
+            tid = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?,?,?,?,?,?)",
+                (tid, t["Lot_ID"], t["tx"], date, t["qty"], w["EP_ID"]))
+            if t["tx"] == "이동" and t["loc_to"]:
+                conn.execute("UPDATE Lot_tb SET Loc_ID = ? WHERE Lot_ID = ?",
+                             (t["loc_to"], t["Lot_ID"]))
+            conn.execute(
+                "UPDATE Stock_Count_Item_tb SET T_ID = ? WHERE Count_ID = ? AND Line = ?",
+                (tid, cid, t["Line"]))
+            t["T_ID"] = tid
+            made.append(tid)
+        conn.execute(
+            "UPDATE Stock_Count_tb SET Status = '완료', Appr_EP_ID = ?,"
+            " Appr_Date = ?, Appr_Note = ? WHERE Count_ID = ?",
+            (w["EP_ID"], date, (note or "").strip() or None, cid))
+
+    out, _ = count_sheet(conn, cid)
+    out["made"] = made
+    out["applied"] = len(made)
+    out["approver"] = w["Name"]
+    return out, []
+
+
+def cancel_count(conn, cid, ep_id, reason=None):
+    """실사를 접는다. 이미 반영된 건이 있으면 못 접는다."""
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    if head["Status"] != "진행":
+        return None, ["진행 중인 실사가 아닙니다 (%s)." % head["Status"]]
+    if head["applied_cnt"]:
+        return None, ["이미 재고에 반영된 줄이 있어 취소할 수 없습니다."]
+    with conn:
+        conn.execute("UPDATE Stock_Count_tb SET Status = '취소', Appr_Note = ?"
+                     " WHERE Count_ID = ?", ((reason or "").strip() or None, cid))
+    return {"Count_ID": cid, "worker": w["Name"]}, []
+
+
+def count_list(conn):
+    """실사 이력 — 화면 왼쪽 목록."""
+    rows = _rows(conn, """
+        SELECT c.Count_ID, c.Count_Date, c.Scope, c.Scope_Val, c.Status,
+               u.Name AS worker, a.Name AS approver,
+               COUNT(i.Line) AS line_cnt,
+               SUM(CASE WHEN i.Real_Qty IS NOT NULL THEN 1 ELSE 0 END) AS counted_cnt,
+               SUM(CASE WHEN i.Real_Qty IS NOT NULL
+                         AND i.Real_Qty <> i.Book_Qty THEN 1 ELSE 0 END) AS diff_cnt
+          FROM Stock_Count_tb c
+          LEFT JOIN Stock_Count_Item_tb i ON i.Count_ID = c.Count_ID
+          LEFT JOIN User_tb u ON c.EP_ID = u.EP_ID
+          LEFT JOIN User_tb a ON c.Appr_EP_ID = a.EP_ID
+         GROUP BY c.Count_ID
+         ORDER BY c.Count_Date DESC, c.Count_ID DESC
+    """)
+    for r in rows:
+        r["scope_label"] = (r["Scope"] + " " + (r["Scope_Val"] or "")).strip()
+    return rows
+
+
+def count_source(conn):
+    """실사 화면이 필요로 하는 선택지 + 등급·구역별 대상 미리보기."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    scopes = []
+    for g in ("A", "B", "C"):
+        t, _ = count_targets(conn, "등급", g)
+        scopes.append({"scope": "등급", "val": g, "label": "%s등급" % g,
+                       "lot_cnt": t["lot_cnt"], "item_cnt": t["item_cnt"],
+                       "qty": t["qty"], "amount": t["amount"],
+                       "cycle": REVIEW_CYCLE_DAYS[g]})
+    for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb ORDER BY Loc_ID"):
+        t, _ = count_targets(conn, "구역", r["Loc_ID"])
+        scopes.append({"scope": "구역", "val": r["Loc_ID"],
+                       "label": "%s %s" % (r["Loc_ID"], r["Loc_N"]),
+                       "lot_cnt": t["lot_cnt"], "item_cnt": t["item_cnt"],
+                       "qty": t["qty"], "amount": t["amount"], "cycle": None})
+    workers = _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")
+    for w in workers:
+        w["limit"] = approval_limit(w["Position"])      # None 이면 무제한
+    allt, _ = count_targets(conn, "전수")
+    scopes.append({"scope": "전수", "val": None, "label": "전수",
+                   "lot_cnt": allt["lot_cnt"], "item_cnt": allt["item_cnt"],
+                   "qty": allt["qty"], "amount": allt["amount"], "cycle": None})
+    return {
+        "scopes": scopes,
+        "reasons": [{"cd": k, "sign": v["sign"], "tx": v["tx"], "label": v["label"]}
+                    for k, v in COUNT_REASONS.items()],
+        "zones": _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb ORDER BY Loc_ID"),
+        "workers": workers,
+        # 조정은 재고를 바꾸는 일이라 직급을 본다. 권한 없는 사람을 드롭다운에
+        # 올려 두고 누른 뒤에 거절하면, 왜 안 되는지 그때서야 알게 된다
+        "approvers": [w for w in workers if w["limit"] != 0],
+        "base": base, "entry": _add_days(base, 1),
+        "open_id": (conn.execute(
+            "SELECT Count_ID FROM Stock_Count_tb WHERE Status='진행'").fetchone() or [None])[0],
+    }
+
+
+def _as_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _now_stamp():
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def dashboard(conn):
@@ -1649,7 +2150,8 @@ def dashboard(conn):
         "todo": todo,
         # 안전재고 재검토는 199종짜리 일괄 작업이라 대기열 합계에서 뺀다.
         # 넣으면 나머지 6건이 숫자에 묻힌다.
-        "todo_total": sum(t["n"] for t in todo if t["key"] != "safety"),
+        # 정기 점검은 밀린 일이 아니다. 기준을 여기서 다시 쓰면 종 배지와 갈라진다
+        "todo_total": sum(t["n"] for t in todo if t["key"] not in ALERT_ROUTINE),
         "recent_po": [{
             "H_ID": o["H_ID"], "date": o["date"], "supplier": o["supplier"],
             "line_cnt": o["line_cnt"], "amount": o["amount"],
@@ -1706,7 +2208,10 @@ def lot_detail(conn):
                u.Name              AS receiver,
                h.P_Date            AS order_date,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
-               x.out_date, COALESCE(x.out_qty, 0) AS out_qty,
+               x.out_date, x.ret_date, COALESCE(x.out_qty, 0) AS out_qty,
+               COALESCE(x.disb_qty, 0) AS disb_qty, COALESCE(x.scrap_qty, 0) AS scrap_qty,
+               COALESCE(x.ret_qty, 0)  AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
+               COALESCE(x.out_cnt, 0)  AS out_cnt,  COALESCE(x.ret_cnt, 0)   AS ret_cnt,
                l.P_Qty - COALESCE(x.out_qty, 0)   AS remain,
                CAST(julianday(?) - julianday(l.Lot_Date) AS INT)        AS age_days,
                CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
@@ -1717,8 +2222,7 @@ def lot_detail(conn):
           LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty, MIN(CASE WHEN T_Type IN ('불출') THEN T_Date END) AS out_date FROM Transaction_tb GROUP BY Lot_ID) x
-                 ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
          ORDER BY l.P_ID, l.Lot_Date
     """, (base,))
 
@@ -2592,18 +3096,41 @@ def safety_runs(conn):
     """)
 
 
-def revert_safety_update(conn, run_date, ep_id=None):
+def revert_safety_update(conn, run_date, ep_id=None, run_ep=None):
     """갱신 되돌리기 — 그 실행분의 '변경 전' 값을 Safe_tb 에 되돌리고 이력을 지운다.
 
     200행을 한 번에 덮는 기능이라 되돌릴 길을 함께 둔다.
     ⚠️ 그 뒤에 더 최근 갱신이 있으면 되돌리지 않는다. 중간 이력을 빼면
        Safe_tb 가 어느 실행 결과인지 설명할 수 없게 된다.
+
+    ⚠️ 날짜만으로 지우면 **같은 날 남은 다른 이력까지 휩쓴다.**
+       자재 수정도 등급·안전재고가 바뀌면 Update_Log 를 남기므로, 같은 날
+       누가 단가를 고쳐 뒀다면 그 사람 기록까지 조용히 지워지고 값이 되돌아간다.
+       실행 하나는 safety_runs() 가 묶는 그대로 **(날짜, 실행자)** 다.
     """
     run_date = str(run_date or "").strip()
-    rows = _rows(conn, "SELECT * FROM Update_Log_tb"
-                       " WHERE Updated_Date = ? AND EP_ID IS NOT NULL", (run_date,))
-    if not rows:
+    eps = [r[0] for r in conn.execute(
+        "SELECT DISTINCT EP_ID FROM Update_Log_tb"
+        " WHERE Updated_Date = ? AND EP_ID IS NOT NULL ORDER BY EP_ID", (run_date,))]
+    if not eps:
         return None, ["되돌릴 갱신 이력이 없습니다: %s" % (run_date or "(빈값)")]
+
+    run_ep = str(run_ep or "").strip() or None
+    if run_ep and run_ep not in eps:
+        return None, ["%s 에 그 실행이 없습니다: %s" % (run_date, run_ep)]
+    if not run_ep:
+        if len(eps) > 1:
+            who = ", ".join(
+                "%s(%s건)" % (e, conn.execute(
+                    "SELECT COUNT(*) FROM Update_Log_tb"
+                    " WHERE Updated_Date = ? AND EP_ID = ?", (run_date, e)).fetchone()[0])
+                for e in eps)
+            return None, ["%s 에 실행이 %d건 있습니다. 어느 실행을 되돌릴지 고르세요 — %s"
+                          % (run_date, len(eps), who)]
+        run_ep = eps[0]
+
+    rows = _rows(conn, "SELECT * FROM Update_Log_tb"
+                       " WHERE Updated_Date = ? AND EP_ID = ?", (run_date, run_ep))
 
     later = conn.execute(
         "SELECT MIN(Updated_Date) FROM Update_Log_tb"
@@ -2624,9 +3151,10 @@ def revert_safety_update(conn, run_date, ep_id=None):
             conn.execute(
                 "UPDATE Safe_tb SET Sf_Lv = ?, Sf_Num = ?, Usage_Score = ? WHERE P_ID = ?",
                 (r["Old_Lv"], r["Old_Num"], r["Old_Usage"], r["P_ID"]))
-        conn.execute("DELETE FROM Update_Log_tb WHERE Updated_Date = ? AND EP_ID IS NOT NULL",
-                     (run_date,))
-    return {"run_date": run_date, "cnt": len(rows), "worker": w}, []
+        conn.execute("DELETE FROM Update_Log_tb WHERE Updated_Date = ? AND EP_ID = ?",
+                     (run_date, run_ep))
+    return {"run_date": run_date, "run_ep": run_ep,
+            "cnt": len(rows), "worker": w}, []
 
 
 # ── 안전재고 수동 조정 ───────────────────────────────────────
@@ -3616,10 +4144,13 @@ def create_purchase(conn, date, items):
                 "INSERT INTO Purchase_Header_tb (H_ID, BRN, P_Date) VALUES (?, ?, ?)",
                 (hid, g["BRN"], date))
             for n, it in enumerate(g["items"], 1):
+                # ⚠️ 그때 단가를 박아 둔다. 안 박으면 나중에 단가를 고칠 때
+                #    이 발주서 금액이 소급해서 바뀐다
                 conn.execute(
-                    "INSERT INTO Purchase_Detail_tb (H_ID, Purchase_num, P_ID, P_Qty)"
-                    " VALUES (?, ?, ?, ?)",
-                    (hid, n, it["P_ID"], it["qty"]))
+                    "INSERT INTO Purchase_Detail_tb"
+                    " (H_ID, Purchase_num, P_ID, P_Qty, Unit_Price)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (hid, n, it["P_ID"], it["qty"], it.get("price")))
             g["H_ID"] = hid
             created.append(g)
     return created, []
@@ -3902,6 +4433,595 @@ def create_disburse_batch(conn, date, lines, ep_id):
     for r in plan["reqs"]:
         r["pct"] = _pct(r["done_qty"] or 0, r["req_qty"] or 0)
     return plan, []
+# ── 품목별 안전재고 변경 이력 ────────────────────────────────
+#
+# 안전재고가 바뀌는 길은 넷이다. 한 화면에서 시간순으로 봐야
+# "왜 지금 이 숫자인가" 를 설명할 수 있다.
+#
+#   원본 등록      Update_Log_tb · EP_ID 없음   ← 근거가 없는 값. 되돌릴 수도 없다
+#   자재 등록·수정  Update_Log_tb · EP_ID 있음
+#   일괄 갱신      Update_Log_tb · EP_ID 있음
+#   수동 조정      Safe_Override_tb             ← 등급을 사람이 고정한다
+#
+# ⚠️ Update_Log_tb 는 등급이나 수량이 **실제로 바뀐 경우에만** 쌓인다.
+#    안 바뀌었는데 이력만 남기면 재검토 주기가 계속 뒤로 밀린다.
+
+
+def safety_history(conn, pid):
+    """자재 하나의 안전재고가 어떻게 바뀌어 왔는지 (최근 순)."""
+    pid = str(pid or "").strip()
+    row = conn.execute("""
+        SELECT p.P_ID, p.P_N, p.Spec, s.Sf_Lv AS grade, s.Sf_Num AS safe_qty,
+               s.Lead_Time AS lead_time, c.CP_N AS supplier
+          FROM Product_tb p
+          LEFT JOIN Safe_tb s    ON s.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON c.BRN = p.BRN
+         WHERE p.P_ID = ?""", (pid,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+
+    events = []
+
+    for r in _rows(conn, """
+        SELECT l.*, u.Name AS worker, u.Position AS pos
+          FROM Update_Log_tb l LEFT JOIN User_tb u ON u.EP_ID = l.EP_ID
+         WHERE l.P_ID = ? ORDER BY l.Updated_Date""", (pid,)):
+        first = r["Old_Num"] is None and r["Old_Lv"] is None
+        events.append({
+            "kind": "log",
+            "origin": "원본" if not r["EP_ID"] else ("최초" if first else "갱신"),
+            "date": r["Updated_Date"], "next_date": r["Next_Date"],
+            "lv_from": r["Old_Lv"], "lv_to": r["New_Lv"],
+            "num_from": r["Old_Num"], "num_to": r["New_Num"],
+            "usage_from": r["Old_Usage"], "usage_to": r["New_Usage"],
+            "worker": r["worker"], "pos": r["pos"], "note": r["Note"],
+            "ref": None,
+        })
+
+    for r in _rows(conn, """
+        SELECT o.*, u.Name AS worker, u.Position AS pos
+          FROM Safe_Override_tb o LEFT JOIN User_tb u ON u.EP_ID = o.EP_ID
+         WHERE o.P_ID = ? ORDER BY o.Start_Date""", (pid,)):
+        events.append({
+            "kind": "ovr", "origin": "수동 조정",
+            "date": r["Start_Date"], "end_date": r["End_Date"],
+            "lv_from": r["Calc_Lv"], "lv_to": r["Ovr_Lv"] or r["Calc_Lv"],
+            "num_from": r["Calc_Num"], "num_to": None,
+            "min_qty": r["Min_Qty"], "status": r["Status"],
+            "reason_cd": r["Reason_Cd"], "note": r["Reason"],
+            "worker": r["worker"], "pos": r["pos"], "ref": r["Ovr_ID"],
+        })
+        if r["Status"] != "적용":
+            events.append({
+                "kind": "ovr_off", "origin": r["Status"],
+                "date": r["Off_Date"] or r["End_Date"],
+                "lv_from": r["Ovr_Lv"] or r["Calc_Lv"], "lv_to": r["Calc_Lv"],
+                "num_from": None, "num_to": None,
+                "note": r["Off_Note"] or ("만료일 경과" if r["Status"] == "만료" else None),
+                "worker": r["worker"], "pos": r["pos"], "ref": r["Ovr_ID"],
+            })
+
+    events.sort(key=lambda e: (e["date"] or "", e["kind"]), reverse=True)
+
+    nums = [e["num_to"] for e in events if e.get("num_to") is not None]
+    nums += [e["num_from"] for e in events if e.get("num_from") is not None]
+    # 지금 공식이 내는 값 — 저장값과 왜 다른지 보여주기 위해
+    daily = conn.execute(f"""
+        SELECT COALESCE(SUM(t.T_Num), 0) FROM Transaction_tb t
+          JOIN Lot_tb l ON l.Lot_ID = t.Lot_ID
+         WHERE l.P_ID = ? AND {DEMAND_T}""", (pid,)).fetchone()[0]
+    days = operating_days(conn)
+    d = round(daily / days, 2) if daily else 0
+    # 리드타임·일평균 모두 일괄 갱신과 같은 기준이어야 한다 —
+    # 여기만 계획 리드타임을 쓰면 "저장값과 다릅니다" 가 거짓으로 뜬다
+    lt = conn.execute(
+        "SELECT AVG(julianday(l.Lot_Date) - julianday(h.P_Date))"
+        "  FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID"
+        " WHERE l.P_ID = ?", (pid,)).fetchone()[0]
+    lead = round(lt, 1) if lt else row["lead_time"]
+    calc = safe_formula(row["grade"], lead, d)
+
+    return {
+        "P_ID": pid, "P_N": row["P_N"], "Spec": row["Spec"],
+        "supplier": row["supplier"], "grade": row["grade"],
+        "safe_qty": row["safe_qty"], "lead_time": lead,
+        "lead_plan": row["lead_time"], "lead_src": "실측" if lt else "계획",
+        "events": events, "cnt": len(events),
+        "num_min": min(nums) if nums else None,
+        "num_max": max(nums) if nums else None,
+        "used_qty": daily, "days": days, "daily": d, "calc": calc,
+        # 원본 값은 공식 산출물이 아니다. 저장값과 공식값이 다르면 그 이유다
+        "matches_formula": calc is not None and calc == row["safe_qty"],
+        "origin_only": len(events) == 1 and events[0]["origin"] == "원본",
+        "cycle": REVIEW_CYCLE_DAYS.get(row["grade"]),
+    }, []
+
+
+# ── 단가 이력 (열두 번째 쓰기 기능) ──────────────────────────
+#
+# 단가가 `Product_tb.P_Price` 한 칸뿐이었다. 그래서 **지금 단가로 과거를 계산**했다.
+#
+#   2025-07 발주서를 오늘 뽑으면 → 그때 금액이 아니라 지금 금액이 나온다
+#   자재 수정에서 단가를 고치면  → 지난 발주서·정산 금액이 전부 소급해서 바뀐다
+#   언제 왜 바뀌었는지는          → 아무 데도 없다
+#
+# 두 가지로 나눠 고친다.
+#   ① 발주 시점 단가를 `Purchase_Detail_tb.Unit_Price` 에 **박아 둔다** (스냅샷)
+#   ② 단가가 바뀔 때마다 `Price_Log_tb` 에 **사유와 함께** 남긴다
+#
+# ⚠️ 어느 숫자가 어느 단가를 쓰는지 갈라 둔다 — 서로 다른 질문이기 때문이다.
+#   "그때 얼마에 샀나"  발주서 · 입고 대조 · 정산 → **발주 시점 단가**
+#   "지금 얼마짜리인가"  재고자산 · ABC · 사용금액 → **현재 단가**
+# 재고자산을 과거 단가로 매기면 지금 창고에 묶인 돈을 못 말하고,
+# 발주서를 현재 단가로 매기면 그때 얼마에 샀는지를 못 말한다.
+
+PRICE_ID_PRE = "PRC"
+
+# 단가가 움직이는 이유. 자유 텍스트만 받으면 "변경" 만 쌓인다 —
+# 안전재고 수동 조정·재고 실사와 같은 판단이다.
+PRICE_REASONS = {
+    "협력사인상": "협력사가 단가를 올렸습니다",
+    "협력사인하": "협력사가 단가를 내렸습니다",
+    "원자재시세": "원자재 시세가 움직였습니다",
+    "환율변동":   "해외 조달 환율이 변했습니다",
+    "계약갱신":   "연간 계약을 다시 맺었습니다",
+    "오류정정":   "잘못 등록된 단가를 바로잡습니다",
+}
+
+# 이 비율을 넘는 변동은 화면이 경고한다. 막지는 않는다 —
+# 실제로 두 배가 되는 일도 있고, 막으면 '오류정정' 을 못 한다.
+PRICE_WARN_PCT = 30
+
+
+def next_price_id(conn, date):
+    pre = PRICE_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Price_ID) FROM Price_Log_tb WHERE Price_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def _check_price_change(old_price, new_price, reason_cd, reason):
+    """단가가 실제로 바뀔 때만 사유를 받는다."""
+    if old_price == new_price:
+        return None, []
+    cd = str(reason_cd or "").strip()
+    if cd not in PRICE_REASONS:
+        return None, ["단가가 %s원 → %s원으로 바뀝니다. 사유를 고르세요 (%s)."
+                      % (format(int(old_price or 0), ","), format(int(new_price), ","),
+                         " · ".join(PRICE_REASONS))]
+    old_price = int(old_price) if old_price is not None else None
+    new_price = int(new_price)
+    diff = new_price - (old_price or 0)
+    pct = round(diff / old_price * 100, 1) if old_price else None
+    return {"old": old_price, "new": new_price, "diff": diff, "pct": pct,
+            "reason_cd": cd, "reason": (reason or "").strip() or None,
+            "big": bool(pct is not None and abs(pct) >= PRICE_WARN_PCT)}, []
+
+
+def price_impact(conn, pid, new_price):
+    """단가를 바꾸면 어느 숫자가 따라 움직이는지 (저장 안 함).
+
+    발주서가 목록에 들어가지 **않는** 것이 이 기능의 핵심이다 —
+    발주 시점 단가가 박혀 있어 과거 금액은 그대로다.
+    """
+    row = conn.execute("SELECT P_ID, P_N, P_Price FROM Product_tb WHERE P_ID = ?",
+                       (pid,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+    old = row["P_Price"] or 0
+    try:
+        new = int(new_price)
+    except (TypeError, ValueError):
+        return None, ["단가가 숫자가 아닙니다."]
+
+    stock = conn.execute(f"""
+        SELECT COALESCE(SUM(l.P_Qty - COALESCE((SELECT {LOT_DELTA} FROM Transaction_tb t
+                            WHERE t.Lot_ID = l.Lot_ID), 0)), 0)
+          FROM Lot_tb l WHERE l.P_ID = ?""", (pid,)).fetchone()[0]
+    used = conn.execute(
+        "SELECT COALESCE(SUM(t.T_Num), 0) FROM Transaction_tb t"
+        " JOIN Lot_tb l ON l.Lot_ID = t.Lot_ID"
+        " WHERE l.P_ID = ? AND %s" % DEMAND_T, (pid,)).fetchone()[0]
+    po = conn.execute(
+        "SELECT COUNT(DISTINCT H_ID) FROM Purchase_Detail_tb WHERE P_ID = ?",
+        (pid,)).fetchone()[0]
+
+    return {
+        "P_ID": pid, "P_N": row["P_N"], "old": old, "new": new,
+        "diff": new - old,
+        "pct": round((new - old) / old * 100, 1) if old else None,
+        # 현재 가치라서 새 단가를 따른다
+        "moves": [
+            {"what": "재고자산", "qty": stock,
+             "before": round(stock * old), "after": round(stock * new)},
+            {"what": "연간 사용금액 (ABC)", "qty": used,
+             "before": round(used * old), "after": round(used * new)},
+        ],
+        # 과거 사실이라 그대로다 — 이 기능이 지키는 것
+        "frozen": [{"what": "발주서 · 입고 대조 · 정산", "cnt": po,
+                    "why": "발주 시점 단가가 박혀 있어 바뀌지 않습니다"}],
+    }, []
+
+
+def price_history(conn, pid):
+    """자재 하나의 단가 이력 — 현재값 + 변동 목록 + 발주 시점 단가."""
+    pid = str(pid or "").strip()
+    row = conn.execute(
+        "SELECT p.P_ID, p.P_N, p.Spec, p.P_Price, c.CP_N AS supplier"
+        "  FROM Product_tb p LEFT JOIN Company_tb c ON p.BRN = c.BRN"
+        " WHERE p.P_ID = ?", (pid,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % (pid or "(빈값)")]
+
+    logs = _rows(conn, """
+        SELECT g.*, u.Name AS worker, u.Position AS worker_pos
+          FROM Price_Log_tb g LEFT JOIN User_tb u ON u.EP_ID = g.EP_ID
+         WHERE g.P_ID = ? ORDER BY g.Start_Date DESC, g.Price_ID DESC""", (pid,))
+
+    # 발주 시점 단가 — 실제로 얼마에 샀는지
+    orders = _rows(conn, """
+        SELECT h.H_ID, h.P_Date, d.P_Qty AS qty, d.Unit_Price AS price,
+               ROUND(d.P_Qty * COALESCE(d.Unit_Price, 0)) AS amount,
+               c.CP_N AS supplier
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON h.H_ID = d.H_ID
+          LEFT JOIN Company_tb c ON h.BRN = c.BRN
+         WHERE d.P_ID = ? ORDER BY h.P_Date DESC, h.H_ID DESC LIMIT 60""", (pid,))
+    prices = [o["price"] for o in orders if o["price"]]
+    cur = row["P_Price"] or 0
+    for o in orders:
+        o["gap"] = (o["price"] - cur) if o["price"] is not None else None
+
+    return {
+        "P_ID": pid, "P_N": row["P_N"], "Spec": row["Spec"],
+        "supplier": row["supplier"], "price": cur,
+        "logs": logs, "log_cnt": len(logs),
+        "orders": orders, "order_cnt": len(orders),
+        "min_price": min(prices) if prices else None,
+        "max_price": max(prices) if prices else None,
+        "avg_price": round(sum(prices) / len(prices)) if prices else None,
+        "reasons": [{"cd": k, "label": v} for k, v in PRICE_REASONS.items()],
+        "warn_pct": PRICE_WARN_PCT,
+    }, []
+
+
+def price_log(conn, limit=200):
+    """단가 변동 전체 이력 (최근 순)."""
+    return _rows(conn, """
+        SELECT g.*, p.P_N, p.Spec, s.Sf_Lv AS grade, c.CP_N AS supplier,
+               u.Name AS worker
+          FROM Price_Log_tb g
+          JOIN Product_tb p    ON p.P_ID = g.P_ID
+          LEFT JOIN Safe_tb s  ON s.P_ID = g.P_ID
+          LEFT JOIN Company_tb c ON c.BRN = p.BRN
+          LEFT JOIN User_tb u  ON u.EP_ID = g.EP_ID
+         ORDER BY g.Start_Date DESC, g.Price_ID DESC LIMIT ?""", (limit,))
+
+
+# ── 현장 반납 (열한 번째 쓰기 기능) ──────────────────────────
+#
+# 흐름이 한쪽으로만 흘렀다. 창고에서 현장으로는 나가는데(불출) 돌아오는
+# 길이 없었다. 생산이 끝나고 남은 자재, 취소된 작업지시의 자재, 처음부터
+# 많이 나간 자재가 **현장에 쌓인 채 시스템에서 되돌릴 방법이 없었다.**
+#
+#   현장 보유 352 LOT · 527,645개 · 24.6억원   ← 창고 재고(17.96억)보다 많다
+#   체류일 중앙값 125일 · 180일 넘게 묶인 LOT 59건
+#
+# ⚠️ 반납은 '불출의 취소' 가 아니다. 불출 거래를 지우면 "그때 나갔다" 는
+#    사실이 사라지고, 요청서 진행률(Done_Qty)과 생산 투입 이력이 어긋난다.
+#    되돌리는 게 아니라 **반대 방향 거래를 새로 남긴다.**
+#
+# ⚠️ 불량은 반납이 아니다. 창고로 돌아와도 쓸 수 없는 물건이라 가용재고에
+#    더하면 안 된다. 그쪽은 입고 클레임(T_Type='불량')이 이미 처리한다.
+
+RET_ID_PRE = "RET"
+
+# 검수 불량 사유. 사유가 귀책을 가르고, 귀책이 처분을 가른다.
+#   현장 귀책   → 폐기로 끝낸다. 클레임을 열지 않는다
+#   협력사 귀책 → Inbound_Claim_tb 에 접수해 대체입고/환불/폐기 흐름을 탄다
+#
+# ⚠️ 현장에서 떨어뜨려 깨진 것을 '클레임' 이라 부르면 협력사 품질 지표
+#    (claim_summary 의 협력사별 불량률)가 오염된다. 클레임은 협력사에 걸 것만 담는다.
+#    현장 귀책도 추적은 끊기지 않는다 — '불량' 거래가 입출고 이력과
+#    LOT 타임라인에 그대로 찍힌다.
+RETURN_BAD_REASONS = {
+    "파손":     {"blame": "현장",   "label": "운반·취급 중 깨졌습니다"},
+    "변질":     {"blame": "현장",   "label": "녹·경화 등으로 못 씁니다"},
+    "오염":     {"blame": "현장",   "label": "이물·유분이 묻었습니다"},
+    "포장훼손": {"blame": "현장",   "label": "내용물은 멀쩡하나 포장이 상했습니다"},
+    "사용흔적": {"blame": "현장",   "label": "이미 쓴 것이 섞여 돌아왔습니다"},
+    "입고하자": {"blame": "협력사", "label": "처음부터 불량이었습니다"},
+}
+
+# 현장 장기 보유 기준. LOT 장기체화(embed/lot.html)와 같은 선을 쓴다 —
+# 한 시스템 안에서 '오래됐다' 의 기준이 두 개면 안 된다.
+SITE_LONG_DAYS = 180
+
+# 반납 사유. 왜 돌아왔는지가 남아야 다음 요청 수량을 고칠 수 있다.
+#   잔여반납이 잦으면 요청이 과다하다는 뜻이고,
+#   과다불출이 잦으면 포장단위가 소요량에 비해 크다는 뜻이다.
+RETURN_REASONS = {
+    "잔여반납":   "생산이 끝나고 남았습니다",
+    "작업취소":   "작업지시가 취소·변경됐습니다",
+    "과다불출":   "필요보다 많이 나갔습니다",
+    "장기미사용": "오래 묶여 있어 창고로 되돌립니다",
+}
+
+
+def next_ret_id(conn, date):
+    pre = RET_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Ret_ID) FROM Site_Return_tb WHERE Ret_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def return_targets(conn, base=None):
+    """현장에 나가 있는 LOT. 되돌릴 수 있는 것은 이게 전부다.
+
+    site_lots() 와 같은 식을 쓰되 화면이 필요한 자재·구역·금액·체류일을 붙인다.
+    체류일 기준은 오늘이 아니라 **마지막 거래일**이다 (전 화면 공통 규칙).
+    """
+    base = base or conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    core = SITE_LOT_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+    rows = _rows(conn, f"""
+        SELECT s.Lot_ID, s.P_ID, s.Lot_Date, s.site, s.last_out,
+               p.P_N, p.Spec, p.P_Price, p.MainCat, p.PkgUnit,
+               sf.Sf_Lv AS grade, l.Loc_ID, lo.Loc_N AS loc_name,
+               CAST(julianday(?) - julianday(s.last_out) AS INT) AS days,
+               (SELECT MAX(pr.Work_Order) FROM Production_tb pr
+                 WHERE pr.Lot_ID = s.Lot_ID) AS last_wo
+          FROM ({core}) s
+          JOIN Lot_tb l        ON l.Lot_ID = s.Lot_ID
+          JOIN Product_tb p    ON p.P_ID = s.P_ID
+          LEFT JOIN Safe_tb sf ON sf.P_ID = s.P_ID
+          LEFT JOIN Location_tb lo ON lo.Loc_ID = l.Loc_ID
+         WHERE s.site > 0
+         ORDER BY days DESC, s.Lot_ID""", (base,))
+    for r in rows:
+        r["amount"] = round(r["site"] * (r["P_Price"] or 0))
+        r["is_long"] = 1 if (r["days"] or 0) >= SITE_LONG_DAYS else 0
+    return rows
+
+
+def return_source(conn):
+    """현장 반납 화면의 기준 데이터."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    rows = return_targets(conn, base)
+    days = [r["days"] for r in rows if r["days"] is not None]
+    return {
+        "base": base, "entry": _add_days(base, 1),
+        "lots": rows,
+        "lot_cnt": len(rows),
+        "item_cnt": len({r["P_ID"] for r in rows}),
+        "qty": sum(r["site"] for r in rows),
+        "amount": sum(r["amount"] for r in rows),
+        "long_cnt": sum(r["is_long"] for r in rows),
+        "long_days": SITE_LONG_DAYS,
+        "avg_days": round(sum(days) / len(days)) if days else 0,
+        "reasons": [{"cd": k, "label": v} for k, v in RETURN_REASONS.items()],
+        "bad_reasons": [{"cd": k, "blame": v["blame"], "label": v["label"]}
+                        for k, v in RETURN_BAD_REASONS.items()],
+        "cats": _rows(conn, "SELECT DISTINCT MainCat FROM Product_tb ORDER BY MainCat"),
+        "workers": _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name"),
+    }
+
+
+def preview_return(conn, lines, ep_id, reason_cd, reason=None, wo=None, date=None):
+    """반납 전 검증. 저장하지 않는다.
+
+    현장 보유를 서버가 다시 계산한다 — 화면이 보낸 보유량을 믿으면
+    창고에 없던 수량이 생겨난다.
+    """
+    w, errors = _worker(conn, ep_id)
+    if errors:
+        return None, errors
+
+    cd = str(reason_cd or "").strip()
+    if cd not in RETURN_REASONS:
+        return None, ["반납 사유를 고르세요. %s 중 하나여야 합니다."
+                      % " · ".join(RETURN_REASONS)]
+    wo, e = _check_wo(wo)
+    if e:
+        return None, e
+
+    if not isinstance(lines, list) or not lines:
+        return None, ["반납할 자재를 고르세요."]
+    if len(lines) > 200:
+        return None, ["한 번에 200줄까지만 반납할 수 있습니다."]
+
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    site = {r["Lot_ID"]: r for r in return_targets(conn, base)}
+    date = date or _add_days(base, 1)
+
+    items, seen, errors = [], set(), []
+    for n, ln in enumerate(lines, start=1):
+        if not isinstance(ln, dict):
+            errors.append("%d번째 줄 형식이 잘못됐습니다." % n)
+            continue
+        lid = str(ln.get("Lot_ID") or "").strip().upper()
+        if not lid:
+            errors.append("%d번째 줄에 LOT 번호가 없습니다." % n)
+            continue
+        if lid in seen:
+            errors.append("같은 LOT 이 두 번 들어왔습니다: %s" % lid)
+            continue
+        seen.add(lid)
+        row = site.get(lid)
+        if row is None:
+            errors.append("현장에 나가 있지 않은 LOT 입니다: %s" % lid)
+            continue
+        q = _pos_int(ln.get("qty"), "%s 반납 수량" % lid, errors, lo=1, hi=row["site"])
+        if q is None:
+            continue
+        # 검수 — 돌아온 물건이 쓸 수 있는 상태인지 가린다.
+        # 안 넣으면 전량 양품이다 (검수 전 전표와 같은 동작).
+        bad = _pos_int(ln.get("bad_qty"), "%s 불량 수량" % lid, errors,
+                       lo=0, hi=q, required=False) or 0
+        # ⚠️ 바깥의 cd(반납 사유)를 가리지 않도록 이름을 따로 쓴다
+        bcd = str(ln.get("bad_cd") or "").strip()
+        if bad and bcd not in RETURN_BAD_REASONS:
+            errors.append("%s 불량 %s개의 사유를 고르세요 (%s)."
+                          % (lid, format(bad, ","), " · ".join(RETURN_BAD_REASONS)))
+            continue
+        if not bad:
+            bcd = ""       # 불량이 없으면 사유를 받지 않는다
+        blame = RETURN_BAD_REASONS[bcd]["blame"] if bcd else None
+        # 협력사에 걸려면 그 LOT 이 어느 발주로 들어왔는지 알아야 한다
+        if blame == "협력사" and not (_lot_remain(conn, lid) or {}).get("H_ID"):
+            errors.append("%s 는 발주와 연결되지 않은 LOT 이라 협력사 클레임을 걸 수 없습니다."
+                          % lid)
+            continue
+        # 현장에 오기 전으로는 되돌릴 수 없다 (생산 실적과 같은 판단)
+        if row["last_out"] and date < row["last_out"]:
+            errors.append("반납일(%s)이 %s 의 불출일(%s)보다 앞섭니다."
+                          % (date, lid, row["last_out"]))
+            continue
+        items.append({
+            "Lot_ID": lid, "P_ID": row["P_ID"], "P_N": row["P_N"], "Spec": row["Spec"],
+            "grade": row["grade"], "qty": q, "site": row["site"],
+            "site_after": row["site"] - q, "days": row["days"],
+            "last_out": row["last_out"], "Loc_ID": row["Loc_ID"],
+            "loc_name": row["loc_name"], "amount": round(q * (row["P_Price"] or 0)),
+            "stock_before": (_lot_remain(conn, lid) or {}).get("remain", 0),
+            "bad_qty": bad, "good_qty": q - bad, "bad_cd": bcd or None,
+            "bad_note": str(ln.get("bad_note") or "").strip() or None,
+            "blame": blame,
+            "bad_amount": round(bad * (row["P_Price"] or 0)),
+            "price": row["P_Price"],
+            # 체류가 길면 검수를 유도한다 (막지는 않는다)
+            "stale": 1 if (row["days"] or 0) >= SITE_LONG_DAYS and not bad else 0,
+        })
+    if errors:
+        return None, errors
+    if not items:
+        return None, ["반납할 수량이 없습니다."]
+    for it in items:
+        # 창고에 남는 건 양품뿐이다 — 불량은 반납 직후 다시 빠진다
+        it["stock_after"] = it["stock_before"] + it["good_qty"]
+
+    bad_total = sum(i["bad_qty"] for i in items)
+    return {"items": items, "cnt": len(items),
+            "qty": sum(i["qty"] for i in items),
+            "good_qty": sum(i["good_qty"] for i in items),
+            "bad_qty": bad_total,
+            "bad_cnt": len([i for i in items if i["bad_qty"]]),
+            "bad_amount": sum(i["bad_amount"] for i in items),
+            "claim_cnt": len([i for i in items if i["blame"] == "협력사"]),
+            "stale_cnt": sum(i["stale"] for i in items),
+            "bad_pct": _pct(bad_total, sum(i["qty"] for i in items)),
+            "tx_cnt": len(items) + len([i for i in items if i["bad_qty"]]),
+            "amount": sum(i["amount"] for i in items),
+            "item_cnt": len({i["P_ID"] for i in items}),
+            "reason_cd": cd, "reason_label": RETURN_REASONS[cd],
+            "reason": (reason or "").strip() or None,
+            "Work_Order": wo or None, "worker": w, "date": date,
+            "tx": TX_RETURN}, []
+
+
+def create_return(conn, date, lines, ep_id, reason_cd, reason=None, wo=None):
+    """현장 반납 등록. 전부 성공하거나 전부 실패한다.
+
+    ⚠️ Lot_tb.P_Qty 를 올리지 않는다. 입고 수량은 사실로 남고,
+       되돌아온 양은 거래로 더해져 잔량(LOT_DELTA)이 알아서 회복된다.
+    """
+    plan, errors = preview_return(conn, lines, ep_id, reason_cd, reason, wo, date)
+    if errors:
+        return None, errors
+
+    rid = next_ret_id(conn, date)
+    with conn:                                   # 전부 아니면 전무
+        for n, it in enumerate(plan["items"], start=1):
+            # ① 반납 — 총량. 현장 보유가 그만큼 빠진다
+            tid = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb"
+                " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?,?,?,?,?,?)",
+                (tid, it["Lot_ID"], TX_RETURN, date, it["qty"], plan["worker"]["EP_ID"]))
+
+            # ② 검수 불량 — 창고 가용재고에서 다시 뺀다.
+            #    ⚠️ 불량으로 이미 빠졌으므로 처분(폐기)에서 또 깎지 않는다.
+            bad_tid = claim_id = None
+            if it["bad_qty"]:
+                why = "%s%s" % (it["bad_cd"],
+                                " · " + it["bad_note"] if it["bad_note"] else "")
+                if it["blame"] == "협력사":
+                    cl = _write_claim(conn, date, it["Lot_ID"], it["bad_qty"],
+                                      plan["worker"]["EP_ID"], "반납검수", "미정",
+                                      "현장 반납 검수 — " + why, it["price"])
+                    bad_tid, claim_id = cl["T_ID"], cl["Claim_ID"]
+                else:
+                    bad_tid = next_tx_id(conn, date)
+                    conn.execute(
+                        "INSERT INTO Transaction_tb"
+                        " (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (bad_tid, it["Lot_ID"], TX_DEFECT, date, it["bad_qty"],
+                         plan["worker"]["EP_ID"]))
+
+            conn.execute(
+                "INSERT INTO Site_Return_tb"
+                " (Ret_ID, Line, Ret_Date, Lot_ID, P_ID, Ret_Qty, Reason_Cd, Reason,"
+                "  Work_Order, Amount, Good_Qty, Bad_Qty, Bad_Cd, Bad_Note,"
+                "  Bad_T_ID, Claim_ID, T_ID, EP_ID)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (rid, n, date, it["Lot_ID"], it["P_ID"], it["qty"], plan["reason_cd"],
+                 plan["reason"], plan["Work_Order"], it["amount"],
+                 it["good_qty"], it["bad_qty"], it["bad_cd"], it["bad_note"],
+                 bad_tid, claim_id, tid, plan["worker"]["EP_ID"]))
+            it["Line"] = n
+            it["T_ID"] = tid
+            it["Bad_T_ID"] = bad_tid
+            it["Claim_ID"] = claim_id
+    plan["Ret_ID"] = rid
+    return plan, []
+
+
+def return_list(conn, limit=120):
+    """반납 이력 — 전표 단위로 묶어서."""
+    return _rows(conn, """
+        SELECT r.Ret_ID, r.Ret_Date, r.Reason_Cd, r.Reason, r.Work_Order,
+               u.Name AS worker, u.Position AS worker_pos,
+               COUNT(*) AS line_cnt, SUM(r.Ret_Qty) AS qty, SUM(r.Amount) AS amount,
+               COUNT(DISTINCT r.P_ID) AS item_cnt,
+               SUM(COALESCE(r.Good_Qty, r.Ret_Qty)) AS good_qty,
+               SUM(COALESCE(r.Bad_Qty, 0))         AS bad_qty,
+               COUNT(r.Claim_ID)                   AS claim_cnt
+          FROM Site_Return_tb r
+          LEFT JOIN User_tb u ON u.EP_ID = r.EP_ID
+         GROUP BY r.Ret_ID
+         ORDER BY r.Ret_Date DESC, r.Ret_ID DESC
+         LIMIT ?""", (limit,))
+
+
+def return_detail(conn, rid):
+    """반납 전표 한 장."""
+    rid = str(rid or "").strip().upper()
+    rows = _rows(conn, """
+        SELECT r.*, p.P_N, p.Spec, s.Sf_Lv AS grade, l.Loc_ID, lo.Loc_N AS loc_name
+          FROM Site_Return_tb r
+          JOIN Product_tb p    ON p.P_ID = r.P_ID
+          LEFT JOIN Safe_tb s  ON s.P_ID = r.P_ID
+          LEFT JOIN Lot_tb l   ON l.Lot_ID = r.Lot_ID
+          LEFT JOIN Location_tb lo ON lo.Loc_ID = l.Loc_ID
+         WHERE r.Ret_ID = ?
+         ORDER BY r.Line""", (rid,))
+    if not rows:
+        return None, ["등록되지 않은 반납번호입니다: %s" % (rid or "(빈값)")]
+    for r in rows:
+        r["blame"] = RETURN_BAD_REASONS[r["Bad_Cd"]]["blame"] if r["Bad_Cd"] else None
+    qty = sum(r["Ret_Qty"] for r in rows)
+    bad = sum(r["Bad_Qty"] or 0 for r in rows)
+    return {"Ret_ID": rid, "items": rows, "qty": qty,
+            "good_qty": sum(r["Good_Qty"] if r["Good_Qty"] is not None else r["Ret_Qty"]
+                            for r in rows),
+            "bad_qty": bad, "bad_pct": _pct(bad, qty),
+            "claim_cnt": len([r for r in rows if r["Claim_ID"]]),
+            "amount": sum(r["Amount"] or 0 for r in rows)}, []
+
+
 # ── 입고 등록 (세 번째 쓰기 기능) ────────────────────────────
 #
 # 발주(입구) → 입고 → 불출(출구) 중 가운데 토막이다.
@@ -4340,27 +5460,35 @@ def pkg_options(need, pkg, span=3):
 #
 #   현장 재고 = 불출(창고→현장) − 생산 투입(현장에서 소비) − 반납(현장→창고)
 #
-# 실측 검증: 200종 전수에서 음수가 0건이다. 불출보다 투입이 많은 모순이 없다는 뜻이라
-# 이 식이 데이터와 정합한다고 볼 수 있다.
+# ⚠️ 품번 단위로 한 번에 더하면 안 된다. LOT 단위로 끊어 음수를 막고 더한다.
+#
+# 재고 실사의 '미기록반납'·'과다입고' 는 **불출이 없는 LOT 에 반납 거래**를 남긴다
+# (창고에서 센 수량이 장부보다 많을 때 쓰는 사유다). 그 LOT 의 현장 보유는
+# 0 − 0 − 15 = −15 가 된다. 현장에 −15 개가 있다는 말은 성립하지 않는다.
+#
+# 품번 단위로 먼저 더하면 이 −15 가 같은 품번의 멀쩡한 LOT 에서 깎인다.
+#
+#   LOT_A 불출 500  → 현장 500          ← 반납 화면은 이걸 보고 "500 되돌릴 수 있다"
+#   LOT_B 미기록반납 15 → 현장 −15
+#   품번 합계 = 485                      ← 자재 목록·생산 화면은 "485" 라고 말한다
+#
+# 되돌릴 수 있는 수량과 보유 수량이 15 만큼 갈린다. LOT 목록(site_lots)은 이미
+# `site > 0` 으로 거르고 있으니, 집계도 같은 LOT 단위 조각에서 뽑아 둘이
+# 구조적으로 어긋날 수 없게 한다.
+#
+# 실측 검증: 200종 전수에서 LOT 단위 음수는 위 실사 1건뿐이다.
 SITE_STOCK_SQL = """
-    SELECT p.P_ID,
-           COALESCE(o.q, 0) - COALESCE(u.q, 0) - COALESCE(r.q, 0) AS site
+    SELECT p.P_ID, COALESCE(s.q, 0) AS site
       FROM Product_tb p
-      LEFT JOIN (SELECT l.P_ID, SUM(t.T_Num) q
-                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                  WHERE {demand} GROUP BY l.P_ID) o ON p.P_ID = o.P_ID
-      LEFT JOIN (SELECT P_ID, SUM(Prod_Qty) q FROM Production_tb GROUP BY P_ID) u
-             ON p.P_ID = u.P_ID
-      LEFT JOIN (SELECT l.P_ID, SUM(t.T_Num) q
-                   FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
-                  WHERE t.T_Type IN ({ret}) GROUP BY l.P_ID) r ON p.P_ID = r.P_ID
+      LEFT JOIN (SELECT P_ID, SUM(MAX(site, 0)) q FROM ({lot}) GROUP BY P_ID) s
+             ON p.P_ID = s.P_ID
 """
 
 
 def site_stock(conn):
-    """품번별 현장 보유 수량. 음수는 0 으로 막는다(데이터 모순 방어)."""
-    sql = SITE_STOCK_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
-    return {r["P_ID"]: max(r["site"] or 0, 0) for r in _rows(conn, sql)}
+    """품번별 현장 보유 수량 — LOT 단위로 음수를 막고 더한 값."""
+    lot = SITE_LOT_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+    return {r["P_ID"]: r["site"] or 0 for r in _rows(conn, SITE_STOCK_SQL.format(lot=lot))}
 
 
 def request_source(conn):
@@ -4892,7 +6020,7 @@ def approval_queue(conn):
 #    거래를 또 남기면 출고가 이중 집계된다. 반품·대체·환불은 클레임의 '상태'다.
 #    덕분에 9차 회의에서 확정한 T_Type 7종을 건드리지 않아도 된다.
 
-CLAIM_TYPES = ("입고검수", "사용중발견")
+CLAIM_TYPES = ("입고검수", "사용중발견", "반납검수")
 CLAIM_RESOLUTIONS = ("대체입고", "환불", "폐기", "미정")
 CLAIM_STATUS = ("접수", "완료")
 
@@ -5175,10 +6303,10 @@ def lot_events(conn, pid):
     by_lot = {i: [] for i in ids}
     kinds = {}
 
-    def add(lot, kind, date, title, desc, qty=None, ref=None, tone=None):
+    def add(lot, kind, date, title, desc, qty=None, ref=None, tone=None, sign=None):
         by_lot[lot].append({"kind": kind, "date": date, "title": title,
                             "desc": desc, "qty": qty, "ref": ref,
-                            "tone": tone or kind})
+                            "tone": tone or kind, "sign": sign})
         kinds[title] = kinds.get(title, 0) + 1
 
     for l in lots:
@@ -5195,7 +6323,8 @@ def lot_events(conn, pid):
     for t in tx:
         kind = TX_KIND.get(t["T_Type"], "move")
         desc = t["worker"] or "-"
-        add(t["Lot_ID"], kind, t["T_Date"], t["T_Type"], desc, t["T_Num"], t["T_ID"])
+        add(t["Lot_ID"], kind, t["T_Date"], t["T_Type"], desc, t["T_Num"], t["T_ID"],
+            sign=TX_SIGN.get(t["T_Type"], 0))
 
     lot_date = {l["Lot_ID"]: l["Lot_Date"] for l in lots}
     for r in pr:
@@ -5355,6 +6484,9 @@ def product_source(conn):
         "loc": LOC_BY_MAINCAT,
         "base": base, "entry": _add_days(base, 1),
         "csv_cols": PRODUCT_CSV_COLS,
+        # 단가를 바꾸면 사유를 받는다 — 바뀐 뒤엔 아무도 왜였는지 모른다
+        "price_reasons": [{"cd": k, "label": v} for k, v in PRICE_REASONS.items()],
+        "price_warn_pct": PRICE_WARN_PCT,
     }
 
 
@@ -5515,7 +6647,9 @@ def preview_product(conn, body, pid=None):
               JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
              WHERE l.P_ID = ? AND {DEMAND_T}""", (pid,)).fetchone()
         if r and r["q"]:
-            daily = round(r["q"] / days, 4)
+            # 소수 2자리 — safety_stock_list(일괄 갱신이 쓰는 값)와 같은 자리수여야
+            # 같은 자재가 두 경로에서 다른 안전재고를 갖지 않는다
+            daily = round(r["q"] / days, 2)
             f["daily_src"] = "실적"
         else:
             f["daily_src"] = "예상" if daily else None
@@ -5528,8 +6662,25 @@ def preview_product(conn, body, pid=None):
     #    실적도 예상도 없으면 기존값이 그나마 가장 나은 값이다.
     keep = old["Sf_Num"] if (old is not None and old["Sf_Num"]) else None
 
+    # ⚠️ 리드타임도 일괄 갱신과 같은 기준을 써야 한다. 여기만 계획값을 쓰면
+    #    같은 자재가 '수정' 과 '갱신' 에서 서로 다른 안전재고를 갖는다
+    #    (E02010001: 계획 64일 → 35개 / 실측 60일 → 32개).
+    #    실측이 있으면 실측이 낫다 — 실제로 그만큼 걸린다는 뜻이다.
+    lead = f.get("Lead_Time")
+    if pid:
+        lt = conn.execute(
+            "SELECT AVG(julianday(l.Lot_Date) - julianday(h.P_Date))"
+            "  FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID"
+            " WHERE l.P_ID = ?", (pid,)).fetchone()[0]
+        if lt:
+            lead = round(lt, 1)
+            f["lead_src"] = "실측"
+        else:
+            f["lead_src"] = "계획"
+    f["lead_used"] = lead
+
     def _ss(g):
-        v = safe_formula(g, f.get("Lead_Time"), daily)
+        v = safe_formula(g, lead, daily)
         return keep if v is None else v
 
     ss = _ss(grade)
@@ -5632,6 +6783,13 @@ def update_product(conn, date, pid, body, ep_id):
     old = conn.execute(
         "SELECT s.Sf_Lv, s.Sf_Num, s.Usage_Score FROM Safe_tb s WHERE s.P_ID = ?",
         (pid,)).fetchone()
+    old_price = conn.execute(
+        "SELECT P_Price FROM Product_tb WHERE P_ID = ?", (pid,)).fetchone()["P_Price"]
+    # 단가가 바뀌면 근거를 받는다 — 바뀐 뒤에는 아무도 왜였는지 모른다
+    chg, e = _check_price_change(old_price, f["P_Price"],
+                                 body.get("price_reason_cd"), body.get("price_reason"))
+    if e:
+        return None, e
     note = str(body.get("note") or "").strip() or "자재 정보 수정"
 
     with conn:
@@ -5657,6 +6815,16 @@ def update_product(conn, date, pid, body, ep_id):
                  old["Sf_Lv"], f["eff_grade"], old["Sf_Num"], f["Sf_Num"],
                  old["Usage_Score"], old["Usage_Score"], w["EP_ID"], note))
             f["logged"] = 1
+        if chg:
+            prc = next_price_id(conn, date)
+            conn.execute(
+                "INSERT INTO Price_Log_tb (Price_ID, P_ID, Old_Price, New_Price,"
+                " Diff, Diff_Pct, Reason_Cd, Reason, Start_Date, EP_ID)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (prc, pid, chg["old"], chg["new"], chg["diff"], chg["pct"],
+                 chg["reason_cd"], chg["reason"], date, w["EP_ID"]))
+            chg["Price_ID"] = prc
+            f["price_change"] = chg
 
     f["EP_ID"], f["worker"] = w["EP_ID"], w["Name"]
     f["date"], f["note"] = date, note

@@ -186,6 +186,7 @@ CREATE TABLE Purchase_Detail_tb (
     Purchase_num INTEGER NOT NULL,     -- 발주서 내 순번
     P_ID         TEXT,
     P_Qty        INTEGER,              -- 발주수량
+    Unit_Price   INTEGER,              -- 발주 시점 단가 (스냅샷)
     PRIMARY KEY (H_ID, Purchase_num)
 );
 
@@ -330,6 +331,83 @@ CREATE TABLE Safe_Override_tb (
     Off_Note   TEXT
 );
 
+-- ── 재고 실사 ───────────────────────────────────────────────
+-- 재고는 거래로만 움직인다. 실물과 장부가 어긋나도(파손·분실·오출고·전표 누락)
+-- 고칠 방법이 없었다. 실사가 그 유일한 수단이다.
+DROP TABLE IF EXISTS Price_Log_tb;
+CREATE TABLE Price_Log_tb (
+    Price_ID    TEXT    PRIMARY KEY,    -- PRC + YYYYMMDD + 4자리
+    P_ID        TEXT    NOT NULL,
+    Old_Price   INTEGER,                -- 바뀌기 전 단가 (최초 등록이면 NULL)
+    New_Price   INTEGER NOT NULL,
+    Diff        INTEGER,
+    Diff_Pct    REAL,
+    Reason_Cd   TEXT    NOT NULL,       -- 협력사인상 / 인하 / 원자재시세 / 환율변동 / 계약갱신 / 오류정정
+    Reason      TEXT,
+    Start_Date  TEXT    NOT NULL,       -- 적용일
+    EP_ID       TEXT    NOT NULL
+);
+CREATE INDEX idx_prc_pid  ON Price_Log_tb(P_ID);
+CREATE INDEX idx_prc_date ON Price_Log_tb(Start_Date);
+
+DROP TABLE IF EXISTS Site_Return_tb;
+CREATE TABLE Site_Return_tb (
+    Ret_ID      TEXT    NOT NULL,          -- RET + YYYYMMDD + 4자리
+    Line        INTEGER NOT NULL,
+    Ret_Date    TEXT    NOT NULL,
+    Lot_ID      TEXT    NOT NULL,
+    P_ID        TEXT    NOT NULL,
+    Ret_Qty     INTEGER NOT NULL,
+    Reason_Cd   TEXT    NOT NULL,          -- 잔여반납 / 작업취소 / 과다불출 / 장기미사용
+    Reason      TEXT,
+    Work_Order  TEXT,
+    Amount      INTEGER,                   -- 반납 금액 (수량 × 단가)
+    Good_Qty    INTEGER,                   -- 검수 양품 (가용재고로 올라간다)
+    Bad_Qty     INTEGER,                   -- 검수 불량 (가용재고에서 다시 뺀다)
+    Bad_Cd      TEXT,                      -- 파손/변질/오염/포장훼손/사용흔적/입고하자
+    Bad_Note    TEXT,
+    Bad_T_ID    TEXT,                      -- 불량 판정 거래
+    Claim_ID    TEXT,                      -- 협력사 귀책(입고하자)일 때만
+    T_ID        TEXT    NOT NULL,          -- 이 반납이 남긴 '반납' 거래
+    EP_ID       TEXT    NOT NULL,
+    PRIMARY KEY (Ret_ID, Line)
+);
+CREATE INDEX idx_ret_lot  ON Site_Return_tb(Lot_ID);
+CREATE INDEX idx_ret_date ON Site_Return_tb(Ret_Date);
+CREATE INDEX idx_ret_wo   ON Site_Return_tb(Work_Order);
+
+DROP TABLE IF EXISTS Stock_Count_tb;
+CREATE TABLE Stock_Count_tb (
+    Count_ID   TEXT PRIMARY KEY,   -- 실사번호 CNT+YYYYMMDD+4자리
+    Count_Date TEXT NOT NULL,
+    Scope      TEXT NOT NULL,      -- 등급 / 구역 / 전수
+    Scope_Val  TEXT,               -- 'A' 또는 'L01'. 전수면 NULL
+    Status     TEXT NOT NULL,      -- 진행 / 완료 / 취소
+    EP_ID      TEXT NOT NULL,      -- 실사 담당
+    Appr_EP_ID TEXT,               -- 조정 승인자 (재고를 바꾸므로 직급을 본다)
+    Appr_Date  TEXT,
+    Appr_Note  TEXT,
+    Note       TEXT
+);
+
+DROP TABLE IF EXISTS Stock_Count_Item_tb;
+CREATE TABLE Stock_Count_Item_tb (
+    Count_ID  TEXT NOT NULL,
+    Line      INTEGER NOT NULL,
+    Lot_ID    TEXT NOT NULL,
+    P_ID      TEXT NOT NULL,
+    -- ⚠️ 실사 '시작 시점' 의 장부 재고를 박아 둔다. 실사 도는 동안 불출이
+    --    일어나면 기준이 흔들린다. 그때 장부가 얼마였는지 설명할 수 있어야 한다.
+    Book_Qty  INTEGER NOT NULL,
+    Real_Qty  INTEGER,             -- 실물 수량. NULL 이면 아직 안 센 것
+    Reason_Cd TEXT,                -- 폐기 / 구역오류 / 분실 / 미기록불출 / 미기록반납 / 기타
+    Reason    TEXT,
+    Loc_To    TEXT,                -- 구역오류일 때 실제로 있던 구역
+    T_ID      TEXT,                -- 조정으로 생긴 거래
+    Counted_At TEXT,
+    PRIMARY KEY (Count_ID, Line)
+);
+
 DROP TABLE IF EXISTS FG_tb;
 CREATE TABLE FG_tb (
     FG_ID    TEXT PRIMARY KEY,         -- 완제품 코드 FG001~FG015
@@ -382,6 +460,9 @@ CREATE INDEX idx_prod_pid       ON Production_tb(P_ID);
 CREATE INDEX idx_prod_date      ON Production_tb(Prod_Date);
 CREATE INDEX idx_ovr_pid        ON Safe_Override_tb(P_ID);
 CREATE INDEX idx_ovr_status     ON Safe_Override_tb(Status);
+CREATE INDEX idx_cnt_status     ON Stock_Count_tb(Status);
+CREATE INDEX idx_cnt_item_lot   ON Stock_Count_Item_tb(Lot_ID);
+CREATE INDEX idx_cnt_item_cid   ON Stock_Count_Item_tb(Count_ID);
 CREATE INDEX idx_product_cat    ON Product_tb(MainCat, SubCat, DetailCat);
 CREATE INDEX idx_bom_fg         ON BOM_tb(FG_ID);
 CREATE INDEX idx_bom_pid        ON BOM_tb(P_ID);

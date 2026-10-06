@@ -550,7 +550,9 @@ function shDraw(s){
       + '<td>' + esc(i.P_N || '-')
       +   (i.Spec ? '<div class="spec">' + esc(i.Spec) + '</div>' : '') + '</td>'
       + '<td class="n">' + nf(i.qty) + '</td>'
-      + '<td class="n">' + nf(i.price) + '</td>'
+      + '<td class="n">' + nf(i.price)
+      +   (i.cur_price != null && Math.round(i.cur_price) !== Math.round(i.price)
+          ? '<div class="spec">현재 ' + nf(i.cur_price) + '</div>' : '') + '</td>'
       + '<td class="n">' + nf(i.amount) + '</td>'
       + '<td class="c">' + (i.pkg ? nf(i.pkg) : '-') + '</td>'
       + '<td class="c">' + (i.lead_time ? i.lead_time + '일' : '-') + '</td>'
@@ -609,7 +611,8 @@ function shDraw(s){
   + '<div class="sh-note">'
   +   '<b>1.</b> 납품 시 본 발주서를 지참하고, 상단 바코드를 입고 담당자에게 제시해 주십시오.<br>'
   +   '<b>2.</b> 수량은 <b>포장단위의 배수</b>로 출하합니다. 부족·초과 시 사전 협의해 주십시오.<br>'
-  +   '<b>3.</b> 단가는 ' + esc(s.vat_note) + ' 기준입니다.'
+  +   '<b>3.</b> 단가는 ' + esc(s.vat_note) + ' 기준이며, <b>발주 시점 단가</b>로 고정됩니다 — '
+  +   '이후 단가가 바뀌어도 이 금액은 그대로입니다.'
   +   (s.recv_date
       ? '<br><b>4.</b> 이 발주는 <b>' + esc(s.recv_date) + '</b> 에 입고 처리되었습니다 (LOT ' + s.recv_lots + '건).'
       : '')

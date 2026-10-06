@@ -25,6 +25,7 @@ TODO_ICON = {
     "approval": "ti-check",
     "picking":  "ti-list-check",
     "disburse": "ti-arrow-bar-up",
+    "site":     "ti-arrow-back-up",
     "safety":   "ti-shield-check",
 }
 
@@ -52,6 +53,7 @@ MENUS = [
             {"id": "inbound",      "label": "입고 처리",          "icon": "ti-arrow-bar-to-down", "url": "/inbound"},
             {"id": "disburse_request", "label": "불출 요청",      "icon": "ti-clipboard-list",    "url": "/disburse-request"},
             {"id": "disburse",     "label": "불출 처리",          "icon": "ti-arrow-bar-up",      "url": "/disburse"},
+            {"id": "site_return",  "label": "현장 반납",          "icon": "ti-arrow-back-up",     "url": "/return"},
             {"id": "tx_history",   "label": "입출고 이력",        "icon": "ti-history",           "url": "/tx-history"},
             {"id": "picking",      "label": "피킹리스트",         "icon": "ti-list-check",        "url": "/picking"},
             {"id": "approval",     "label": "불출 승인",          "icon": "ti-check",             "url": "/approval"},
@@ -76,6 +78,7 @@ MENUS = [
         "group": "재고 현황",
         "menu_items": [
             {"id": "stock_map",    "label": "재고 현황 지도",     "icon": "ti-building-warehouse", "url": "/stock-map"},
+            {"id": "stock_count",  "label": "재고 실사",          "icon": "ti-clipboard-check",   "url": "/stock-count"},
         ]
     },
     {
@@ -167,6 +170,11 @@ def disburse_request():
 def disburse():
     return render_template("disburse.html", **get_menu_context("disburse"), page_title="불출 처리")
 
+@app.route("/return")
+def site_return():
+    return render_template("site_return.html", **get_menu_context("site_return"),
+                           page_title="현장 반납")
+
 @app.route("/tx-history")
 def tx_history():
     return render_template("tx_history.html", **get_menu_context("tx_history"), page_title="입출고 이력")
@@ -198,6 +206,11 @@ def calendar():
 @app.route("/production")
 def production():
     return render_template("production.html", **get_menu_context("production"), page_title="생산 실적")
+
+@app.route("/stock-count")
+def stock_count():
+    return render_template("stock_count.html", **get_menu_context("stock_count"),
+                           page_title="재고 실사")
 
 @app.route("/stock-map")
 def stock_map():
@@ -406,6 +419,28 @@ def _ctx_purchase():
         conn.close()
 
 
+def _ctx_site_return():
+    """현장 반납 — 되돌릴 수 있는 LOT + 반납 이력."""
+    conn = db.connect()
+    try:
+        return {"src": db.return_source(conn), "rets": db.return_list(conn)}
+    finally:
+        conn.close()
+
+
+def _ctx_stock_count():
+    """재고 실사 — 차수 목록 + 범위별 대상 + 진행 중 차수."""
+    conn = db.connect()
+    try:
+        src = db.count_source(conn)
+        cur = None
+        if src["open_id"]:
+            cur, _ = db.count_sheet(conn, src["open_id"])
+        return {"src": src, "counts": db.count_list(conn), "cur": cur}
+    finally:
+        conn.close()
+
+
 def _ctx_stock_map():
     conn = db.connect()
     try:
@@ -565,6 +600,240 @@ def _ctx_workbench():
 # 이 앱에서 유일하게 DB 를 쓰는 엔드포인트다.
 # 나머지 화면은 전부 조회 전용이라 GET 만 있다.
 
+@app.route("/api/safety/history")
+def api_safety_history():
+    """자재 하나의 안전재고가 어떻게 바뀌어 왔는지."""
+    conn = db.connect()
+    try:
+        out, errors = db.safety_history(conn, request.args.get("P_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "data": out})
+    finally:
+        conn.close()
+
+
+# ── 단가 이력 API ───────────────────────────────────────────
+# 발주 시점 단가는 Purchase_Detail_tb 에 박히고, 변경 이력은 Price_Log_tb 에 남는다.
+# 단가 수정 자체는 /api/product/update 가 받는다 (price_reason_cd · price_reason).
+
+
+@app.route("/api/price/history")
+def api_price_history():
+    """자재 하나의 단가 이력 + 발주 시점 단가."""
+    conn = db.connect()
+    try:
+        out, errors = db.price_history(conn, request.args.get("P_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "data": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/price/impact", methods=["POST"])
+def api_price_impact():
+    """단가를 바꾸면 어느 숫자가 따라 움직이는지 (저장 안 함)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.price_impact(conn, body.get("P_ID"), body.get("P_Price"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "impact": out})
+    finally:
+        conn.close()
+
+
+# ── 현장 반납 API ───────────────────────────────────────────
+# 창고 → 현장 한 방향으로만 흐르던 것을 되돌린다.
+# 불출 거래를 지우지 않고 반대 방향 거래를 새로 남긴다.
+
+
+@app.route("/api/return/preview", methods=["POST"])
+def api_return_preview():
+    """반납하면 현장·창고 재고가 어떻게 되는지 (저장 안 함)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_return(
+            conn, _rows(body, "lines"), body.get("EP_ID"), body.get("reason_cd"),
+            body.get("reason"), body.get("Work_Order"), _entry_date(body))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    finally:
+        conn.close()
+
+
+@app.route("/api/return", methods=["POST"])
+def api_return_create():
+    """현장 반납 등록 — LOT 마다 '반납' 거래 + 반납 전표. 전부 아니면 전무."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.create_return(
+            conn, _entry_date(body), _rows(body, "lines"), body.get("EP_ID"),
+            body.get("reason_cd"), body.get("reason"), body.get("Work_Order"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/return/targets")
+def api_return_targets():
+    """현장에 나가 있는 LOT 을 다시 읽는다 (등록 후 갱신용)."""
+    conn = db.connect()
+    try:
+        return jsonify({"ok": True, "src": db.return_source(conn),
+                        "rets": db.return_list(conn)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/return/detail")
+def api_return_detail():
+    """반납 전표 한 장."""
+    conn = db.connect()
+    try:
+        out, errors = db.return_detail(conn, request.args.get("id"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "ret": out})
+    finally:
+        conn.close()
+
+
+# ── 재고 실사 API ───────────────────────────────────────────
+# 재고는 거래로만 움직인다. 실물과 장부가 어긋났을 때 고치는 유일한 통로다.
+
+
+@app.route("/api/count/targets", methods=["POST"])
+def api_count_targets():
+    """범위를 고르면 셀 대상이 몇 건인지 (저장 안 함)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.count_targets(conn, body.get("scope"), body.get("scope_val"))
+        return jsonify({"ok": not errors, "plan": plan, "errors": errors})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count", methods=["POST"])
+def api_count_create():
+    """실사 차수를 연다. 이 시점의 장부 재고를 동결한다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.create_count(
+            conn, _entry_date(body), body.get("scope"), body.get("scope_val"),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/sheet")
+def api_count_sheet():
+    """실사 한 차수 — 라인과 차이 집계."""
+    conn = db.connect()
+    try:
+        sheet, errors = db.count_sheet(conn, request.args.get("id"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/save", methods=["POST"])
+def api_count_save():
+    """실물 수량을 적는다. 아직 재고는 안 바뀐다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        sheet, errors = db.save_count(
+            conn, body.get("Count_ID"), _rows(body, "lines"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/reason", methods=["POST"])
+def api_count_reason():
+    """차이 한 줄에 사유를 단다. 사유가 없으면 조정되지 않는다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        sheet, errors = db.set_count_reason(
+            conn, body.get("Count_ID"), body.get("line"), body.get("reason_cd"),
+            body.get("reason"), body.get("loc_to"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/apply/preview", methods=["POST"])
+def api_count_apply_preview():
+    """반영하면 어떤 거래가 생기는지 (저장 안 함)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.preview_count_apply(conn, body.get("Count_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        plan.pop("head", None)                 # 화면이 이미 들고 있다
+        return jsonify({"ok": True, "plan": plan})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/apply", methods=["POST"])
+def api_count_apply():
+    """차이를 거래로 반영하고 실사를 닫는다. 재고가 실제로 바뀐다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        sheet, errors = db.apply_count(
+            conn, _entry_date(body), body.get("Count_ID"),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "sheet": sheet})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/cancel", methods=["POST"])
+def api_count_cancel():
+    """실사를 접는다. 이미 반영된 줄이 있으면 못 접는다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        plan, errors = db.cancel_count(
+            conn, body.get("Count_ID"), body.get("EP_ID"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "plan": plan})
+    finally:
+        conn.close()
+
+
 @app.route("/api/po-sheet")
 def api_po_sheet():
     """발주서 한 장에 들어갈 것 — 품명·규격·단가·납기·세액.
@@ -636,7 +905,7 @@ def api_alerts():
 def api_product_preview():
     """품번 채번 · 등급 · 안전재고를 미리 본다 (저장 안 함)."""
     body = _body()
-    pid = (body.get("P_ID") or "").strip() or None
+    pid = _text(body, "P_ID") or None
     conn = db.connect()
     try:
         plan, errors = db.preview_product(conn, body, pid)
@@ -666,7 +935,7 @@ def api_product_create():
 def api_product_update():
     """자재 수정. 품번·분류는 바꿀 수 없다 — 일곱 테이블이 품번으로 엮여 있다."""
     body = _body()
-    pid = (body.get("P_ID") or "").strip()
+    pid = _text(body, "P_ID")
     if not pid:
         return jsonify({"ok": False, "errors": ["품번이 없습니다."]}), 400
     conn = db.connect()
@@ -702,7 +971,7 @@ def api_product_delete():
     conn = db.connect()
     try:
         plan, errors = db.delete_product(
-            conn, (body.get("P_ID") or "").strip(),
+            conn, _text(body, "P_ID"),
             body.get("EP_ID"), body.get("note"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
@@ -806,7 +1075,7 @@ def api_purchase_preview():
     conn = db.connect()
     try:
         groups, errors = db.preview_purchase(
-            conn, _entry_date(body), body.get("items") or [])
+            conn, _entry_date(body), _rows(body, "items"))
         return jsonify({"ok": not errors, "groups": groups, "errors": errors})
     finally:
         conn.close()
@@ -819,7 +1088,7 @@ def api_purchase_create():
     conn = db.connect()
     try:
         created, errors = db.create_purchase(
-            conn, _entry_date(body), body.get("items") or [])
+            conn, _entry_date(body), _rows(body, "items"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "orders": created})
@@ -839,6 +1108,23 @@ def _body():
     """
     b = request.get_json(silent=True)
     return b if isinstance(b, dict) else {}
+
+
+def _text(body, key):
+    """본문에서 문자열 한 개. 숫자·None 이 와도 .strip() 에서 터지지 않는다."""
+    v = body.get(key)
+    return v.strip() if isinstance(v, str) else ("" if v is None else str(v).strip())
+
+
+def _rows(body, key):
+    """본문에서 줄 목록. 리스트가 아니거나 원소가 dict 가 아니면 걸러낸다.
+
+    화면은 늘 올바른 모양을 보내지만, 손으로 부르거나 중간에 깨진 요청이
+    오면 db 쪽 `for it in items` 가 TypeError 로 500 을 냈다. 형(型)은
+    입구에서 막고, 내용(수량·품번)은 db 가 검사해 사유를 돌려준다.
+    """
+    v = body.get(key)
+    return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
 
 
 def _entry_date(body):
@@ -900,7 +1186,7 @@ def api_disburse_batch_preview():
     conn = db.connect()
     try:
         plan, errors = db.preview_disburse_batch(
-            conn, body.get("lines") or [], body.get("EP_ID"))
+            conn, _rows(body, "lines"), body.get("EP_ID"))
         return jsonify({"ok": not errors, "plan": plan, "errors": errors})
     finally:
         conn.close()
@@ -913,7 +1199,7 @@ def api_disburse_batch_create():
     conn = db.connect()
     try:
         plan, errors = db.create_disburse_batch(
-            conn, _entry_date(body), body.get("lines") or [], body.get("EP_ID"))
+            conn, _entry_date(body), _rows(body, "lines"), body.get("EP_ID"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "plan": plan})
@@ -1002,7 +1288,7 @@ def api_request_preview():
     try:
         plan, errors = db.preview_request(
             conn, _entry_date(body), body.get("FG_ID"), body.get("plan_qty"),
-            body.get("items") or [], body.get("EP_ID"),
+            _rows(body, "items"), body.get("EP_ID"),
             body.get("Work_Order"), body.get("note"))
         return jsonify({"ok": not errors, "plan": plan, "errors": errors})
     finally:
@@ -1017,7 +1303,7 @@ def api_request_create():
     try:
         plan, errors = db.create_request(
             conn, _entry_date(body), body.get("FG_ID"), body.get("plan_qty"),
-            body.get("items") or [], body.get("EP_ID"),
+            _rows(body, "items"), body.get("EP_ID"),
             body.get("Work_Order"), body.get("note"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
@@ -1178,7 +1464,7 @@ def api_safety_revert():
     conn = db.connect()
     try:
         res, errors = db.revert_safety_update(
-            conn, body.get("run_date"), body.get("EP_ID"))
+            conn, body.get("run_date"), body.get("EP_ID"), body.get("run_ep"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "result": res})
@@ -1246,7 +1532,7 @@ def api_inbound_preview():
     try:
         plan, errors = db.preview_inbound(
             conn, _entry_date(body), body.get("H_ID"),
-            body.get("lines") or [], body.get("EP_ID"),
+            _rows(body, "lines"), body.get("EP_ID"),
             body.get("settle"), body.get("settle_note"))
         return jsonify({"ok": not errors, "plan": plan, "errors": errors})
     finally:
@@ -1261,7 +1547,7 @@ def api_inbound_create():
     try:
         plan, errors = db.create_inbound(
             conn, _entry_date(body), body.get("H_ID"),
-            body.get("lines") or [], body.get("EP_ID"),
+            _rows(body, "lines"), body.get("EP_ID"),
             body.get("settle"), body.get("settle_note"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
@@ -1283,6 +1569,8 @@ EMBED_CONTEXT = {
     "production":   _ctx_production,
     "purchase":     _ctx_purchase,
     "stock_map":    _ctx_stock_map,
+    "stock_count":  _ctx_stock_count,
+    "site_return":  _ctx_site_return,
     "lot":          _ctx_lot,
     "forecast":     _ctx_forecast,
     "calendar":     _ctx_calendar,
