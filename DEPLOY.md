@@ -145,6 +145,86 @@ git push
 
 ---
 
+## 이미 올려 둔 사이트를 최신으로 (갱신)
+
+> 지금 돌아가는 곳: https://hyeonhomatman1.pythonanywhere.com
+> 저장소: https://github.com/hyeonho2324/matman
+
+**Consoles → Bash** 에서 세 줄이면 됩니다.
+
+```bash
+cd ~/matman
+git pull origin main
+touch /var/www/hyeonhomatman1_pythonanywhere_com_wsgi.py
+```
+
+마지막 줄이 **Reload** 와 같은 일을 합니다. Web 탭의 초록색 **Reload** 버튼을
+눌러도 똑같습니다.
+
+### ⚠️ `git pull` 이 거부될 때
+
+```
+error: Your local changes to the following files would be overwritten by merge:
+        data/erp.db
+```
+
+**정상입니다.** 배포된 사이트에서 발주·불출을 눌러 봤다면 그 서버의 `data/erp.db`
+가 바뀌어 있습니다. 데모 데이터라 버려도 되므로 **서버 쪽 변경을 버리고** 받습니다.
+
+```bash
+cd ~/matman
+git checkout -- data/erp.db
+git pull origin main
+touch /var/www/hyeonhomatman1_pythonanywhere_com_wsgi.py
+```
+
+> 서버에서 만든 데이터를 남기고 싶다면 먼저 `cp data/erp.db ~/erp.backup.db` 로
+> 빼 두세요. 다만 **이번 갱신은 테이블이 늘어나는 변경**(재고 실사 · 현장 반납 ·
+> 단가 이력)이라 옛 DB 를 그대로 쓰면 새 화면이 "no such table" 로 터집니다.
+> 받은 `data/erp.db` 를 쓰는 게 맞습니다.
+
+### git 으로 안 올렸다면 (파일을 손으로 올린 경우)
+
+`~/matman` 에서 `git status` 가 "not a git repository" 라고 하면 처음에 파일을
+직접 올린 것입니다. 한 번만 git 으로 바꿔 두면 다음부터 위 세 줄로 끝납니다.
+
+```bash
+cd ~
+mv matman matman.old
+git clone https://github.com/hyeonho2324/matman.git matman
+touch /var/www/hyeonhomatman1_pythonanywhere_com_wsgi.py
+```
+
+Web 탭의 **Source code** · **Working directory** 가 `/home/hyeonhomatman1/matman`
+그대로면 설정은 손댈 게 없습니다. 열어 보고 멀쩡하면 `rm -rf ~/matman.old` 로
+옛 폴더를 지웁니다.
+
+### 갱신됐는지 확인
+
+갱신 전에는 **404** 가 뜨던 두 주소가 열리면 된 것입니다.
+
+| 주소 | 화면 |
+|---|---|
+| https://hyeonhomatman1.pythonanywhere.com/return | 현장 반납 |
+| https://hyeonhomatman1.pythonanywhere.com/stock-count | 재고 실사 |
+
+왼쪽 메뉴 **입출고**에 `현장 반납`, **재고 현황**에 `재고 실사` 가 보이면 됩니다.
+
+> 새로 설치할 라이브러리는 없습니다. 이번 변경은 `flask` · `openpyxl` 밖에
+> 안 씁니다.
+
+### 그래도 안 열릴 때
+
+Web 탭 아래 **Error log** 의 마지막 줄을 봅니다.
+
+| 마지막 줄 | 원인 | 할 일 |
+|---|---|---|
+| `no such table: Site_Return_tb` | 옛 `data/erp.db` 가 남음 | `git checkout -- data/erp.db` 후 다시 pull |
+| `attempt to write a readonly database` | DB 파일 권한 | `chmod 644 ~/matman/data/erp.db` |
+| `No module named 'app'` | 경로 오타 | Web 탭 Source code 가 `/home/hyeonhomatman1/matman` 인지 |
+
+---
+
 ## GitHub에서 바로 가져오기 (PythonAnywhere 업로드 대체)
 
 방법 2를 먼저 끝냈다면, PythonAnywhere **Consoles → Bash** 에서:
