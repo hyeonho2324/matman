@@ -11,7 +11,7 @@
    ③ (사이드바는 main.css 에서) 햄버거를 닫을 수 없던 것
    ───────────────────────────────────────────────────────────── */
 
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
 
   /* ── ① 목록에 자리를 준다 ───────────────────────────────────
      화면마다 `.left{max-height:34%}` `.fglist{max-height:33%}` 처럼
@@ -149,7 +149,7 @@
 }
 
 /* 아주 좁은 폰 */
-@media (max-width: 400px) {
+@media screen and (max-width: 400px) {
   /* ⚠️ 여기서 .kpi-row 를 2열 grid 로 되돌리고 있었다 — 375px 폰에서
      위 블록(760px)의 가로 한 줄 규칙이 통째로 무효가 됐다. */
   .kpi-row > * { width: 56%; min-width: 56%; }
@@ -159,7 +159,7 @@
 }
 
 /* 끝까지 안 내려온 목록은 아래가 더 진하다 — 아직 더 있다는 신호 */
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   .listwrap.has-more, .tblwrap.has-more, .slist.has-more, .sheet.has-more,
   .po-body.has-more, .fglist.has-more, .left.has-more, .mlist.has-more {
     box-shadow: inset 0 7px 7px -7px rgba(26,25,23,.16),
@@ -191,7 +191,7 @@
    그려도 라벨이 안 날아간다. 셀마다 꼬리표를 붙이면 351줄짜리 표에서
    매번 351번을 다시 붙여야 한다.
    ───────────────────────────────────────────────────────── */
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
 
   /* 가로로 밀 이유가 없어졌으니 최소 폭을 푼다.
      ⚠️ <table> 을 block 으로 바꿔야 한다. display:table 로 두면 칸이 전부
@@ -227,6 +227,13 @@
   /* 숫자 칸도 카드 안에서는 왼쪽부터 읽는다 */
   table[data-cardify] tbody td.num { text-align: left; }
 
+  /* ⚠️ 모달 표(.lt2)는 칸마다 white-space:nowrap 이 걸려 있다. 가로로 미는
+     표에서는 맞지만 카드 안에서는 **긴 품명이 카드를 밀어낸다.** 풀어 준다. */
+  table[data-cardify] tbody td,
+  table[data-cardify] tbody td * { white-space: normal; }
+  table[data-cardify] tbody td .lid,
+  table[data-cardify] tbody td .pid { white-space: nowrap; }   /* 번호는 안 끊는다 */
+
   /* 열 이름을 칸 앞에 — 값이 무엇인지 말해 준다 */
   table[data-cardify] tbody td::before {
     display: block;
@@ -259,6 +266,16 @@
     display: block; width: 100%; margin-right: 0;
   }
   table[data-cardify] tbody td[colspan]::before { content: none; }
+
+  /* LOT 이벤트 타임라인(자재 목록 모달) — 날짜 칸이 78px 로 못박혀 있고
+     수량 칸이 nowrap 이라, 작업지시 번호가 긴 줄에서 14px 삐져나왔다.
+     표가 가로로 길던 때는 어차피 밀어서 봤으니 안 보이던 것이다. */
+  .ev { grid-template-columns: 56px 18px 1fr auto; gap: 6px; padding: 5px 8px; }
+  .ev-d { font-size: 9px; }
+  /* 오른쪽 칸은 '수량 + 참조번호'다. 참조번호(WO…14자)를 아무 데서나 끊으면
+     `WO202507170 / 003` 처럼 흉하게 갈린다. 글자를 줄여 한 줄에 넣는다. */
+  .ev-q { white-space: nowrap; text-align: right; }
+  .ev-q .ev-s { font-size: 8.5px; white-space: nowrap; }
 
   /* 첫 칸은 카드 제목처럼 — 대개 품번·LOT·번호가 온다 */
   table[data-cardify] tbody td:first-child { font-weight: 500; }

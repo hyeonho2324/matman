@@ -33,8 +33,9 @@
      CSS 가 `td::before{content:var(--cN)}` 로 꺼내 쓴다. 변수는 <table> 에
      한 번만 심으면 되고, 목록이 tbody 만 다시 그려도 살아남는다. */
   function labelTable(t) {
-    // 상세·모달 표는 클래스를 달고 있다. 머리(thead)가 있는 목록 표만 바꾼다
-    if (t.className) return;
+    /* ⚠️ A4 발주서·실사표는 **일부러** 210mm 를 지켜 가로로 넘겨 본다
+       (화면에서 줄이면 칸이 눌려 실제 종이와 달라 보인다). 카드로 바꾸면 안 된다. */
+    if (t.closest('.shv, #poBody')) return;
     var ths = t.querySelectorAll('thead th');
     if (!ths.length || ths.length > 14) return;
 
