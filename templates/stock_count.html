@@ -15,8 +15,10 @@
 <!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
 <div style="flex:1;display:flex;flex-direction:column;gap:14px">
   <div class="embed-box">
+    <!-- ⚠️ allow="camera" 가 없으면 iframe 안에서 getUserMedia 가 거부된다.
+         [카메라로 세기] 가 '카메라 사용이 거부됐습니다' 만 띄우고 끝난다. -->
     <iframe
-      src="/embed/stock_count" class="embed-frame"
+      src="/embed/stock_count" class="embed-frame" allow="camera"
       title="재고 실사">
     </iframe>
   </div>

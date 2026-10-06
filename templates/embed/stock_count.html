@@ -125,9 +125,47 @@ table.pt-tb{width:100%;border-collapse:collapse;margin-bottom:9px}
   .kpi-row{grid-template-columns:repeat(3,1fr)}
   .scopes{grid-template-columns:repeat(2,1fr)}
 }
+
+/* 넘어간 줄 — 안 센 줄과 눈으로 구분돼야 한다 */
+tr.skip td{background:var(--s1);color:var(--txt3)}
+tr.skip .lid{color:var(--txt3)}
+.skb{border:0.5px solid var(--border-s);background:transparent;color:var(--txt3);
+  border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;font-family:inherit;margin-left:4px}
+.skb:hover{background:var(--s2);color:var(--txt)}
+.btnc{border-color:var(--acc);color:var(--acc)}
+.btnc:hover{background:var(--bg-ac)}
+
+/* 카메라로 읽은 줄 — 무엇을 할지 묻는 카드 (ScanCam.slot() 안에 들어간다) */
+.cc{background:var(--s0);border-radius:14px 14px 0 0;padding:13px 14px 14px;
+  box-shadow:0 -8px 28px rgba(0,0,0,.4);max-height:72vh;overflow:auto}
+.cc-l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+  color:var(--acc);font-weight:600}
+.cc-n{font-size:14px;font-weight:600;margin-top:2px}
+.cc-s{font-size:11px;color:var(--txt3);margin-top:2px}
+.cc-b{display:flex;align-items:baseline;justify-content:center;gap:7px;
+  padding:11px 0 9px;margin:10px 0;background:var(--s1);border-radius:9px;
+  border:0.5px solid var(--border)}
+.cc-bv{font-size:30px;font-weight:700;letter-spacing:-.5px}
+.cc-bl{font-size:11px;color:var(--txt3)}
+.cc-row{display:flex;gap:7px;flex-wrap:wrap}
+.cc-row .btn{flex:1;min-width:92px;justify-content:center;padding:10px 8px;font-size:12.5px}
+.cc-in{display:flex;gap:7px;align-items:center;margin-bottom:9px}
+.cc-in input{flex:1;min-width:0;font-size:22px;font-weight:600;text-align:center;
+  padding:9px;border:1.5px solid var(--acc);border-radius:8px;background:var(--s0);
+  color:var(--txt);font-family:ui-monospace,monospace}
+.cc-d{text-align:center;font-size:12.5px;font-weight:600;margin-bottom:9px}
+.cc-w{font-size:11px;color:#854F0B;background:var(--bg-wn);border-radius:7px;
+  padding:8px 10px;margin-bottom:9px;line-height:1.6}
+.cc-e{font-size:12px;color:#9B1C1C;background:var(--bg-dn);border-radius:7px;
+  padding:10px 12px;margin-bottom:10px;line-height:1.65}
+.cc-ok{font-size:11.5px;color:#1D6E52;background:var(--bg-ok);border-radius:7px;
+  padding:8px 10px;margin-bottom:9px}
+.cc-p{font-size:10.5px;color:var(--txt3);text-align:center;margin-top:9px}
 </style>
+<link rel="stylesheet" href="/static/css/scan-camera.css">
 <link rel="stylesheet" href="/static/css/embed-mobile.css">
 <script defer src="/static/js/embed-mobile.js"></script>
+<script defer src="/static/js/scan-camera.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -287,7 +325,9 @@ function drawKpi(){
   const acc = s.accuracy==null ? '-' : s.accuracy;
   $('kpis').innerHTML =
     kpi('ti-list-numbers','센 줄', s.counted_cnt + '<small style="font-size:11px;color:var(--txt3)">/' + s.line_cnt + '</small>',
-        s.line_cnt - s.counted_cnt ? (s.line_cnt-s.counted_cnt) + '줄 남음' : '전부 셌습니다', '')
+        (s.skipped_cnt ? '넘어감 ' + s.skipped_cnt + ' · ' : '')
+        + (s.left_cnt ? s.left_cnt + '줄 남음' : '전부 처리했습니다'),
+        s.left_cnt ? '' : 'ok')
   + kpi('ti-target','재고 정확도', acc + '<small style="font-size:11px">%</small>',
         '센 것 중 장부와 맞은 비율', acc!=='-' && acc>=98 ? 'ok' : (acc!=='-' && acc<90 ? 'dn':'wn'))
   + kpi('ti-alert-triangle','차이', s.diff_cnt,
@@ -316,7 +356,7 @@ function draw(){
 
   const rows = s.items.map(function(r){
     const d = r.diff;
-    const cls = r.T_ID ? 'done' : (d ? 'diff' : '');
+    const cls = r.skipped ? 'skip' : (r.T_ID ? 'done' : (d ? 'diff' : ''));
     return '<tr class="' + cls + '">'
       + '<td class="num">' + r.Line + '</td>'
       + '<td><span class="lid">' + esc(r.Lot_ID) + '</span>'
@@ -325,11 +365,15 @@ function draw(){
       +   '<div style="font-size:10px;color:var(--txt3)">' + esc(r.P_N||'') + '</div></td>'
       + '<td>' + esc(r.loc_name||'-') + '</td>'
       + '<td class="num">' + nf(r.Book_Qty) + '</td>'
-      + '<td class="num">' + (run && !r.T_ID
-          ? '<input class="qin ' + (r.Real_Qty!=null?'filled':'') + '" type="number" min="0" '
-            + 'value="' + (r.Real_Qty==null?'':r.Real_Qty) + '" '
-            + 'oninput="mark(' + r.Line + ',this.value)" onkeydown="nextRow(event)">'
-          : nf(r.Real_Qty)) + '</td>'
+      + '<td class="num">' + (!run || r.T_ID ? nf(r.Real_Qty)
+          : r.skipped
+            ? '<span class="bg bmu">넘어감</span>'
+              + '<button class="skb" onclick="skipLine(' + r.Line + ',false)">되돌리기</button>'
+            : '<input class="qin ' + (r.Real_Qty!=null?'filled':'') + '" type="number" min="0" '
+              + 'value="' + (r.Real_Qty==null?'':r.Real_Qty) + '" '
+              + 'oninput="mark(' + r.Line + ',this.value)" onkeydown="nextRow(event)">'
+              + '<button class="skb" onclick="skipLine(' + r.Line + ',true)" '
+              + 'title="이번 차수에서는 세지 않고 넘어갑니다">넘어가기</button>') + '</td>'
       + '<td class="num dq ' + (d==null?'':(d<0?'dn':(d>0?'ok':''))) + '">'
       +   (d==null ? '-' : (d>0?'+':'') + nf(d)) + '</td>'
       + '<td>' + reasonCell(r, run) + '</td>'
@@ -356,9 +400,11 @@ function draw(){
   + (run
      ? '<div class="bar" style="border:0.5px solid var(--border);border-radius:10px">'
        + '<div class="m" id="foot"></div>'
+       + '<button class="btn btnc" id="btnCam" onclick="camStart()">'
+       +   '<i class="ti ti-camera"></i>카메라로 세기</button>'
        + '<button class="btn" onclick="saveAll()"><i class="ti ti-device-floppy"></i>실물 수량 저장</button>'
        + '<button class="btn btnd" id="cancel" onclick="cancelCount()"><i class="ti ti-x"></i>실사 취소</button>'
-       + '<button class="btn btnp" id="apply" onclick="applyAll()"><i class="ti ti-check"></i>차이 반영</button>'
+       + '<button class="btn btnp" id="apply" onclick="applyAll()"><i class="ti ti-check"></i>실사 완료 · 반영</button>'
        + '</div>'
      : '<div class="note" style="border:0.5px solid var(--border);border-radius:10px;background:var(--s1)">'
        + (s.Status==='완료'
@@ -370,6 +416,7 @@ function draw(){
 }
 
 function reasonCell(r, run){
+  if(r.skipped) return '<span style="color:var(--txt3);font-size:10px">이번 차수 넘어감</span>';
   if(r.diff==null) return '<span style="color:var(--txt3);font-size:10px">미실사</span>';
   if(!r.diff && r.Reason_Cd!=='구역오류' && !run)
     return r.Reason_Cd ? esc(r.Reason_Cd) : '<span style="color:var(--txt3);font-size:10px">일치</span>';
@@ -409,8 +456,244 @@ function nextRow(e){
 function footer(){
   const n = Object.keys(dirty).length;
   const f = $('foot');
-  if(f) f.innerHTML = n ? '<b>' + n + '줄</b>이 저장되지 않았습니다.'
-    : '실물 수량을 적고 저장하세요. 차이에는 사유를 달아야 반영됩니다.';
+  if(!f) return;
+  const s = sheet;
+  // 완료 조건을 숨기지 않는다 — 무엇이 몇 줄 남았는지 늘 보인다
+  const prog = '센 줄 <b>' + s.counted_cnt + '</b>'
+    + (s.skipped_cnt ? ' · 넘어감 <b>' + s.skipped_cnt + '</b>' : '')
+    + ' · 남은 <b' + (s.left_cnt ? ' style="color:var(--wn)"' : '') + '>' + s.left_cnt + '</b>'
+    + ' / ' + s.line_cnt + '줄';
+  f.innerHTML = prog + '<br>' + (n
+    ? '<span style="color:var(--dn)">' + n + '줄이 저장되지 않았습니다.</span>'
+    : s.left_cnt
+      ? '남은 줄을 세거나 <b>넘어가기</b>로 표시해야 완료할 수 있습니다.'
+      : '전부 처리했습니다. <b>[실사 완료 · 반영]</b>을 누르면 재고에 반영됩니다.');
+}
+
+// ══════════════════════════════════════════════════════════
+//  넘어가기 — 지금 셀 수 없는 줄
+//
+//  목록에 잡혔지만 손댈 수 없는 LOT 이 있다(적치물에 막혔다·봉인된 상자·
+//  다른 구역에 가 있다). 그걸 못 넘기면 **차수 전체가 안 닫혀** 나머지
+//  조정까지 묶인다. 세지 않은 줄과 달리 완료 판정에는 들어가고,
+//  조정(거래 생성)에서는 빠진다.
+// ══════════════════════════════════════════════════════════
+async function skipLine(line, on){
+  const d = await post('/api/count/skip',
+    {Count_ID: sheet.Count_ID, lines: [line], on: on, EP_ID: sheet.EP_ID});
+  if(!d.ok) return msg('err', d.errors);
+  delete dirty[line];
+  sheet = d.sheet; draw();
+  msg('ok', [line + '번 줄을 ' + (on ? '이번 차수에서 넘어갑니다.' : '다시 세기로 했습니다.')
+             + ' 남은 ' + d.sheet.left_cnt + '줄']);
+}
+
+// ══════════════════════════════════════════════════════════
+//  카메라로 세기
+//
+//  지금까지는 실사표를 인쇄해 수기로 적고 **다시 화면에 옮겨 적었다.**
+//  옮겨 적는 단계에서 줄이 밀리고 숫자가 바뀐다. 폰으로 LOT 라벨을 찍으면
+//  그 줄이 바로 뜨고, **장부 수량이 기본값**이라 맞으면 한 번만 누르면 된다.
+//  다르면 그때만 숫자를 적는다 — 창고에서 대부분의 줄은 맞기 때문이다.
+//
+//  ⚠️ 읽어도 창을 닫지 않는다(hold). 라벨을 줄줄이 찍는 작업이라 매번
+//     카메라를 다시 잡으면 0.5초씩 끊긴다. 멈춰 세웠다가 다시 돌린다.
+// ══════════════════════════════════════════════════════════
+let camRow = null, camMode = '';
+
+function camStart(){
+  if(!window.ScanCam) return msg('err', ['카메라 모듈을 불러오지 못했습니다.']);
+  if(!ScanCam.usable())
+    return msg('wn', ['이 주소에서는 카메라를 열 수 없습니다 — 브라우저가 https 또는 '
+                      + '127.0.0.1 에서만 카메라를 내줍니다. 배포본(https)에서는 됩니다.']);
+  if(Object.keys(dirty).length)
+    return msg('wn', ['저장하지 않은 수량이 있습니다. 먼저 저장하세요.']);
+  ScanCam.open(camHit, {
+    hold: true,
+    title: 'LOT 라벨을 틀 안에 맞추세요',
+    foot: '남은 ' + sheet.left_cnt + '줄 · 읽으면 그 줄이 뜹니다',
+    // 창을 닫으면 그동안 쌓인 것을 다시 읽어 표를 맞춘다
+    onClose: function(){ pick(sheet.Count_ID); }
+  });
+}
+
+async function camHit(code){
+  camRow = null; camMode = '';
+  let d;
+  try{
+    const r = await fetch('/api/count/scan?id=' + encodeURIComponent(sheet.Count_ID)
+                        + '&code=' + encodeURIComponent(code));
+    d = await r.json();
+  }catch(e){ d = {ok:false, errors:['서버와 통신하지 못했습니다.']}; }
+  if(!d.ok) return camErr(d.errors[0]);
+  camRow = d.hit; camMode = '';
+  camDraw();
+}
+
+function camErr(text){
+  camSlot('<div class="cc-e"><i class="ti ti-alert-circle"></i> ' + esc(text) + '</div>'
+    + camBtns('<button class="btn btnp" onclick="camNext()">'
+    +   '<i class="ti ti-camera"></i>다시 찍기</button>'));
+}
+
+function camNext(){ camRow = null; camMode = ''; ScanCam.resume(); }
+function camSlot(html){ ScanCam.slot().innerHTML = '<div class="cc">' + html + '</div>'; }
+function camBtns(h){ return '<div class="cc-row">' + h + '</div>'; }
+
+function camDraw(){
+  const h = camRow, it = h.item, book = it.Book_Qty;
+  let body =
+    '<div class="cc-l">' + esc(it.Lot_ID) + ' <span style="color:var(--txt3)">· '
+  +   h.line + '번 줄</span></div>'
+  + '<div class="cc-n">' + esc(it.P_N||'') + '</div>'
+  + '<div class="cc-s">' + esc(it.P_ID) + ' · ' + esc(it.loc_name||'-')
+  +   (it.Spec ? ' · ' + esc(it.Spec) : '') + '</div>';
+
+  if(h.status === 'applied')
+    return camSlot(body + '<div class="cc-ok">이미 반영된 줄입니다.</div>'
+      + camBtns('<button class="btn btnp" onclick="camNext()">다음 LOT</button>'));
+
+  if(it.moved)
+    body += '<div class="cc-w">⚠️ 실사를 연 뒤 이 LOT 이 움직였습니다. '
+         +  '장부 수량은 <b>실사를 연 시점으로 동결</b>돼 있어 차이 계산은 그대로 맞습니다.</div>';
+
+  if(h.status === 'skipped')
+    body += '<div class="cc-w">이번 차수에서 <b>넘어간</b> 줄입니다. 지금 세면 다시 들어옵니다.</div>';
+  else if(h.status === 'counted')
+    body += '<div class="cc-ok">이미 <b>' + nf(it.Real_Qty) + '개</b>로 세어 둔 줄입니다 ('
+         +  (it.diff ? (it.diff>0?'+':'') + nf(it.diff) + '개' : '장부와 일치')
+         +  '). 다시 적으면 덮어씁니다.</div>';
+
+  body += '<div class="cc-b"><span class="cc-bl">전산상 수량</span>'
+       +  '<span class="cc-bv">' + nf(book) + '</span><span class="cc-bl">개</span></div>';
+
+  if(camMode === 'manual'){
+    const v = camRow.typed == null ? book : camRow.typed;
+    body += '<div class="cc-in"><input id="ccq" type="number" min="0" value="' + v + '" '
+         +  'inputmode="numeric" oninput="camTyped(this.value)" '
+         +  "onkeydown=\"if(event.key==='Enter') camSave()\"></div>"
+         +  '<div class="cc-d" id="ccd"></div>'
+         +  camBtns('<button class="btn btnp" onclick="camSave()">'
+         +    '<i class="ti ti-check"></i>저장</button>'
+         +  "<button class=\"btn\" onclick=\"camMode='';camDraw()\">취소</button>");
+    camSlot(body);
+    camDiff();
+    const i = document.getElementById('ccq');
+    if(i){ i.focus(); i.select(); }
+    return;
+  }
+
+  if(camMode === 'reason') return camSlot(body + camReason());
+
+  body += camBtns(
+      '<button class="btn btnp" onclick="camSame()">'
+    +   '<i class="ti ti-check"></i>장부와 같음</button>'
+    + "<button class=\"btn\" onclick=\"camMode='manual';camDraw()\">"
+    +   '<i class="ti ti-pencil"></i>직접 입력</button>'
+    + '<button class="btn" onclick="camSkip()">'
+    +   '<i class="ti ti-player-skip-forward"></i>넘어가기</button>')
+    + '<div class="cc-p">남은 ' + sheet.left_cnt + '줄 · 넘어감 ' + sheet.skipped_cnt + '줄</div>';
+  camSlot(body);
+}
+
+function camTyped(v){ camRow.typed = v; camDiff(); }
+function camDiff(){
+  const el = document.getElementById('ccd');
+  if(!el || !camRow) return;
+  const raw = camRow.typed == null ? camRow.item.Book_Qty : camRow.typed;
+  const v = Number(raw);
+  if(raw === '' || isNaN(v)){ el.innerHTML = ''; return; }
+  const d = v - camRow.item.Book_Qty;
+  el.innerHTML = d === 0
+    ? '<span style="color:var(--ok)">장부와 일치</span>'
+    : '<span style="color:' + (d<0?'var(--dn)':'var(--ok)') + '">차이 ' + (d>0?'+':'') + nf(d)
+      + '개</span> <span style="color:var(--txt3);font-weight:400;font-size:11px">'
+      + '— 저장하면 사유를 묻습니다</span>';
+}
+
+async function camSame(){ await camWrite(camRow.item.Book_Qty); }
+
+async function camSave(){
+  const i = document.getElementById('ccq');
+  const v = i ? i.value : camRow.typed;
+  const el = document.getElementById('ccd');
+  if(v === '' || v == null || isNaN(Number(v)) || Number(v) < 0){
+    // 창이 화면을 덮고 있어 오른쪽 패널의 안내는 안 보인다 — 카드 안에 적는다
+    if(el) el.innerHTML = '<span style="color:var(--dn)">0 이상의 숫자를 적으세요.</span>';
+    return;
+  }
+  await camWrite(Math.round(Number(v)));
+}
+
+async function camWrite(qty){
+  const line = camRow.line;
+  const d = await post('/api/count/save',
+    {Count_ID: sheet.Count_ID, lines: {[line]: qty}, EP_ID: sheet.EP_ID});
+  if(!d.ok) return camFail(d.errors[0]);
+  sheet = d.sheet; drawKpi();
+  const row = sheet.items.filter(function(r){ return r.Line === line; })[0];
+  camRow.item = row;
+  // 차이가 났으면 **그 자리에서** 사유를 묻는다. 선반 앞에 서 있는 지금이
+  // 왜 그런지 아는 유일한 순간이다 — 사무실에 돌아와서는 못 적는다.
+  if(row.diff){ camMode = 'reason'; camDraw(); return; }
+  camDone(row, '장부와 같습니다');
+}
+
+function camFail(text){
+  camSlot('<div class="cc-e">' + esc(text) + '</div>'
+    + camBtns('<button class="btn btnp" onclick="camDraw()">다시</button>'
+    + '<button class="btn" onclick="camNext()">다음 LOT</button>'));
+}
+
+function camReason(){
+  const d = camRow.item.diff;
+  // 부호에 맞는 사유만 내려보낸다 — 표에서 쓰는 규칙과 같다
+  const fit = SRC.reasons.filter(function(x){
+    return x.sign !== 0 && (x.sign > 0) === (d > 0);
+  });
+  return '<div class="cc-d"><span style="color:' + (d<0?'var(--dn)':'var(--ok)') + '">'
+    + '차이 ' + (d>0?'+':'') + nf(d) + '개</span> — 왜 그런가요?</div>'
+    + camBtns(fit.map(function(x){
+        return '<button class="btn" onclick="camReasonGo(&quot;' + x.cd + '&quot;)">'
+             + x.cd + '</button>';
+      }).join(''))
+    + '<div class="cc-p">' + fit.map(function(x){
+        return '<b>' + x.cd + '</b> ' + esc(x.label) + ' → ' + x.tx + ' 거래';
+      }).join('<br>') + '</div>';
+}
+
+async function camReasonGo(cd){
+  const before = camRow.item.diff;
+  const d = await post('/api/count/reason',
+    {Count_ID: sheet.Count_ID, line: camRow.line, reason_cd: cd});
+  if(!d.ok) return camFail(d.errors[0]);
+  sheet = d.sheet; drawKpi();
+  camDone(sheet.items.filter(function(r){ return r.Line === camRow.line; })[0],
+          '차이 ' + (before>0?'+':'') + nf(before) + '개 · ' + cd);
+}
+
+async function camSkip(){
+  const d = await post('/api/count/skip',
+    {Count_ID: sheet.Count_ID, lines: [camRow.line], on: true, EP_ID: sheet.EP_ID});
+  if(!d.ok) return camFail(d.errors[0]);
+  sheet = d.sheet; drawKpi();
+  camDone(null, '이번 차수에서 넘어갑니다');
+}
+
+// 끝났으면 알아서 다음 라벨로 넘어간다. 창고에서는 손이 비어 있지 않다 —
+// 확인을 한 번 더 누르게 하지 않는다. 그 전에 누르면 바로 넘어간다.
+function camDone(row, what){
+  camSlot('<div class="cc-ok"><i class="ti ti-circle-check"></i> '
+    + (camRow ? esc(camRow.item.Lot_ID) + ' · ' : '') + esc(what)
+    + (row && row.Real_Qty != null ? ' · 실물 ' + nf(row.Real_Qty) + '개' : '') + '</div>'
+    + '<div class="cc-p">남은 <b>' + sheet.left_cnt + '</b>줄'
+    + (sheet.left_cnt ? ' · 다음 LOT 을 찍으세요'
+                      : ' — 전부 처리했습니다. 창을 닫고 완료하세요.') + '</div>'
+    + camBtns('<button class="btn btnp" onclick="camNext()">'
+    +   '<i class="ti ti-camera"></i>다음 LOT</button>'
+    + '<button class="btn" onclick="ScanCam.close()">닫고 표로</button>'));
+  const mine = camRow;
+  setTimeout(function(){ if(camRow === mine) camNext(); }, 1300);
 }
 
 function msg(kind, lines){
@@ -468,7 +751,8 @@ async function applyAll(){
     return msg('err', ['사유가 없는 차이가 ' + p.blocked.length + '건 있습니다. 전부 사유를 달아야 반영됩니다.']
       .concat(p.blocked.slice(0,5).map(function(b){
         return b.Line + '번 줄 ' + b.Lot_ID + ' (' + (b.diff>0?'+':'') + b.diff + '개)'; })));
-  if(!p.cnt) return msg('wn',['반영할 차이가 없습니다. 전부 장부와 일치합니다.']);
+  // ⚠️ 차이가 0 이어도 **실사는 닫아야 한다.** 전부 일치한 실사를 못 닫으면
+  //    그 차수가 영원히 '진행' 으로 남아 다음 실사를 열 수 없다.
   msg('',[]);
   applyDraw(p);
 }
@@ -478,9 +762,19 @@ function applyDraw(p){
     return '<span class="bg bac" style="font-size:10.5px;margin-right:4px">'
          + k + ' ' + p.by_tx[k] + '건</span>';
   }).join('');
-  $('aSum').innerHTML = chips
+  $('aSum').innerHTML = (chips || '')
     + '<span style="font-size:11px;color:var(--txt3);margin-left:4px">'
-    + '차이 ' + p.cnt + '건 · 금액 ' + nf(p.amount) + '원</span>';
+    + '차이 ' + p.cnt + '건 · 금액 ' + nf(p.amount) + '원'
+    + (p.skipped.length ? ' · 넘어감 ' + p.skipped.length + '줄' : '') + '</span>'
+    + (p.cnt ? ''
+       : '<div class="note" style="padding:8px 0 0">조정할 차이가 없습니다 — '
+         + '전부 장부와 맞았습니다. 거래는 생기지 않고 <b>실사만 닫힙니다.</b></div>')
+    + (p.skipped.length
+       ? '<div class="note" style="padding:6px 0 0">넘어간 ' + p.skipped.length + '줄은 '
+         + '<b>세지 않았으므로 조정하지 않습니다</b> — 장부가 그대로 남습니다. '
+         + p.skipped.slice(0,4).map(function(x){ return x.Line + '번 ' + esc(x.Lot_ID); }).join(' · ')
+         + (p.skipped.length>4 ? ' 외 ' + (p.skipped.length-4) + '줄' : '') + '</div>'
+       : '');
 
   $('aTb').innerHTML = '<thead><tr><th>#</th><th>LOT</th><th>자재</th>'
     + '<th class="num">장부</th><th class="num">실물</th><th class="num">차이</th>'
@@ -512,7 +806,9 @@ function applyDraw(p){
   $('aNote').value = '';
   $('aMsg').className = 'msg';
   $('aOk').disabled = !ap.length;
-  $('aFoot').innerHTML = '거래 <b>' + p.cnt + '건</b>이 생깁니다. 되돌릴 수 없습니다.';
+  $('aFoot').innerHTML = (p.cnt
+    ? '거래 <b>' + p.cnt + '건</b>이 생깁니다.'
+    : '거래는 생기지 않고 실사가 <b>완료</b>로 닫힙니다.') + ' 되돌릴 수 없습니다.';
   $('avl').classList.add('on');
 }
 

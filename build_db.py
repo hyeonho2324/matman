@@ -400,6 +400,9 @@ CREATE TABLE Stock_Count_Item_tb (
     --    일어나면 기준이 흔들린다. 그때 장부가 얼마였는지 설명할 수 있어야 한다.
     Book_Qty  INTEGER NOT NULL,
     Real_Qty  INTEGER,             -- 실물 수량. NULL 이면 아직 안 센 것
+    -- 'Y' 면 이번 차수에서는 세지 않고 넘어간 줄. 안 센 줄(Real_Qty NULL)과
+    -- 구분해야 "다 돌았다" 를 판정할 수 있다. 조정 대상에서도 빠진다.
+    Skipped   TEXT,
     Reason_Cd TEXT,                -- 폐기 / 구역오류 / 분실 / 미기록불출 / 미기록반납 / 기타
     Reason    TEXT,
     Loc_To    TEXT,                -- 구역오류일 때 실제로 있던 구역

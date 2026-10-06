@@ -1785,6 +1785,7 @@ def count_sheet(conn, cid):
          ORDER BY i.Line""", (cid,))
 
     for r in items:
+        r["skipped"] = 1 if r["Skipped"] == "Y" else 0
         r["diff"] = None if r["Real_Qty"] is None else r["Real_Qty"] - r["Book_Qty"]
         r["diff_amt"] = None if r["diff"] is None else round(r["diff"] * (r["P_Price"] or 0))
         # 실사 도는 동안 그 LOT 이 움직였으면 알려 준다
@@ -1793,6 +1794,7 @@ def count_sheet(conn, cid):
         r["moved"] = 1 if (r["T_ID"] is None and r["now_qty"] != r["Book_Qty"]) else 0
 
     counted = [r for r in items if r["Real_Qty"] is not None]
+    skipped = [r for r in items if r["skipped"]]
     diffs = [r for r in counted if r["diff"]]
     out = dict(head)
     out.update({
@@ -1808,7 +1810,14 @@ def count_sheet(conn, cid):
         "real_qty": sum(r["Real_Qty"] for r in counted),
         "moved_cnt": len([r for r in items if r["moved"]]),
         "applied_cnt": len([r for r in items if r["T_ID"]]),
-        # 정확도 — 센 것 중 맞은 비율. 실사의 핵심 지표다
+        # 넘어간 줄은 '안 센 줄' 과 다르다. 세지 않기로 **정한** 것이라
+        # 다 돌았는지 따질 때는 처리된 것으로 본다.
+        "skipped_cnt": len(skipped),
+        "done_cnt": len(counted) + len(skipped),
+        "left_cnt": len(items) - len(counted) - len(skipped),
+        # 정확도 — 센 것 중 맞은 비율. 실사의 핵심 지표다.
+        # ⚠️ 넘어간 줄은 분모에도 분자에도 안 들어간다 — 세지 않았으니
+        #    맞았는지 틀렸는지 말할 수 없다.
         "accuracy": _pct(len(counted) - len(diffs), len(counted)) if counted else None,
     })
     return out, []
@@ -1842,6 +1851,9 @@ def save_count(conn, cid, lines, ep_id):
         if v is None or str(v).strip() == "":
             rows.append((ln, None))
             continue
+        if by_line[ln]["T_ID"]:
+            errors.append("%d번 줄은 이미 반영됐습니다." % ln)
+            continue
         q = _pos_int(v, "%d번 줄 실물 수량" % ln, errors, lo=0)
         if q is None:
             continue
@@ -1851,9 +1863,10 @@ def save_count(conn, cid, lines, ep_id):
 
     with conn:
         for ln, q in rows:
+            # 수량을 적었다는 건 센 것이다 — '넘어감' 과 같이 설 수 없다
             conn.execute(
-                "UPDATE Stock_Count_Item_tb SET Real_Qty = ?, Counted_At = ?"
-                " WHERE Count_ID = ? AND Line = ?",
+                "UPDATE Stock_Count_Item_tb SET Real_Qty = ?, Counted_At = ?,"
+                " Skipped = NULL WHERE Count_ID = ? AND Line = ?",
                 (q, _now_stamp(), cid, ln))
             saved += 1
     out, _ = count_sheet(conn, cid)
@@ -1907,6 +1920,103 @@ def set_count_reason(conn, cid, line, reason_cd, reason=None, loc_to=None):
     return count_sheet(conn, cid)[0], []
 
 
+def skip_count(conn, cid, lines, ep_id, on=True):
+    """이번 차수에서는 세지 않고 넘어간다 (또는 그 취소).
+
+    실사 목록에 잡혔지만 지금 손댈 수 없는 LOT 이 있다 — 다른 구역에 가
+    있거나, 적치물에 막혔거나, 봉인된 상자라 열 수 없거나. 그걸 못 넘기면
+    **차수 전체가 끝나지 않아** 나머지 조정까지 묶여 버린다.
+
+    ⚠️ '안 센 줄'(Real_Qty NULL)과 **다른 상태**다. 안 센 줄은 아직 할 일이
+       남은 것이고, 넘어간 줄은 하지 않기로 **정한** 것이다. 그래서 완료
+       판정에는 들어가고 조정(거래 생성)에서는 빠진다.
+    """
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    if head["Status"] != "진행":
+        return None, ["진행 중인 실사가 아닙니다 (%s)." % head["Status"]]
+
+    if isinstance(lines, (str, int)):
+        lines = [lines]
+    if not isinstance(lines, (list, tuple)) or not lines:
+        return None, ["넘어갈 줄을 지정하세요."]
+
+    by_line = {r["Line"]: r for r in head["items"]}
+    want, errors = [], []
+    for v in lines:
+        ln = _as_int(v)
+        if ln is None or ln not in by_line:
+            errors.append("%s 에 없는 줄입니다: %s" % (cid, v))
+            continue
+        if by_line[ln]["T_ID"]:
+            errors.append("%d번 줄은 이미 반영됐습니다." % ln)
+            continue
+        want.append(ln)
+    if errors:
+        return None, errors
+
+    with conn:
+        for ln in want:
+            if on:
+                # 넘어가면 세지 않은 것이다 — 적어 둔 수량과 사유를 거둔다.
+                # 남겨 두면 조정 미리보기가 그 줄을 다시 집어 간다.
+                conn.execute(
+                    "UPDATE Stock_Count_Item_tb SET Skipped = 'Y', Real_Qty = NULL,"
+                    " Reason_Cd = NULL, Reason = NULL, Loc_To = NULL, Counted_At = ?"
+                    " WHERE Count_ID = ? AND Line = ?", (_now_stamp(), cid, ln))
+            else:
+                conn.execute(
+                    "UPDATE Stock_Count_Item_tb SET Skipped = NULL"
+                    " WHERE Count_ID = ? AND Line = ?", (cid, ln))
+    out, _ = count_sheet(conn, cid)
+    out["changed"] = len(want)
+    return out, []
+
+
+def count_scan(conn, cid, code):
+    """실사표의 LOT 바코드를 읽고 그 줄을 찾아 준다.
+
+    창고에서 종이에 적어 와 다시 입력하는 단계를 지우는 자리다. 폰으로
+    LOT 라벨을 찍으면 그 줄이 바로 뜨고, 장부 수량이 기본값으로 보인다.
+
+    ⚠️ 찾지 못하는 이유가 여러 가지라 **왜 안 되는지를 구분해서** 말한다.
+       창고에서 '안 됩니다' 한 줄만 보면 손쓸 데가 없다.
+    """
+    head, e = count_sheet(conn, cid)
+    if e:
+        return None, e
+    q = str(code or "").strip().upper()
+    if not q:
+        return None, ["읽은 값이 비었습니다."]
+
+    row = [r for r in head["items"] if r["Lot_ID"].upper() == q]
+    if not row:
+        # 품번을 찍었을 수도 있다 — 그 품번의 줄이 딱 하나면 받아 준다
+        same = [r for r in head["items"] if r["P_ID"].upper() == q]
+        if len(same) == 1:
+            row = same
+        elif len(same) > 1:
+            return None, ["%s 은(는) 품번입니다. 이 실사에 LOT 이 %d개 있어 "
+                          "어느 것인지 알 수 없습니다 — LOT 라벨을 찍으세요."
+                          % (q, len(same))]
+        elif conn.execute("SELECT 1 FROM Lot_tb WHERE Lot_ID = ?", (q,)).fetchone():
+            return None, ["%s 은(는) 이번 실사 대상이 아닙니다 (%s %s)."
+                          % (q, head["Scope"], head["Scope_Val"] or "")]
+        else:
+            return None, ["등록되지 않은 LOT 입니다: %s" % q]
+
+    r = row[0]
+    return {"Count_ID": cid, "line": r["Line"], "item": r,
+            "status": ("applied" if r["T_ID"] else
+                       "skipped" if r["skipped"] else
+                       "counted" if r["Real_Qty"] is not None else "open"),
+            "reasons": [dict(cd=k, **v) for k, v in COUNT_REASONS.items()]}, []
+
+
 def preview_count_apply(conn, cid):
     """반영하면 무엇이 어떻게 바뀌는지 (저장 안 함)."""
     head, e = count_sheet(conn, cid)
@@ -1933,8 +2043,11 @@ def preview_count_apply(conn, cid):
             "loc_from": r["Loc_ID"], "loc_to": r["Loc_To"],
             "amt": r["diff_amt"] or 0,
         })
+    skipped = [{"Line": r["Line"], "Lot_ID": r["Lot_ID"], "P_N": r["P_N"],
+                "book": r["Book_Qty"]} for r in head["items"] if r["skipped"]]
     amt = sum(abs(t["amt"]) for t in todo)
     return {"Count_ID": cid, "todo": todo, "blocked": blocked,
+            "skipped": skipped, "left": head["left_cnt"],
             "cnt": len(todo), "amount": amt,
             "by_tx": {t: len([x for x in todo if x["tx"] == t])
                       for t in {x["tx"] for x in todo}},
@@ -1956,9 +2069,10 @@ def apply_count(conn, date, cid, ep_id, note=None):
     if plan["blocked"]:
         return None, ["사유가 없는 차이가 %d건 있습니다. 전부 사유를 달아야 반영됩니다."
                       % len(plan["blocked"])]
-    uncounted = head["line_cnt"] - head["counted_cnt"]
-    if uncounted:
-        return None, ["아직 세지 않은 줄이 %d개 있습니다." % uncounted]
+    # 넘어가기로 **정한** 줄은 처리된 것으로 본다. 안 센 줄만 막는다.
+    if head["left_cnt"]:
+        return None, ["아직 세지 않은 줄이 %d개 있습니다. 세거나 넘어가기로 "
+                      "표시해야 완료할 수 있습니다." % head["left_cnt"]]
 
     # 재고를 바꾸는 일이라 직급을 본다. 금액은 차이의 절대값 합이다
     w, e = _approver(conn, ep_id, plan["amount"], "재고 조정")

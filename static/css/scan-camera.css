@@ -1,0 +1,75 @@
+/* 카메라 스캔 창 — static/js/scan-camera.js 가 이 모양의 DOM 을 만든다.
+   쓰는 화면: 스캐너 · 재고 실사.
+
+   embed 화면은 저마다 <style> 을 들고 있지만 이건 **두 화면이 같이 쓴다.**
+   복사해 두면 한쪽만 고쳐져 갈라진다 — period.js · timechart.js 와 같은 이유로
+   파일 하나로 뺐다. 폰 전용이 아니라서 embed-mobile.css 에는 넣지 않는다
+   (노트북 웹캠으로도 열린다).                                              */
+
+/* iframe 안이라 그 화면 영역만 덮는다 — 바깥 사이드바는 그대로 보인다 */
+.camov { position: fixed; inset: 0; z-index: 80; background: #000; display: none; }
+.camov.on { display: block; }
+.camvid { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+
+/* ⚠️ 틀은 반드시 가운데 정렬이어야 한다. scan-camera.js 가 object-fit:cover 로
+   잘려 나간 만큼을 배율로 되나눠 판독 영역을 잡는데, 그 계산이 '영상도 틀도
+   가운데' 를 전제로 한다. 한쪽으로 치우치게 옮기면 엉뚱한 자리를 읽는다. */
+.camframe {
+  position: absolute; left: 7%; right: 7%; top: 27%; height: 46%;
+  border-radius: 10px; pointer-events: none; z-index: 2;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .42);
+}
+.camc { position: absolute; width: 22px; height: 22px; border: 2.5px solid rgba(255,255,255,.95); }
+.camc:nth-child(1) { left: -2px; top: -2px; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
+.camc:nth-child(2) { right: -2px; top: -2px; border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; }
+.camc:nth-child(3) { left: -2px; bottom: -2px; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
+.camc:nth-child(4) { right: -2px; bottom: -2px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
+.camline {
+  position: absolute; left: 3%; right: 3%; height: 2px; border-radius: 2px;
+  background: rgba(226, 75, 74, .9); box-shadow: 0 0 8px rgba(226, 75, 74, .75);
+  animation: camsweep 1.7s ease-in-out infinite;
+}
+@keyframes camsweep { 0%, 100% { top: 8%; } 50% { top: 90%; } }
+/* 멈춰 세운 동안(확인 카드가 떠 있을 때)은 훑지 않는다 */
+.camov.hold .camline { animation: none; opacity: .25; }
+
+.camtop {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 4;
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: linear-gradient(rgba(0, 0, 0, .6), transparent);
+}
+.camtt {
+  flex: 1; min-width: 0; color: #fff; font-size: 12px;
+  display: flex; align-items: center; gap: 6px; text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+.cambtn {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+  border: 0.5px solid rgba(255, 255, 255, .35); background: rgba(0, 0, 0, .45);
+  color: #fff; font-size: 16px; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.cambtn.on { background: #EF9F27; border-color: transparent; color: #1A1917; }
+
+.camfoot {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 12px;
+  text-align: center; color: rgba(255, 255, 255, .72); font-size: 10px; line-height: 1.6;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .6));
+}
+.camov:not([data-engine]) .camfoot { opacity: 0; }
+.cameng { color: #fff; font-weight: 500; }
+
+/* 못 열린 이유를 그 자리에 적는다 — 검은 화면만 띄워 두지 않는다 */
+.cammsg {
+  position: absolute; left: 14px; right: 14px; top: 50%; transform: translateY(-50%);
+  z-index: 3; display: none; background: rgba(0, 0, 0, .82); color: #fff;
+  font-size: 12px; line-height: 1.7; text-align: center; padding: 13px 15px;
+  border-radius: 9px; border: 0.5px solid rgba(255, 255, 255, .2);
+}
+.cammsg.on { display: block; }
+/* 안내가 떠 있으면 틀·스캔선은 방해만 된다 (뒤 형제라야 `~` 로 끌 수 있다) */
+.cammsg.on ~ .camframe { display: none; }
+
+/* 화면이 채워 넣는 칸 — 읽은 뒤 무엇을 할지 묻는 카드가 여기 들어온다.
+   카메라는 멈춰 세운 채(hold) 뒤에 그대로 떠 있어, 다음 라벨로 바로 넘어간다. */
+.camslot { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; }
+.camov.hold .camfoot { display: none; }

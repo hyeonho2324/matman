@@ -1,5 +1,5 @@
-/* 휴대폰 카메라로 바코드를 읽는다 — 스캐너 화면(embed/scanner.html)이 쓴다.
-   화면별 스크립트와 겹치지 않도록 전역은 `ScanCam` 하나만 만든다.
+/* 휴대폰 카메라로 바코드를 읽는다. 쓰는 화면: 스캐너 · 재고 실사.
+   전역은 `ScanCam` 하나만 만든다. 창 모양은 static/css/scan-camera.css.
 
    ── 왜 두 갈래인가 ────────────────────────────────────────
    ① BarcodeDetector — 브라우저가 OS 의 바코드 엔진을 그대로 내준다.
@@ -12,7 +12,13 @@
    ⚠️ 카메라는 **보안 컨텍스트** 에서만 열린다 — https 또는 127.0.0.1.
       사내망 IP(http://192.168.x.x:5000)로 들어오면 브라우저가
       navigator.mediaDevices 를 아예 주지 않는다. 눌러 봐야 알 수 없으니
-      버튼을 미리 막는다(usable()). 배포본은 https 라 문제없다.          */
+      버튼을 미리 막는다(usable()). 배포본은 https 라 문제없다.
+
+   ── 쓰는 법 ──────────────────────────────────────────────
+     ScanCam.open(onHit)                 한 번 읽고 닫는다 (스캐너)
+     ScanCam.open(onHit, {hold: true})   읽으면 멈춰만 선다 (재고 실사)
+       → ScanCam.slot() 에 확인 카드를 그리고, 끝나면 ScanCam.resume()
+   */
 (function () {
   'use strict';
 
@@ -24,6 +30,7 @@
   var el, video, canvas, ctx, stream, track, timer;
   var detector = null, zreader = null, zhints = null;
   var busy = false, flip = 0, onHit = null, lastVal = '', lastAt = 0, ac = null;
+  var opts = {};
 
   function usable() {
     return !!(window.isSecureContext && navigator.mediaDevices &&
@@ -34,6 +41,37 @@
   function say(m) {
     var b = q('.cammsg');
     if (b) { b.textContent = m || ''; b.classList.toggle('on', !!m); }
+  }
+
+  /* ── 창을 만든다 ───────────────────────────────────────
+     화면마다 같은 15줄을 붙여 두면 한쪽만 고쳐져 갈라진다. 여기서 한 번만
+     만든다. ⚠️ .cammsg 는 .camframe **앞** 이어야 한다 — CSS 가 뒤 형제
+     선택자(`~`)로 틀을 끄기 때문이다. */
+  function build() {
+    el = document.getElementById('camov');
+    if (el) return el;
+    el = document.createElement('div');
+    el.className = 'camov';
+    el.id = 'camov';
+    el.innerHTML =
+      /* ⚠️ playsinline 이 없으면 아이폰이 전체화면 재생기로 가로채 간다.
+             muted 가 없으면 자동 재생 자체가 거부된다. */
+      '<video class="camvid" id="camvid" playsinline autoplay muted></video>'
+      + '<div class="cammsg"></div>'
+      + '<div class="camframe">'
+      +   '<i class="camc"></i><i class="camc"></i><i class="camc"></i><i class="camc"></i>'
+      +   '<i class="camline"></i></div>'
+      + '<div class="camtop">'
+      +   '<span class="camtt"><i class="ti ti-barcode"></i><span class="camtxt"></span></span>'
+      +   '<button type="button" class="cambtn camtorch" title="손전등"><i class="ti ti-bulb"></i></button>'
+      +   '<button type="button" class="cambtn camx" title="닫기"><i class="ti ti-x"></i></button>'
+      + '</div>'
+      + '<div class="camfoot"><span class="camftx"></span> · 해독 <span class="cameng"></span></div>'
+      + '<div class="camslot"></div>';
+    document.body.appendChild(el);
+    q('.camx').addEventListener('click', close);
+    q('.camtorch').addEventListener('click', torch);
+    return el;
   }
 
   /* ── 디코더 고르기 ─────────────────────────────────────
@@ -144,10 +182,32 @@
     if (v === lastVal && Date.now() - lastAt < 1200) return;
     lastVal = v; lastAt = Date.now();
     beep();
-    if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
-    close();
+    /* 아직 사용자가 한 번도 안 눌렀으면 크롬이 진동을 막고 콘솔에 오류를
+       남긴다. 막힐 걸 알면서 부르지 않는다. */
+    var act = navigator.userActivation;
+    if (navigator.vibrate && (!act || act.hasBeenActive)) {
+      try { navigator.vibrate(40); } catch (e) {}
+    }
+    /* hold 면 닫지 않고 **멈춰 선다** — 재고 실사는 라벨을 줄줄이 찍는다.
+       닫았다 다시 열면 카메라를 매번 다시 잡느라 0.5초씩 끊긴다. */
+    if (opts.hold) pause(); else close();
     if (onHit) onHit(v);
   }
+
+  /* 멈춤·재개 — 스트림은 그대로 두고 판독만 쉰다 */
+  function pause() {
+    if (timer) { clearInterval(timer); timer = null; }
+    busy = false;
+    if (el) el.classList.add('hold');
+  }
+  function resume() {
+    if (!stream || !el) return;
+    el.classList.remove('hold');
+    slot().innerHTML = '';
+    lastVal = '';                       // 같은 라벨을 다시 찍을 수 있어야 한다
+    if (!timer) timer = setInterval(tick, detector ? 120 : 230);
+  }
+  function slot() { build(); return q('.camslot'); }
 
   /* 창고에서는 화면을 안 보고 찍는다 — 읽혔다는 걸 소리로 알린다.
      음원 파일을 두지 않고 짧은 사각파를 그 자리에서 만든다.
@@ -202,15 +262,19 @@
     }).catch(function () { b.style.display = 'none'; });
   }
 
-  function open(cb) {
-    el = document.getElementById('camov');
-    if (!el) return;
+  function open(cb, o) {
+    build();
     video = document.getElementById('camvid');
     if (!canvas) { canvas = document.createElement('canvas'); ctx = canvas.getContext('2d'); }
+    opts = o || {};
     onHit = cb || null;
     lastVal = '';
     el.classList.add('on');
+    el.classList.remove('hold');
     el.removeAttribute('data-engine');
+    q('.camslot').innerHTML = '';
+    q('.camtxt').textContent = opts.title || '바코드를 틀 안에 맞추세요';
+    q('.camftx').textContent = opts.foot || '읽으면 소리와 함께 자동으로 조회합니다';
     say('카메라를 준비합니다…');
     wake();                            // 제스처 안에서 소리를 깨워 둔다
 
@@ -245,8 +309,13 @@
     }
     track = null;
     if (video) { try { video.pause(); } catch (e) {} video.srcObject = null; }
-    if (el) { el.classList.remove('on'); el.removeAttribute('data-engine'); }
+    if (el) {
+      el.classList.remove('on', 'hold');
+      el.removeAttribute('data-engine');
+      q('.camslot').innerHTML = '';
+    }
     say('');
+    if (opts.onClose) { var f = opts.onClose; opts = {}; f(); }
   }
 
   /* ⚠️ 화면을 떠나면 카메라를 **반드시** 끈다. 안 끄면 뒤에서 계속 켜져
@@ -259,5 +328,6 @@
     if (e.key === 'Escape' && stream) close();
   });
 
-  window.ScanCam = { open: open, close: close, torch: torch, usable: usable };
+  window.ScanCam = { open: open, close: close, torch: torch, usable: usable,
+                     pause: pause, resume: resume, slot: slot };
 })();

@@ -91,49 +91,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .bcbox .cap{font-size:10px;color:var(--txt3);margin-top:4px}
 @media(max-width:700px){ .po-grid{grid-template-columns:repeat(2,1fr)} }
 
-/* ── 카메라 스캔 ──────────────────────────────────────────
-   iframe 안이라 이 화면 영역만 덮는다 — 바깥 사이드바는 그대로 보인다.
-   동작은 static/js/scan-camera.js 가 한다. */
-.camov{position:fixed;inset:0;z-index:80;background:#000;display:none}
-.camov.on{display:block}
-.camvid{width:100%;height:100%;object-fit:cover;display:block;background:#000}
-/* ⚠️ 틀은 반드시 가운데 정렬이어야 한다. scan-camera.js 가 object-fit:cover 로
-   잘려 나간 만큼을 되계산해 판독 영역을 잡는데, 그 계산이 '둘 다 가운데
-   정렬' 을 전제로 한다. 한쪽으로 치우치게 옮기면 엉뚱한 자리를 읽는다. */
-.camframe{position:absolute;left:7%;right:7%;top:27%;height:46%;border-radius:10px;
-  pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.42);z-index:2}
-.camc{position:absolute;width:22px;height:22px;border:2.5px solid rgba(255,255,255,.95)}
-.camc:nth-child(1){left:-2px;top:-2px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
-.camc:nth-child(2){right:-2px;top:-2px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
-.camc:nth-child(3){left:-2px;bottom:-2px;border-right:0;border-top:0;border-radius:0 0 0 8px}
-.camc:nth-child(4){right:-2px;bottom:-2px;border-left:0;border-top:0;border-radius:0 0 8px 0}
-.camline{position:absolute;left:3%;right:3%;height:2px;border-radius:2px;
-  background:rgba(226,75,74,.9);box-shadow:0 0 8px rgba(226,75,74,.75);
-  animation:camsweep 1.7s ease-in-out infinite}
-@keyframes camsweep{0%,100%{top:8%}50%{top:90%}}
-.camtop{position:absolute;left:0;right:0;top:0;z-index:4;display:flex;align-items:center;
-  gap:8px;padding:10px 12px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
-.camtt{flex:1;min-width:0;color:#fff;font-size:12px;display:flex;align-items:center;
-  gap:6px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
-.cambtn{width:34px;height:34px;border-radius:50%;flex-shrink:0;cursor:pointer;
-  border:0.5px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);color:#fff;
-  font-size:16px;display:inline-flex;align-items:center;justify-content:center}
-.cambtn.on{background:var(--wn);border-color:transparent;color:#1A1917}
-.camfoot{position:absolute;left:0;right:0;bottom:0;z-index:4;padding:12px;
-  text-align:center;color:rgba(255,255,255,.72);font-size:10px;line-height:1.6;
-  background:linear-gradient(transparent,rgba(0,0,0,.6))}
-.camov:not([data-engine]) .camfoot{opacity:0}
-.cameng{color:#fff;font-weight:500}
-/* 못 열린 이유를 그 자리에 적는다 — 검은 화면만 띄워 두지 않는다 */
-.cammsg{position:absolute;left:14px;right:14px;top:50%;transform:translateY(-50%);
-  z-index:3;display:none;background:rgba(0,0,0,.82);color:#fff;font-size:12px;
-  line-height:1.7;text-align:center;padding:13px 15px;border-radius:9px;
-  border:0.5px solid rgba(255,255,255,.2)}
-.cammsg.on{display:block}
-/* 안내가 떠 있으면 틀·스캔선은 방해만 된다. 뒤 형제라서 `~` 로 끌 수 있게
-   DOM 에서 .cammsg 를 .camframe 보다 앞에 둔다. */
-.cammsg.on ~ .camframe{display:none}
 </style>
+<link rel="stylesheet" href="/static/css/scan-camera.css">
 <link rel="stylesheet" href="/static/css/embed-mobile.css">
 <script defer src="/static/js/embed-mobile.js"></script>
 <script defer src="/static/js/scan-camera.js"></script>
@@ -185,26 +144,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
     </div>
   </div>
 
-  <!-- 휴대폰 카메라 스캔 — 동작은 /static/js/scan-camera.js
-       ⚠️ playsinline 이 없으면 아이폰이 전체화면 동영상 재생기로 가로채 간다.
-          muted 가 없으면 자동 재생 자체가 거부된다. -->
-  <div class="camov" id="camov">
-    <video class="camvid" id="camvid" playsinline autoplay muted></video>
-    <div class="cammsg"></div>
-    <div class="camframe">
-      <i class="camc"></i><i class="camc"></i><i class="camc"></i><i class="camc"></i>
-      <i class="camline"></i>
-    </div>
-    <div class="camtop">
-      <span class="camtt"><i class="ti ti-barcode"></i>바코드를 틀 안에 맞추세요</span>
-      <button class="cambtn camtorch" onclick="ScanCam.torch()" title="손전등">
-        <i class="ti ti-bulb"></i></button>
-      <button class="cambtn" onclick="ScanCam.close()" title="닫기">
-        <i class="ti ti-x"></i></button>
-    </div>
-    <div class="camfoot">읽으면 소리와 함께 자동으로 조회합니다 ·
-      해독 <span class="cameng"></span></div>
-  </div>
+
 </div>
 <script>
 const LOTS = {{ scan_lots|tojson }};

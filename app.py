@@ -773,7 +773,7 @@ def api_count_save():
     conn = db.connect()
     try:
         sheet, errors = db.save_count(
-            conn, body.get("Count_ID"), _rows(body, "lines"), body.get("EP_ID"))
+            conn, body.get("Count_ID"), _map(body, "lines"), body.get("EP_ID"))
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "sheet": sheet})
@@ -793,6 +793,36 @@ def api_count_reason():
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/skip", methods=["POST"])
+def api_count_skip():
+    """이번 차수에서는 넘어간다 (또는 그 취소). 재고는 안 바뀐다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        sheet, errors = db.skip_count(
+            conn, body.get("Count_ID"), body.get("lines"), body.get("EP_ID"),
+            on=body.get("on") is not False)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "sheet": sheet})
+    finally:
+        conn.close()
+
+
+@app.route("/api/count/scan")
+def api_count_scan():
+    """실사표의 LOT 바코드를 읽고 그 줄을 찾는다 (조회만)."""
+    conn = db.connect()
+    try:
+        hit, errors = db.count_scan(conn, request.args.get("id"),
+                                    request.args.get("code"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "hit": hit})
     finally:
         conn.close()
 
@@ -1136,6 +1166,18 @@ def _rows(body, key):
     """
     v = body.get(key)
     return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+
+
+def _map(body, key):
+    """본문에서 **줄번호 → 값** 묶음. `_rows` 와 달리 dict 를 받는다.
+
+    ⚠️ 실사 수량 저장은 `{"3": 120}` 처럼 줄번호를 키로 보낸다. 여기에
+       리스트 전용인 `_rows` 를 쓰면 **늘 빈 값**이 돼 화면이 '적을 내용이
+       없습니다' 만 받는다 — 실제로 그 상태로 묻혀 있었다. 회귀가
+       `db.save_count()` 를 직접 불러서 라우트 층의 결함을 못 봤다.
+    """
+    v = body.get(key)
+    return v if isinstance(v, dict) else {}
 
 
 def _entry_date(body):

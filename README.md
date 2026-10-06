@@ -95,7 +95,7 @@ LOT 잔여 = 입고 − (불출 + 불량 + 폐기 − 반납)
 ## 프로젝트 구조
 ```
 matman/
-├── app.py              Flask 앱 · 라우트 82개 (화면 26 · API 54 · 쓰기 42)
+├── app.py              Flask 앱 · 라우트 84개 (화면 26 · API 56 · 쓰기 43)
 ├── db.py               SQL 전부 — 화면은 SQL 을 모릅니다
 ├── build_db.py         원본 accdb·CSV → data/erp.db 재생성
 ├── barcode.py          Code128 / QR 생성 (외부 라이브러리 없음)
