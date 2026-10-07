@@ -141,8 +141,22 @@
     el.scrollTop = 0;
   }
 
-  /* 칸 머리를 누르면 그 칸만 펴진다. 상세는 고를 때마다 통째로 다시
-     그려지므로 **접힌 상태가 기본값**이 된다 — 따로 되돌릴 일이 없다. */
+  /* 칸 머리를 누르면 그 칸만 펴진다.
+
+     ⚠️ 상세는 **조작할 때마다 통째로 다시 그려진다**(재고 실사의 넘어가기,
+        사유 선택 …). 그때마다 펼쳐 둔 칸이 도로 접히면 한 줄 처리할 때마다
+        표가 사라진다. 그래서 어느 칸을 폈는지 적어 두고 되살린다.
+        **다른 줄을 새로 고르면** 기억을 버려 접힌 상태로 돌아간다. */
+  var foldOpen = {};
+  function foldKey(card) {
+    var h = card.querySelector('.pnh');
+    return h ? (h.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+  }
+  function foldRestore(el) {
+    el.querySelectorAll('.pn').forEach(function (card) {
+      if (foldOpen[foldKey(card)]) card.classList.add('fold-on');
+    });
+  }
   document.addEventListener('click', function (e) {
     if (window.innerWidth > 760) return;
     var head = e.target.closest && e.target.closest('.pnh');
@@ -150,9 +164,13 @@
     var card = head.parentElement;
     if (!card || !card.classList.contains('pn')) return;
     card.classList.toggle('fold-on');
+    foldOpen[foldKey(card)] = card.classList.contains('fold-on');
   });
 
   function sheetClose() {
+    /* 닫은 건 사용자의 뜻이다. 아직 식지 않은 신호(lastTap)가 남아 있으면
+       곧바로 다른 걸 눌렀을 때 상세가 다시 따라 올라온다. 지운다. */
+    lastTap = 0;
     var el = sheetEl();
     if (el) el.classList.remove('sheet-on');
     if (bd) bd.classList.remove('on');
@@ -172,13 +190,36 @@
 
      그래서 **어디를 눌렀는지는 보지 않는다.** 누른 적이 있고(최근 1.2초)
      상세에 내용이 들어오면 올린다. 화면 구조와 무관해진다. */
-  var lastTap = 0;
+  var lastTap = 0, lastSheetTap = 0, lastScroll = 0;
   document.addEventListener('click', function (e) {
     if (window.innerWidth > 760) return;
-    if (inSheet(e.target)) return;
     if (!e.target.closest) return;
+    /* 시트 안을 누른 것은 올릴 신호가 아니다. 다만 **언제·어디를 보고
+       있었는지는 적어 둔다** — 그 조작이 상세를 다시 그리면 보던 자리를
+       지켜 줘야 한다.
+       ⚠️ 스크롤 위치는 **누른 그 순간** 재 둬야 한다. innerHTML 로 다시
+          그리면 내용이 잠깐 비면서 브라우저가 스크롤을 0 으로 되돌리므로,
+          다시 그린 뒤에는 원래 어디였는지 알 길이 없다. */
+    if (inSheet(e.target)) {
+      lastSheetTap = Date.now();
+      var sh = sheetEl();
+      if (sh) lastScroll = sh.scrollTop;
+      return;
+    }
     if (e.target.closest('.sheet-x, .sheet-bd')) return;
     if (e.target.closest(MODAL_SEL)) return;      // 모달 안 조작은 시트와 무관하다
+    /* ⚠️ 고르는 자리는 `.main` 안뿐이다. 상단바·설명 상자(.ro)·지표 칸·
+       필터는 전부 `.main` **밖**에 있는데, 그걸 눌렀다고 상세가 올라오면
+       화면을 만질 때마다 창이 따라 올라온다.
+       (실측 — 시트가 있는 19개 화면 전부 `.main` 이 [목록, 상세] 둘이고
+        바깥의 onclick 은 버튼·필터·모달뿐이다. 발주 캘린더처럼 목록이
+        아니라 날짜 격자인 화면도 그 격자가 `.main` 안에 있다.) */
+    if (!e.target.closest('.main')) return;
+    /* 목록 칸 안이어도 **고르는 자리**가 아닌 것이 있다. 실측하면
+       정렬 머리(th) 78개 · 탭(.tab) · 필터(.pill)가 그렇다 — 목록을
+       조작하는 것이지 한 줄을 고르는 게 아니다. 고르는 자리는 줄(tr)과
+       칸(div.ci·.it·.po·.cell·.fg·.rq)과 버블이다. */
+    if (e.target.closest('th, thead, .tab, .tabs, .pill, .qbtn, .chip')) return;
     lastTap = Date.now();
     setTimeout(sheetOpen, 80);        // 같은 줄을 다시 눌러 내용이 안 바뀌는 경우
   }, true);
@@ -225,7 +266,13 @@
     new MutationObserver(function () {
       if (window.innerWidth > 760) return;
       if (!sheetHasContent(el)) { sheetClose(); return; }
-      if (el.classList.contains('sheet-on')) el.scrollTop = 0;
+      if (el.classList.contains('sheet-on')) {
+        /* 열려 있는데 내용이 바뀌었다. 둘을 갈라야 한다.
+             목록에서 **다른 줄을 골랐으면** 맨 위부터, 접힌 상태로.
+             **시트 안에서 조작했으면**(넘어가기·사유·저장) 보던 자리 그대로. */
+        if (Date.now() - lastSheetTap > 1200) { foldOpen = {}; el.scrollTop = 0; }
+        else { foldRestore(el); el.scrollTop = lastScroll; }
+      }
       else sheetMaybeOpen();          // 누른 직후 내용이 들어왔다 → 올린다
     }).observe(el, { childList: true, subtree: true });
   }
