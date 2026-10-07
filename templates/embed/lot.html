@@ -33,9 +33,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .agebar{display:flex;height:30px;border-radius:5px;overflow:hidden;border:0.5px solid var(--border)}
 .ab{display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600;cursor:pointer;transition:opacity .12s;min-width:0;overflow:hidden;white-space:nowrap}
 .ab:hover{opacity:.82}
+/* ⚠️ 라벨 폭을 막대 비율로만 주면 좁은 구간에서 글자가 **세로로 쏟아진다**
+   ('270일 이상' 이 한 글자씩 내려가 칸 밖으로 나갔다). 비율은 늘어나는
+   몫으로만 쓰고(flex-grow) 바닥을 62px 로 깔아 글자가 들어갈 자리를 준다.
+   그래도 좁으면 줄바꿈 대신 말줄임으로 자른다 — 세로로 쏟아지는 것보다 낫다. */
 .agelbl{display:flex;margin-top:5px;gap:0}
-.al{text-align:center;font-size:9px;color:var(--txt3);line-height:1.4;cursor:pointer}
-.al b{display:block;color:var(--txt);font-size:10px}
+.al{text-align:center;font-size:9px;color:var(--txt3);line-height:1.4;cursor:pointer;
+  min-width:0;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.al b{display:block;color:var(--txt);font-size:10px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .al.on b{color:var(--acc)}
 
 .filter-bar{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--s1);border-bottom:0.5px solid var(--border);flex-shrink:0;flex-wrap:wrap}
@@ -243,8 +249,10 @@ function drawAge(){
            + d.n + '개 LOT · ' + nf(d.qty) + '개 · ' + won(d.value) + '원">'
            + (w > 10 ? d.n + '개' : '') + '</div>';
     }
-    lbl += '<div class="al ' + (band===b?'on':'') + '" style="width:' + w.toFixed(1)
-         + '%" onclick="setBand(\'' + b + '\')"><b>' + b + '</b>' + won(d.value) + '원</div>';
+    // 0건 구간은 막대가 없다 — 라벨만 남기면 폭 0 짜리 칸에 글자가 끼어 깨진다
+    if(!d.n) return;
+    lbl += '<div class="al ' + (band===b?'on':'') + '" style="flex:' + w.toFixed(1)
+         + ' 1 62px" onclick="setBand(\'' + b + '\')"><b>' + b + '</b>' + won(d.value) + '원</div>';
   });
   document.getElementById('agebar').innerHTML=bar;
   document.getElementById('agelbl').innerHTML=lbl;
