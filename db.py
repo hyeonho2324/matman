@@ -320,6 +320,8 @@ def lot_list(conn, since=None):
                COALESCE(x.ret_qty, 0)  AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
                COALESCE(x.out_cnt, 0)  AS out_cnt,  COALESCE(x.ret_cnt, 0)   AS ret_cnt,
                l.P_Qty - COALESCE(x.out_qty, 0)  AS remain,
+               COALESCE(sf.site, 0)    AS site,
+               COALESCE(sf.prod_in, 0) AS prod_in,
                CAST(julianday(?) - julianday(l.Lot_Date) AS INT)          AS age_days,
                CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
           FROM Lot_tb l
@@ -327,6 +329,8 @@ def lot_list(conn, since=None):
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+          -- 현장 보유는 현장 반납 화면과 **같은 조각**을 쓴다 (site_flow)
+          LEFT JOIN ({site_flow()}) sf ON sf.Lot_ID = l.Lot_ID
          -- 최근 구간 + 잔여가 남은 LOT (lot_detail 과 같은 규칙)
          WHERE (? IS NULL OR l.Lot_Date >= ?
                 OR l.P_Qty - COALESCE(x.out_qty, 0) > 0)
@@ -694,7 +698,9 @@ def lot_trace(conn, since=None):
                COALESCE(x.disb_qty, 0)  AS disb_qty, COALESCE(x.scrap_qty, 0) AS scrap_qty,
                COALESCE(x.ret_qty, 0)   AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
                COALESCE(x.ret_cnt, 0)   AS ret_cnt,
-               COALESCE(x.out_cnt, 0)   AS out_cnt
+               COALESCE(x.out_cnt, 0)   AS out_cnt,
+               COALESCE(sf.site, 0)     AS site,
+               COALESCE(sf.prod_in, 0)  AS prod_in
           FROM Lot_tb l
           JOIN Product_tb p ON l.P_ID = p.P_ID
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
@@ -702,6 +708,7 @@ def lot_trace(conn, since=None):
           LEFT JOIN Company_tb c ON h.BRN = c.BRN
           LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({site_flow()}) sf ON sf.Lot_ID = l.Lot_ID
          WHERE (? IS NULL OR l.Lot_Date >= ?
                 OR l.Lot_ID IN (SELECT Lot_ID FROM Transaction_tb WHERE T_Date >= ?))
     """, (since, since, since))
@@ -2361,6 +2368,8 @@ def lot_detail(conn, since=None):
                COALESCE(x.ret_qty, 0)  AS ret_qty,  COALESCE(x.move_cnt, 0)  AS move_cnt,
                COALESCE(x.out_cnt, 0)  AS out_cnt,  COALESCE(x.ret_cnt, 0)   AS ret_cnt,
                l.P_Qty - COALESCE(x.out_qty, 0)   AS remain,
+               COALESCE(sf.site, 0)    AS site,
+               COALESCE(sf.prod_in, 0) AS prod_in,
                CAST(julianday(?) - julianday(l.Lot_Date) AS INT)        AS age_days,
                CAST(julianday(x.out_date) - julianday(l.Lot_Date) AS INT) AS hold_days
           FROM Lot_tb l
@@ -2371,6 +2380,7 @@ def lot_detail(conn, since=None):
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({site_flow()}) sf ON sf.Lot_ID = l.Lot_ID
          -- 목록은 최근 구간 + **잔여가 남은 LOT** 만. 소진된 옛 LOT 까지 전부
          -- 보내면 3년치에서 2MB 가 된다. 노후화를 보는 화면이라 잔여가 있는
          -- 것은 아무리 오래됐어도 반드시 들어가야 한다.
@@ -3600,6 +3610,8 @@ def next_prod_id(conn, date):
 SITE_LOT_SQL = """
     SELECT l.Lot_ID, l.P_ID, l.Lot_Date,
            COALESCE(o.q, 0) - COALESCE(u.q, 0) - COALESCE(r.q, 0) AS site,
+           COALESCE(o.q, 0) AS out_to_site,
+           COALESCE(u.q, 0) AS prod_in,
            o.last_out
       FROM Lot_tb l
       LEFT JOIN (SELECT t.Lot_ID, SUM(t.T_Num) q, MAX(t.T_Date) last_out
@@ -3611,9 +3623,18 @@ SITE_LOT_SQL = """
 """
 
 
+def site_flow():
+    """LOT 단위 현장 보유 조각.
+
+    ⚠️ `site_lots()` 와 **같은 식**을 쓰게 하려고 함수로 뺐다. LOT 이력·LOT 상세가
+       식을 따로 쓰면 현장 반납 화면과 다른 숫자를 말한다 — 「숫자를 여기서 다시
+       세지 않는다」 와 같은 규칙이다."""
+    return SITE_LOT_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+
+
 def site_lots(conn, pid=None):
     """현장에 나가 있는 LOT 을 FIFO(입고일) 순으로. 투입은 여기서만 뽑는다."""
-    sql = SITE_LOT_SQL.format(demand=DEMAND_T, ret=_inlist(TX_PLUS))
+    sql = site_flow()
     sql = ("SELECT * FROM (%s) WHERE site > 0 %s ORDER BY Lot_Date, Lot_ID"
            % (sql, "AND P_ID = ?" if pid else ""))
     return _rows(conn, sql, (pid,) if pid else ())

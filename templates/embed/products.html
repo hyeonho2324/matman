@@ -1027,13 +1027,19 @@ function pick(pid){
     +   '<div class="seg"><b>'+seq+'</b><span>일련번호</span></div>'
     + '</div>';
 
+  // 현장 보유 — 현장 반납 화면과 같은 값(서버의 site_flow)을 그대로 합친다.
+  const siteQty = myLots.reduce(function(a, l){ return a + Math.max(l.site || 0, 0); }, 0);
+  const siteLots = myLots.filter(function(l){ return (l.site || 0) > 0; }).length;
+
   const lotRows = live.length
     ? live.slice(0,6).map(function(l){
         return '<tr><td><span class="fifo"></span>'+l.Lot_Date+'</td>'
              + '<td>'+esc(l.loc_name||l.Loc_ID)+'</td>'
-             + '<td class="num">'+nf(l.remain)+'</td></tr>';
+             + '<td class="num">'+nf(l.remain)+'</td>'
+             + '<td class="num" style="color:' + ((l.site||0)>0 ? 'var(--wn)' : 'var(--txt3)') + '">'
+             +   ((l.site||0)>0 ? nf(l.site) : '-') + '</td></tr>';
       }).join('')
-    : '<tr><td colspan="3" style="color:var(--txt3);text-align:center;padding:10px">잔여 LOT 없음 (전량 불출)</td></tr>';
+    : '<tr><td colspan="4" style="color:var(--txt3);text-align:center;padding:10px">잔여 LOT 없음 (전량 불출)</td></tr>';
 
   const fgRows = myFg.length
     ? myFg.map(function(b){
@@ -1072,6 +1078,10 @@ function pick(pid){
   +   '<div class="ir"><span class="ik">재고금액</span><span class="iv">' + nf(x.stock_value) + '원</span></div>'
   +   '<div class="ir"><span class="ik">누적 입고 / 불출</span><span class="iv">'
   +     nf(x.in_qty) + ' / ' + nf(x.out_qty) + '</span></div>'
+  +   '<div class="ir"><span class="ik">현장 보유 <span style="font-size:9px;color:var(--txt3)">(불출−투입−반납)</span></span>'
+  +     '<span class="iv">' + (siteQty > 0
+          ? '<b style="color:var(--wn)">' + nf(siteQty) + '</b>개 · LOT ' + siteLots + '건'
+          : '<span style="color:var(--txt3)">0</span>') + '</span></div>'
   +   '<div class="ir"><span class="ik">소진율</span><span class="iv">' + turn.toFixed(0) + '%</span></div>'
   +   '<div class="ir"><span class="ik">최근 입고 / 불출</span><span class="iv">'
   +     (x.last_in||'-') + ' / ' + (x.last_out||'-') + '</span></div>'
@@ -1080,7 +1090,8 @@ function pick(pid){
   + '<div class="pn">'
   +   '<div class="pnh"><i class="ti ti-stack-2"></i><span class="pnh-t">보유 LOT (FIFO 순)</span>'
   +     '<span class="bg ' + (viol.length?'bdn':'bmu') + '">' + live.length + '/' + myLots.length + '</span></div>'
-  +   '<table class="lt"><thead><tr><th>입고일</th><th>창고</th><th class="num">잔량</th></tr></thead>'
+  +   '<table class="lt"><thead><tr><th>입고일</th><th>창고</th><th class="num">잔량</th>'
+  +     '<th class="num">현장</th></tr></thead>'
   +   '<tbody>' + lotRows + '</tbody></table>'
   +   (live.length>6 ? '<div class="note">외 ' + (live.length-6) + '건</div>' : '')
   +   (viol.length ? '<div class="note" style="color:var(--dn)">⚠️ 선입선출 위반 '
@@ -1267,6 +1278,15 @@ function evBlock(lotId){
   if(!l || !l.events.length)
     return '<div class="tlb" style="padding:8px 12px;color:var(--txt3);font-size:10px">'
          + '기록된 이벤트가 없습니다.</div>';
+  const m = MLOTS.filter(function(q){ return q.Lot_ID === lotId; })[0];
+  const foot = !m ? '' :
+      '<div class="ev" style="background:var(--s1)">'
+    + '<span class="ev-d"></span><span class="ev-i k-wn"><i class="ti ti-building-factory-2"></i></span>'
+    + '<span><span class="ev-t">현장 보유</span>'
+    +   '<div class="ev-s">불출 ' + nf(m.disb_qty) + ' − 생산투입 ' + nf(m.prod_in)
+    +   (m.ret_qty ? ' − 반납 ' + nf(m.ret_qty) : '') + '</div></span>'
+    + '<span class="ev-q">' + ((m.site||0) > 0 ? nf(m.site) : '0')
+    +   '<div class="ev-s" style="text-align:right">현장</div></span></div>';
   return '<div class="tlb">' + l.events.map(function(e){
       return '<div class="ev">'
         + '<span class="ev-d">' + (e.date||'-') + '</span>'
@@ -1278,7 +1298,7 @@ function evBlock(lotId){
         + '<span class="ev-q">' + (e.qty==null ? '' : nf(e.qty))
         +   (e.ref ? '<div class="ev-s" style="text-align:right">' + esc(e.ref) + '</div>' : '')
         +   '</span></div>';
-    }).join('') + '</div>';
+    }).join('') + foot + '</div>';
 }
 
 // LOT 표를 그린다. 예전에는 표 아래에 LOT 목록을 한 번 더 그렸는데,
@@ -1317,6 +1337,11 @@ function drawLots(){
       + '<td class="num">' + nf(l.disb_qty) + flowSub(l)
       +   '<div class="ug" style="margin-left:auto;margin-top:3px"><i style="width:' + l.used_pct + '%"></i></div></td>'
       + '<td class="num" style="' + (isLive?'font-weight:600':'color:var(--txt3)') + '">' + nf(l.remain) + '</td>'
+      + '<td class="num">' + ((l.site||0) > 0
+            ? '<b style="color:var(--wn)">' + nf(l.site) + '</b>'
+            : '<span style="color:var(--txt3)">-</span>')
+      +   (l.prod_in ? '<div style="font-size:9px;color:var(--txt3)">투입 ' + nf(l.prod_in) + '</div>' : '')
+      +   '</td>'
       + '<td>' + (isLive
           ? '<span class="bg bok">보유중</span><div style="font-size:9px;color:'
             + (l.age_days>=180?'var(--dn)':'var(--txt3)') + '">체류 ' + l.age_days + '일</div>'
@@ -1328,7 +1353,7 @@ function drawLots(){
           ? l.prod_wo + '건<div style="font-size:9px;color:var(--txt3)">' + (l.prod_fg||'') + '</div>'
           : '<span style="color:var(--txt3)">-</span>') + '</td>'
       + '</tr>'
-      + (on ? '<tr class="evtr"><td colspan="10">' + evBlock(l.Lot_ID) + '</td></tr>' : '');
+      + (on ? '<tr class="evtr"><td colspan="11">' + evBlock(l.Lot_ID) + '</td></tr>' : '');
   }).join('');
 
   box.innerHTML =
@@ -1343,7 +1368,8 @@ function drawLots(){
   + '</div>'
   + '<table class="lt2"><thead><tr>'
   +   '<th>순</th><th>LOT 번호</th><th>입고일 / 발주</th><th class="num">입고</th>'
-  +   '<th class="num">불출 / 되돌아옴</th><th class="num">잔여</th><th>상태</th>'
+  +   '<th class="num">불출 / 되돌아옴</th><th class="num">잔여</th>'
+  +   '<th class="num">현장 / 투입</th><th>상태</th>'
   +   '<th class="hide-m">창고</th><th class="hide-m">입고담당</th><th class="hide-m">생산투입</th>'
   + '</tr></thead><tbody>' + rows + '</tbody></table>'
   + '<div class="mnote">'

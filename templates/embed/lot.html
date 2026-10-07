@@ -369,6 +369,13 @@ function pick(id){
           + '</div>'
         : '')
   +   '</div>'
+  +   '<div class="ir"><span class="ik">현장 보유</span><span class="iv">'
+  +     ((x.site||0) > 0
+          ? '<b style="color:var(--wn)">' + nf(x.site) + '</b>개'
+          : '<span style="color:var(--txt3)">0</span>')
+  +     '<div style="font-size:9px;color:var(--txt3);text-align:right">불출 ' + nf(x.disb_qty)
+  +       ' − 투입 ' + nf(x.prod_in||0) + (x.ret_qty ? ' − 반납 ' + nf(x.ret_qty) : '') + '</div>'
+  +     '</span></div>'
   +   '<div class="ir"><span class="ik">재고금액</span><span class="iv">' + nf(x.value) + '원</span></div>'
   +   '<div class="ir"><span class="ik">단가</span><span class="iv">' + nf(x.P_Price) + '원</span></div>'
   + '</div>'
