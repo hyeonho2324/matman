@@ -28,7 +28,12 @@ import db as D
 SEED = 20260107
 START = date(2023, 1, 1)
 END = date(2026, 10, 7)
-OUT = os.path.join(HERE, "erp3y.db")
+OUT = os.environ.get("MATMAN_OUT") or os.path.join(HERE, "erp3y.db")
+# ⚠️ 밑바탕은 **마스터만 든 DB** 여야 한다 (자재·BOM·협력사·사용자·분류·창고).
+#    이 생성기의 결과물을 다시 밑바탕으로 쓰면 설계 변경 자재가 **한 종 더**
+#    생기고 BOM 이 두 번 바뀐다. 기본값은 data/erp.db 라, 한 번 돌린 뒤 다시
+#    돌릴 때는 MATMAN_BASE 로 생성 이전 DB 를 가리켜야 한다.
+BASE = os.environ.get("MATMAN_BASE") or os.path.join(ROOT, "data", "erp.db")
 
 rnd = random.Random(SEED)
 d2s = lambda d: d.isoformat()
@@ -53,7 +58,8 @@ def wd(d, n=0):
 # ══════════════════════════════════════════════════════════
 #  0. 복사 · 초기화
 # ══════════════════════════════════════════════════════════
-shutil.copy(os.path.join(ROOT, "data", "erp.db"), OUT)
+shutil.copy(BASE, OUT)
+print("밑바탕 %s" % BASE)
 con = sqlite3.connect(OUT)
 con.row_factory = sqlite3.Row
 cur = con.cursor()
@@ -86,10 +92,12 @@ APPROVER = MANAGER + BOSS
 # 표준 BOM 만 소요량 계산에 쓴다 (대체는 실제 투입에서만 섞는다)
 STD = {}
 ALT = {}
+ALTQ = {}      # (완제품, 대체품) -> 그 대체품의 1대당 소요량
 for b in BOM:
     if str(b["BOM_Type"] or "").startswith("대체"):
         tgt = str(b["BOM_Type"]).split("→")[-1].strip(" )")
         ALT.setdefault((b["FG_ID"], tgt), []).append(b["P_ID"])
+        ALTQ[(b["FG_ID"], b["P_ID"])] = float(b["BOM_Qty"] or 0)
     else:
         STD.setdefault(b["FG_ID"], []).append((b["P_ID"], float(b["BOM_Qty"] or 0)))
 
@@ -165,6 +173,12 @@ for m in MONTHS:
 #    25개월치로 쌓여 **3년 9개월 동안 자재당 발주가 2.8회**밖에 안 일어났다.
 #    지금 데이터(208일에 불출 650,046개 = 월 9.4만개)를 기준으로 되맞춘다.
 TARGET_MONTHLY = 90000
+FIFO_SKIP = 0.07      # 창고가 선입선출을 건너뛰는 비율 — 위반 판정이 쓰일 데이터
+STRAND = 0.03         # 선반 뒤에 묻혀 아무도 집지 않는 LOT 비율
+# ⚠️ FIFO 를 건너뛰기만 하면 위반이 거의 안 남는다. 건너뛴 LOT 은 다음 불출에서
+#    또 맨 앞이라 결국 나가 버리고, 판정은 **지금 잔량이 남아 있는** LOT 만 보기
+#    때문이다(첫 시도에서 2,502개 중 위반 1건). 영구히 묻히는 LOT 이 있어야
+#    "오래된 게 남아 있는데 새것이 먼저 나갔다" 가 성립한다.
 _raw = sum(bq * q for (f, m), q in PLAN.items() for _, bq in STD.get(f, []))
 _scale = TARGET_MONTHLY * len(MONTHS) / max(_raw, 1)
 for k in PLAN:
@@ -172,12 +186,42 @@ for k in PLAN:
 print("생산 규모 x%.1f — 완제품 월 %d~%d대"
       % (_scale, min(PLAN.values()), max(PLAN.values())))
 
+# ══════════════════════════════════════════════════════════
+#  3b. 대체품 교체 (조건 6) — 완제품 2종이 중간중간 대체품을 쓴다
+# ══════════════════════════════════════════════════════════
+# ⚠️ 교체를 **투입 단계에서** 정하면 안 된다. 그렇게 짰다가 대체품이 한 번도
+#    안 쓰였다 — 요청·발주가 표준 자재만 보고 돌아서 대체품은 창고에도 현장에도
+#    없었고, fifo_site 가 빈손으로 돌아와 전부 원자재로 되돌아갔다.
+#    생산 계획이 먼저 정하고 소요량·발주·요청·투입이 그걸 따라야 한다.
+def _g4(pid):
+    s = SAFE.get(pid)
+    return D.new_grade({k: s[k] for k in D.SCORE_KEYS})[0] if s else "C"
+
+_cand = {}
+for f, items in STD.items():
+    if f in (STOP_FG, SWAP_FG):
+        continue
+    ps = [pid for pid, _ in items if ALT.get((f, pid)) and _g4(pid) in ("B", "C")]
+    if ps:
+        _cand[f] = ps
+ALT_FGS = sorted(_cand, key=lambda f: (-len(_cand[f]), f))[:2]
+
+SUB = {}       # (완제품, 월, 원자재) -> 대체품
+for f in ALT_FGS:
+    for m in MONTHS:
+        for pid in _cand[f]:
+            if rnd.random() < 0.25:
+                SUB[(f, m, pid)] = rnd.choice(ALT[(f, pid)])
+print("대체품 — 완제품 %s · 자재 %d종 · 교체 %d개월분"
+      % ("/".join(ALT_FGS), len({p for _, _, p in SUB}), len(SUB)))
+
 # 자재별 월 소요량 → 일평균(d)
 need_m = {}
 for (f, m), q in PLAN.items():
     for pid, bq in STD.get(f, []):
         pid2 = NEW_PID if (pid == OLD_PID and f == SWAP_FG and m >= SWAP_DATE) else pid
-        need_m[(pid2, m)] = need_m.get((pid2, m), 0) + bq * q
+        pid2 = SUB.get((f, m, pid2), pid2)
+        need_m[(pid2, m)] = need_m.get((pid2, m), 0) + ALTQ.get((f, pid2), bq) * q
 DAILY = {}
 for pid in PROD:
     tot = sum(v for (p, _), v in need_m.items() if p == pid)
@@ -227,14 +271,20 @@ def new_lot(pid, dt, qty, hid, ep):
     cur.execute("INSERT INTO Lot_tb (Lot_ID,P_ID,Lot_Date,Loc_ID,P_Qty,EP_ID,H_ID)"
                 " VALUES (?,?,?,?,?,?,?)", (lid, pid, d2s(dt), loc, int(qty), ep, hid))
     LOTS[lid] = {"P_ID": pid, "date": dt, "qty": int(qty), "loc": loc,
-                 "H_ID": hid, "remain": int(qty), "site": 0}
+                 "H_ID": hid, "remain": int(qty), "site": 0,
+                 "hide": rnd.random() < STRAND}
     tx(lid, "입고", dt, qty, ep)
     return lid
 
 
 def stock(pid, asof=None):
+    """창고가 **집을 수 있다고 아는** 재고. 묻힌 LOT 은 빠진다.
+
+    ⚠️ 묻힌 LOT 을 여기서 빼지 않으면, 승인 수량은 그걸 믿고 잡히는데 fifo 가
+       못 꺼내서 '불출완료' 로 적어 둔 요청이 실제로는 덜 나간다."""
     return sum(l["remain"] for l in LOTS.values()
-               if l["P_ID"] == pid and (not asof or l["date"] <= asof))
+               if l["P_ID"] == pid and not l["hide"]
+               and (not asof or l["date"] <= asof))
 
 
 def fifo(pid, qty, asof=None):
@@ -243,14 +293,20 @@ def fifo(pid, qty, asof=None):
     ⚠️ `asof` 를 꼭 넘긴다. 입고는 달 단위로 몰아 처리하므로 **그 달 하순에
        도착할 LOT 이 월초 불출 시점에 이미 만들어져 있다.** 날짜를 안 보면
        아직 안 온 물건을 꺼내 쓰게 된다 — 생산일이 입고일보다 빨라졌다."""
+    cand = [(lid, l) for lid, l
+            in sorted(LOTS.items(), key=lambda kv: (kv[1]["date"], kv[0]))
+            if l["P_ID"] == pid and l["remain"] > 0 and not l["hide"]
+            and not (asof and l["date"] > asof)]
+    # 창고는 앞에 놓인 상자를 집는다 — 선입선출이 늘 지켜지지는 않는다.
+    # 뒤에 남은 LOT 이 이번 요청을 덮을 수 있을 때만 건너뛴다. 그러지 않으면
+    # 승인 수량만큼 못 꺼내 '불출완료' 로 적어 둔 요청이 실제로는 덜 나간다.
+    if (len(cand) > 1 and rnd.random() < FIFO_SKIP
+            and sum(l["remain"] for _, l in cand[1:]) >= int(qty)):
+        cand = cand[1:]
     out, left = [], int(qty)
-    for lid, l in sorted(LOTS.items(), key=lambda kv: (kv[1]["date"], kv[0])):
+    for lid, l in cand:
         if left <= 0:
             break
-        if l["P_ID"] != pid or l["remain"] <= 0:
-            continue
-        if asof and l["date"] > asof:
-            continue
         n = min(l["remain"], left)
         out.append((lid, n)); left -= n
     return out, left
@@ -279,7 +335,6 @@ def fifo_site(pid, qty, asof=None):
 # ══════════════════════════════════════════════════════════
 #  5. 초기 재고 (조건 4) — 개업 전에 들여놓는다
 # ══════════════════════════════════════════════════════════
-PRE_ORDER = date(2022, 11, 15)
 PRE_IN = date(2022, 12, 20)
 by_brn = {}
 for pid in 用:
@@ -287,13 +342,20 @@ for pid in 用:
     cover = (s["Sf_Num"] or 0) + DAILY[pid] * (s["Lead_Time"] or 14) * 1.6
     q = D.round_order_qty(cover, p["MinOrderQty"], p["PkgUnit"])
     if q > 0:
-        by_brn.setdefault(p["BRN"], []).append((pid, q))
+        by_brn.setdefault((p["BRN"], int(s["Lead_Time"] or 14)), []).append((pid, q))
 
+# ⚠️ 발주일을 한 날짜로 못박으면 **리드타임이 짧은 자재가 전부 납기 지연**이 된다.
+#    협력사 화면은 자재별 계획 리드타임으로 줄마다 판정하는데, 개업 재고 176줄이
+#    35일 전 발주 한 장에 묶여 있어서 준수율을 5%p 끌어내리고 있었다.
+#    장납기 자재를 더 일찍 발주하는 건 구매 담당자가 실제로 하는 일이다.
 ep0 = rnd.choice(WORKER)
-for brn, items in sorted(by_brn.items()):
-    hid = nid("PO", d2s(PRE_ORDER))
+for (brn, lead), items in sorted(by_brn.items()):
+    od = PRE_IN - timedelta(days=lead)
+    while od.weekday() >= 5:
+        od -= timedelta(days=1)
+    hid = nid("PO", d2s(od))
     cur.execute("INSERT INTO Purchase_Header_tb (H_ID,BRN,P_Date) VALUES (?,?,?)",
-                (hid, brn, d2s(PRE_ORDER)))
+                (hid, brn, d2s(od)))
     for n, (pid, q) in enumerate(items, start=1):
         cur.execute("INSERT INTO Purchase_Detail_tb (H_ID,Purchase_num,P_ID,P_Qty,Unit_Price)"
                     " VALUES (?,?,?,?,?)", (hid, n, pid, q, PROD[pid]["P_Price"]))
@@ -363,7 +425,8 @@ for m in MONTHS:
         items = []
         for pid, bq in STD.get(f, []):
             use = NEW_PID if (pid == OLD_PID and f == SWAP_FG and m >= SWAP_DATE) else pid
-            need = int(round(bq * q))
+            use = SUB.get((f, m, use), use)      # 조건 6 — 이번 달은 대체품으로 간다
+            need = int(round(ALTQ.get((f, use), bq) * q))
             site = sum(l["site"] for l in LOTS.values() if l["P_ID"] == use)
             want = max(0, need - site)
             pkg = int(PROD[use]["PkgUnit"] or 1)
@@ -405,16 +468,31 @@ for m in MONTHS:
         prod_day = wd(dis_day, rnd.randint(2, 6))
         if prod_day > END:
             prod_day = END
-        made = q
+        # ⚠️ **자재가 모자라면 그만큼만 만든다.** 계획 대수를 그대로 적고 투입만 모자라게
+        #    두면 BOM 대조가 줄마다 '차이' 로 뜬다 — 첫 3년치가 일치율 84% 였고,
+        #    투입/소요 비율이 0.4~1.1 로 퍼져 있었다. 현실의 공장도 자재가 없으면
+        #    그만큼 덜 만든다. 못 쓴 자재는 현장에 남아 다음 달 생산으로 넘어간다.
+        uses = []
         for pid, bq in STD.get(f, []):
             use = NEW_PID if (pid == OLD_PID and f == SWAP_FG and m >= SWAP_DATE) else pid
-            # 조건 6 — 덜 치명적인 자재는 가끔 대체품으로 바꿔 넣는다
-            alts = ALT.get((f, use), [])
-            if alts and SAFE.get(use, {}).get("Sf_Lv") in ("B", "C") and rnd.random() < 0.12:
-                use = rnd.choice(alts)
+            use = SUB.get((f, m, use), use)      # 요청에 올린 그것을 투입한다
+            uses.append((pid, use, ALTQ.get((f, use), bq)))
+        made = q
+        for pid, use, bq in uses:
+            if bq <= 0:
+                continue
+            avail = sum(l["site"] for l in LOTS.values()
+                        if l["P_ID"] == use and l["date"] <= prod_day)
+            if use != pid:        # 대체품이 모자라면 원자재로 메운다
+                avail += sum(l["site"] for l in LOTS.values()
+                             if l["P_ID"] == pid and l["date"] <= prod_day)
+            made = min(made, int(avail // bq))
+        for pid, use, bq in uses:
+            if made <= 0:
+                break
             take = int(round(bq * made))
             alloc, short = fifo_site(use, take, prod_day)
-            if short:
+            if short and use != pid:
                 alloc2, _ = fifo_site(pid, short, prod_day)   # 대체품이 모자라면 원자재로
                 alloc += alloc2
             for lid, cnt in alloc:
@@ -455,17 +533,29 @@ for m in MONTHS:
             # ── 조건 8 — 준수율 80%
             ontime_all += 1
             r = rnd.random()
-            delay, realq = 0, q
+            delay, realq, keep = 0, q, False
             if r < 0.80:
-                ontime_ok += 1
-                delay = rnd.randint(-1, 1)
+                delay = -rnd.randint(0, 2); keep = True
             elif r < 0.92:
                 delay = rnd.randint(2, 12)                     # 납기 지연
             else:
                 pkg = int(PROD[pid]["PkgUnit"] or 1)           # 부족 입고
                 realq = max(pkg, q - pkg * rnd.randint(1, 3))
                 delay = rnd.randint(0, 5)
+            # ⚠️ 협력사 화면은 **자재별 계획 리드타임**으로 줄마다 납기를 판정한다.
+            #    wd() 가 주말을 피해 **뒤로** 미루기 때문에 제때 온 것으로 뽑혔어도
+            #    하루 이틀 넘겨 지연으로 찍혔다 — 준수율이 80% 가 아니라 44% 로
+            #    나온 원인이다. 넘겼으면 계획 납기 안으로 당긴다.
+            due = ord_day + timedelta(days=lead)
             arr = wd(ord_day + timedelta(days=lead + delay))
+            if keep and arr > due:
+                back = due
+                while back.weekday() >= 5:
+                    back -= timedelta(days=1)
+                if back > ord_day:
+                    arr = back
+            if (arr - ord_day).days <= lead:
+                ontime_ok += 1
             if arr <= END:
                 ARRIVE.setdefault(arr, []).append((hid, n, pid, q, realq, ep))
             else:
@@ -508,8 +598,11 @@ for m in MONTHS:
         cday = wd(m, 24)
         if cday <= END:
             grade = "ABC"[(m.month // 3 - 1) % 3]
+            # ⚠️ `date <= cday` 를 빼면 **그 달 하순에 도착할 LOT 을 실사일에 센다.**
+            #    차이 거래가 입고일보다 앞선 날짜로 찍혔다 (fifo 의 asof 와 같은 함정).
             tgt = [(lid, l) for lid, l in LOTS.items()
-                   if l["remain"] > 0 and SAFE.get(l["P_ID"], {}).get("Sf_Lv") == grade]
+                   if l["remain"] > 0 and l["date"] <= cday
+                   and SAFE.get(l["P_ID"], {}).get("Sf_Lv") == grade]
             rnd.shuffle(tgt); tgt = tgt[:rnd.randint(8, 20)]
             if tgt:
                 cid = nid("CNT", d2s(cday))
@@ -521,23 +614,37 @@ for m in MONTHS:
                             (cid, d2s(cday), "등급", grade, "완료", w, a, d2s(cday),
                              "정기 순환 실사", None))
                 for ln, (lid, l) in enumerate(tgt, start=1):
+                    # 사유 6종이 전부 돈다 — 부족(폐기·분실·미기록불출) ·
+                    # 과다(미기록반납·과다입고) · 수량은 맞고 자리가 틀린 구역오류.
+                    # 거래 유형은 db 의 COUNT_REASONS 를 그대로 따른다.
                     book = l["remain"]
-                    diff = 0
-                    if rnd.random() < 0.18:
+                    diff, cd, loc_to = 0, None, None
+                    r2 = rnd.random()
+                    if r2 < 0.15:
                         diff = -max(1, int(book * rnd.uniform(0.01, 0.05)))
-                    real = book + diff
-                    tid, cd = None, None
-                    if diff:
                         cd = rnd.choice(["폐기", "분실", "미기록불출"])
-                        typ = "불출" if cd == "미기록불출" else "폐기"
-                        tid = tx(lid, typ, cday, -diff, a)
+                    elif r2 < 0.23:
+                        diff = max(1, int(book * rnd.uniform(0.01, 0.04)))
+                        cd = rnd.choice(["미기록반납", "과다입고"])
+                    elif r2 < 0.26:
+                        cd = "구역오류"
+                        loc_to = rnd.choice([x for x in LOCS if x != l["loc"]])
+                    real = book + diff
+                    tid = None
+                    if cd:
+                        meta = D.COUNT_REASONS[cd]
+                        tid = tx(lid, meta["tx"], cday, abs(diff) or book, a)
                         l["remain"] += diff
+                        if loc_to:
+                            cur.execute("UPDATE Lot_tb SET Loc_ID=? WHERE Lot_ID=?",
+                                        (loc_to, lid))
+                            l["loc"] = loc_to
                     cur.execute(
                         "INSERT INTO Stock_Count_Item_tb (Count_ID,Line,Lot_ID,P_ID,"
                         "Book_Qty,Real_Qty,Skipped,Reason_Cd,Reason,Loc_To,T_ID,Counted_At)"
-                        " VALUES (?,?,?,?,?,?,NULL,?,?,NULL,?,?)",
+                        " VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?)",
                         (cid, ln, lid, l["P_ID"], book, real, cd,
-                         "실사 차이" if cd else None, tid, d2s(cday)))
+                         "실사 차이" if cd else None, loc_to, tid, d2s(cday)))
                 counts += 1
 
     # ── 6f. 단가 변경 (반기 1회 몇 종) ────────────────────

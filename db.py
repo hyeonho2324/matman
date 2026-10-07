@@ -6912,12 +6912,16 @@ def preview_product(conn, body, pid=None):
     #    실측이 있으면 실측이 낫다 — 실제로 그만큼 걸린다는 뜻이다.
     lead = f.get("Lead_Time")
     if pid:
+        # ⚠️ 반올림까지 같아야 한다. 목록은 SQL 의 ROUND(…,1) 를 쓰는데 여기서
+        #    파이썬 round() 로 깎으면 **은행가 반올림**이라 14.25 가 14.2 가 되고
+        #    목록은 14.3 이 된다 — 같은 자재가 0.1일 차이로 안전재고 1개가 갈렸다.
+        #    (3년치 데이터에서 U02050003 이 60 vs 61 로 걸렸다)
         lt = conn.execute(
-            "SELECT AVG(julianday(l.Lot_Date) - julianday(h.P_Date))"
+            "SELECT ROUND(AVG(julianday(l.Lot_Date) - julianday(h.P_Date)), 1)"
             "  FROM Lot_tb l JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID"
             " WHERE l.P_ID = ?", (pid,)).fetchone()[0]
         if lt:
-            lead = round(lt, 1)
+            lead = lt
             f["lead_src"] = "실측"
         else:
             f["lead_src"] = "계획"

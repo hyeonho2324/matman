@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT); sys.path.insert(0, ROOT)
 import db as D
 
-DBF = os.path.join(HERE, "erp3y.db")
+DBF = os.environ.get("MATMAN_OUT") or os.path.join(HERE, "erp3y.db")
 rnd = random.Random(777)
 con = sqlite3.connect(DBF); con.row_factory = sqlite3.Row
 cur = con.cursor()
