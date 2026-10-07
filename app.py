@@ -322,7 +322,7 @@ def _ctx_products():
         return {
             "rows": rows,
             "summary": db.product_summary(rows),
-            "lots": db.lot_list(conn),
+            "lots": db.lot_list(conn, db.list_since(conn)),
             "bom_usage": db.bom_usage(conn),
             "cats": db.category_tree(conn),
             "maincat": db.MAINCAT,
@@ -362,10 +362,14 @@ def _ctx_abc(period=""):
 def _ctx_tx_history():
     conn = db.connect()
     try:
-        rows = db.transaction_list(conn)
-        lots = db.lot_trace(conn)
+        since = db.list_since(conn)
+        rows = db.transaction_list(conn, since)
+        lots = db.lot_trace(conn, since)
         prods = db.tx_products(conn)
         return {
+            "cut": {"since": since, "months": db.LIST_MONTHS,
+                    "total": conn.execute(
+                        "SELECT COUNT(*) FROM Transaction_tb").fetchone()[0]} if since else None,
             "rows": rows,
             "lots": lots,
             "prods": prods,
@@ -398,8 +402,12 @@ def _ctx_production():
     """생산 실적 — 조회(작업지시 대조) + 등록(현장 보유에서 투입)."""
     conn = db.connect()
     try:
-        orders = db.production_orders(conn)
+        since = db.list_since(conn)
+        orders = db.production_orders(conn, since)
         return {
+            "cut": {"since": since, "months": db.LIST_MONTHS,
+                    "total": conn.execute(
+                        "SELECT COUNT(DISTINCT Work_Order) FROM Production_tb").fetchone()[0]} if since else None,
             "orders": orders,
             "prods": db.prod_products(conn),
             "monthly": db.production_monthly(conn),
@@ -413,7 +421,7 @@ def _ctx_production():
 def _ctx_purchase():
     conn = db.connect()
     try:
-        orders = db.purchase_orders(conn)
+        orders = db.purchase_orders(conn, db.list_since(conn))
         cands, base = db.order_candidates(conn)
         return {
             "orders": orders,
@@ -468,7 +476,7 @@ def _ctx_stock_map():
 def _ctx_lot():
     conn = db.connect()
     try:
-        rows, base = db.lot_detail(conn)
+        rows, base = db.lot_detail(conn, db.list_since(conn))
         return {
             "rows": rows,
             "summary": db.lot_summary(rows, base),

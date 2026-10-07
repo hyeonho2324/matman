@@ -300,7 +300,7 @@ def product_list(conn):
     """)
 
 
-def lot_list(conn):
+def lot_list(conn, since=None):
     """자재별 LOT 전체 이력 (자재 목록 화면의 LOT 이력 패널용).
 
     입고 → 불출 → 생산투입까지 한 LOT 의 일생을 담는다.
@@ -327,8 +327,11 @@ def lot_list(conn):
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+         -- 최근 구간 + 잔여가 남은 LOT (lot_detail 과 같은 규칙)
+         WHERE (? IS NULL OR l.Lot_Date >= ?
+                OR l.P_Qty - COALESCE(x.out_qty, 0) > 0)
          ORDER BY l.P_ID, l.Lot_Date
-    """, (base,))
+    """, (base, since, since))
 
     # 생산 투입 요약
     used = {r["Lot_ID"]: r for r in _rows(conn, """
@@ -611,7 +614,29 @@ def abc_summary(rows):
 
 
 # ── 입출고 이력 화면 ─────────────────────────────────────────
-def transaction_list(conn):
+# ⚠️ 행 목록은 최근 N개월만 내려보낸다.
+#    3년치가 쌓이자 입출고 이력이 **4.7MB** 가 됐다 — 폰에서 못 연다.
+#    월별 집계(추이 차트)는 작으니 전 기간 그대로 두고 **표만** 자른다.
+#    실제 ERP 도 목록은 최근 구간부터 보여준다.
+LIST_MONTHS = 12
+
+
+def list_since(conn, months=None):
+    """기준일(마지막 거래일)에서 months 개월 전. 데이터가 짧으면 None."""
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    first = conn.execute("SELECT MIN(T_Date) FROM Transaction_tb").fetchone()[0]
+    if not base or not first:
+        return None
+    m = int(months or LIST_MONTHS)
+    y, mo = int(base[:4]), int(base[5:7])
+    y, mo = (y - (m // 12), mo - (m % 12))
+    if mo <= 0:
+        y, mo = y - 1, mo + 12
+    cut = "%04d-%02d-%s" % (y, mo, base[8:10])
+    return cut if cut > first else None
+
+
+def transaction_list(conn, since=None):
     """입출고 1,075건. 자재 정보는 tx_products() 조회표로 분리해 중복을 없앤다.
 
     (자재명·규격·분류를 1,075행마다 반복하면 응답이 1.5MB까지 커진다.
@@ -624,8 +649,9 @@ def transaction_list(conn):
           FROM Transaction_tb t
           JOIN Lot_tb l     ON t.Lot_ID = l.Lot_ID
           LEFT JOIN User_tb u ON t.EP_ID = u.EP_ID
+         WHERE (? IS NULL OR t.T_Date >= ?)
          ORDER BY t.T_Date DESC, t.T_ID DESC
-    """)
+    """, (since, since))
 
 
 def tx_products(conn):
@@ -651,8 +677,11 @@ def tx_locations(conn):
     return {r["Loc_ID"]: r["Loc_N"] for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
 
 
-def lot_trace(conn):
-    """LOT별 전체 이력 — 발주→입고→불출들→잔량. 추적(traceability)용."""
+def lot_trace(conn, since=None):
+    """LOT별 전체 이력 — 발주→입고→불출들→잔량. 추적(traceability)용.
+
+    since 를 주면 **그 구간의 거래에 걸린 LOT 만** 돌려준다. 입출고 이력이
+    표를 자르면 그 LOT 정보도 같이 줄어야 한다."""
     lots = _rows(conn, f"""
         SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date, l.P_Qty,
                l.Loc_ID, lo.Loc_N AS loc_name, l.H_ID,
@@ -673,7 +702,9 @@ def lot_trace(conn):
           LEFT JOIN Company_tb c ON h.BRN = c.BRN
           LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
-    """)
+         WHERE (? IS NULL OR l.Lot_Date >= ?
+                OR l.Lot_ID IN (SELECT Lot_ID FROM Transaction_tb WHERE T_Date >= ?))
+    """, (since, since, since))
     # 생산 투입 이력 (그 LOT이 어느 완제품에 쓰였나)
     used = {}
     for r in _rows(conn, """
@@ -963,7 +994,7 @@ def supplier_summary(comps):
 
 
 # ── 생산 실적 화면 ───────────────────────────────────────────
-def production_orders(conn):
+def production_orders(conn, since=None):
     """작업지시 488건 + 투입 자재 + BOM 대비 검증.
 
     완제품 생산 수량이 원본 데이터에 없어 추정해야 한다.
@@ -983,8 +1014,9 @@ def production_orders(conn):
           FROM Production_tb r
           JOIN Product_tb p ON r.P_ID = p.P_ID
           LEFT JOIN User_tb u ON r.EP_ID = u.EP_ID
+         WHERE (? IS NULL OR r.Prod_Date >= ?)
          ORDER BY r.Prod_Date, r.Work_Order, r.P_ID
-    """)
+    """, (since, since))
     fg_name = {r["FG_ID"]: r["FG_N"] for r in _rows(conn, "SELECT FG_ID, FG_N FROM FG_tb")}
 
     # BOM 조회표
@@ -1117,7 +1149,7 @@ def production_summary(orders, conn=None):
 
 
 # ── 구매 발주 화면 ───────────────────────────────────────────
-def purchase_orders(conn):
+def purchase_orders(conn, since=None):
     """발주 254건 + 품목별 발주/입고 대조.
 
     발주 수량과 실제 입고 수량을 비교해 부족 입고를 잡아낸다.
@@ -1151,8 +1183,9 @@ def purchase_orders(conn):
                            AND l2.Lot_ID NOT IN (%s)
                          LIMIT 1))
           LEFT JOIN Location_tb lo  ON l.Loc_ID = lo.Loc_ID
+         WHERE (? IS NULL OR h.P_Date >= ?)
          ORDER BY h.P_Date DESC, h.H_ID DESC, d.Purchase_num
-    """ % _CLAIMED_LOTS)
+    """ % _CLAIMED_LOTS, (since, since))
 
     grouped = {}
     for r in lines:
@@ -2211,9 +2244,10 @@ def dashboard(conn):
     comps = supplier_list(conn)
     brows = bom_rows(conn)
     fgs = fg_list(conn, brows)
-    tx = transaction_list(conn)
+    _since = list_since(conn)
+    tx = transaction_list(conn, _since)
     txp = tx_products(conn)
-    po = purchase_orders(conn)
+    po = purchase_orders(conn, _since)
     po_sum = purchase_summary(po)
     abc = abc_analysis(conn)
     abc_sum = abc_summary(abc)
@@ -2304,7 +2338,7 @@ def _age_band(days):
     return AGE_BANDS[-1][1]
 
 
-def lot_detail(conn):
+def lot_detail(conn, since=None):
     """LOT 636건 + 체류일수 + FIFO 순번 + 소진 현황.
 
     기준일은 데이터의 마지막 거래일로 잡는다(실시간 today 를 쓰면
@@ -2337,8 +2371,13 @@ def lot_detail(conn):
           LEFT JOIN User_tb u      ON l.EP_ID = u.EP_ID
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+         -- 목록은 최근 구간 + **잔여가 남은 LOT** 만. 소진된 옛 LOT 까지 전부
+         -- 보내면 3년치에서 2MB 가 된다. 노후화를 보는 화면이라 잔여가 있는
+         -- 것은 아무리 오래됐어도 반드시 들어가야 한다.
+         WHERE (? IS NULL OR l.Lot_Date >= ?
+                OR l.P_Qty - COALESCE(x.out_qty, 0) > 0)
          ORDER BY l.P_ID, l.Lot_Date
-    """, (base,))
+    """, (base, since, since))
 
     # 생산 투입 요약
     used = {}
@@ -3975,6 +4014,7 @@ def scan_orders(conn):
 
 def workbench(conn):
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    _since = list_since(conn)          # 목록은 최근 구간만 (LIST_MONTHS)
     scan_po = scan_orders(conn)            # 스캐너가 발주 바코드를 읽을 때 쓴다
 
     # 입고: 발주 → 입고 실적 (LOT 채번 규칙 확인용)
@@ -4000,8 +4040,9 @@ def workbench(conn):
           JOIN Product_tb p ON d.P_ID = p.P_ID
           LEFT JOIN Lot_tb l ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+         WHERE (? IS NULL OR l.Lot_Date >= ? OR l.Lot_ID IS NULL)
          ORDER BY d.H_ID, d.Purchase_num
-    """):
+    """, (_since, _since)):
         po_detail.setdefault(r["H_ID"], []).append(r)
 
     # 불출: 잔여 LOT 이 있는 자재 (FIFO 대상)
