@@ -1563,6 +1563,7 @@ def worklist(conn):
     pending = pending_po(conn)                 # 받을 발주
     claims = claim_summary(conn)               # 불량·반품
     wait_appr = wait_approval_cnt(conn)        # 승인 대기
+    wait_plan = wait_plan_cnt(conn)            # 발주 제안 (A 수동 · B 승인)
     opens = open_requests(conn)                # 승인 끝나고 아직 안 나간 요청
 
     due = conn.execute(
@@ -1589,6 +1590,9 @@ def worklist(conn):
         {"key": "claim",    "label": "불량 · 반품",  "n": claims.get("open", 0), "unit": "건",
          "sub": "대체입고 / 환불 / 폐기를 정해야 함", "url": "/inbound",
          "tone": "dn" if claims.get("open") else "mu"},
+        {"key": "order_plan", "label": "발주 제안",  "n": wait_plan,       "unit": "건",
+         "sub": "A는 직접 · B는 승인하면 나간다", "url": "/order-plan",
+         "tone": "wn" if wait_plan else "mu"},
         {"key": "approval", "label": "불출 승인",    "n": wait_appr,       "unit": "건",
          "sub": "승인해야 창고가 열린다", "url": "/approval",
          "tone": "wn" if wait_appr else "mu"},
@@ -1623,6 +1627,7 @@ def worklist(conn):
 ALERT_MENU = {
     "inbound":  "inbound",
     "claim":    "inbound",
+    "order_plan": "order_plan",
     "approval": "approval",
     "picking":  "picking",
     "disburse": "disburse",
@@ -4342,6 +4347,413 @@ def create_purchase(conn, date, items):
 #    화면도 같은 계산을 해서 보여주지만, 저장할 때는 서버가 잔여 LOT 을
 #    다시 읽어 처음부터 배분한다. 화면이 보낸 배분을 그대로 믿으면
 #    FIFO 를 건너뛰거나 잔여보다 많이 꺼내는 요청을 막을 방법이 없다.
+
+# ══════════════════════════════════════════════════════════════
+#  등급별 발주 정책 — A 수동 · B 승인 · C 자동
+# ══════════════════════════════════════════════════════════════
+# ABC 설계의 마지막 조각이다. 등급을 매기고(점수제) 안전재고를 계산하고
+# 재검토 주기까지 등급별로 다르게 뒀는데, **정작 발주는 전 등급이 똑같이
+# 사람 손으로** 나가고 있었다. 등급이 하는 일이 "안전재고를 얼마로 잡을까"
+# 에서 끝나 있었던 셈이다.
+#
+#   A 수동   제안만 띄운다. 담당자가 한 건씩 확인하고 수량을 정해 발주한다.
+#            비싸고 대체 불가라 한 번 잘못 넣으면 돈이 크게 묶인다.
+#   B 승인   제안이 **발주 직전까지 준비된다**(협력사·수량·금액·예상 입고일).
+#            사람은 보고 승인만 한다. 여러 건을 한 번에 승인할 수 있다.
+#   C 자동   제안이 만들어지는 즉시 발주된다. 사람은 사후에 본다.
+#            품목별로 끌 수 있다(수동 전환).
+ORDER_POLICY = {"A": "수동", "B": "승인", "C": "자동"}
+POLICY_LIST = ["수동", "승인", "자동"]
+POLICY_DESC = {
+    "수동": "제안만 올립니다. 담당자가 확인하고 직접 발주합니다.",
+    "승인": "발주 직전까지 준비됩니다. 승인하면 그대로 발주됩니다.",
+    "자동": "제안이 생기는 즉시 발주됩니다. 품목별로 끌 수 있습니다.",
+}
+
+# ⚠️ 자동이라고 무한히 돈을 쓰게 두지 않는다. 한 건이 이 금액을 넘으면
+#    자동을 **멈추고 승인 대기로 떨어뜨린다.** C등급은 싸고 흔한 자재라는
+#    전제 위에서 자동을 허용한 것이므로, 전제가 깨지면 사람이 봐야 한다.
+AUTO_MAX_AMT = 3_000_000
+
+# 발주 마감까지 이만큼 남았으면 제안에 올린다. 마감이 지난 것(음수)도 당연히 올라온다.
+PLAN_LEAD_DAYS = 14
+PLAN_ID_PRE = "OP"
+PLAN_STATUS = ["대기", "발주", "반려", "보류"]
+
+
+def next_plan_id(conn, date):
+    """제안번호 채번 — OP + YYYYMMDD + 4자리. 다른 전표와 같은 규칙이다."""
+    pre = PLAN_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Plan_ID) FROM Order_Plan_tb WHERE Plan_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def order_policy_map(conn):
+    """품번 -> 적용 정책. 등급 기본값을 품목별 예외가 덮는다."""
+    custom = {r["P_ID"]: dict(r) for r in
+              _rows(conn, "SELECT * FROM Order_Policy_tb")}
+    out = {}
+    for r in _rows(conn, "SELECT P_ID, Sf_Lv FROM Safe_tb"):
+        g = r["Sf_Lv"] or "C"
+        base = ORDER_POLICY.get(g, "수동")
+        c = custom.get(r["P_ID"])
+        out[r["P_ID"]] = {
+            "P_ID": r["P_ID"], "grade": g, "base": base,
+            "policy": (c["Policy"] if c else base),
+            "custom": bool(c),
+            "reason": (c["Reason"] if c else None),
+            "EP_ID": (c["EP_ID"] if c else None),
+            "set_date": (c["Set_Date"] if c else None),
+        }
+    return out
+
+
+def set_order_policy(conn, date, pid, policy, reason, ep_id):
+    """품목별 정책 예외 — 등급이 정한 기본값을 사람이 덮는다.
+
+    사유를 받는 이유는 안전재고 수동 조정과 같다. 근거 없는 예외는
+    "왜 이 자재만 손으로 넣나" 를 아무도 설명하지 못하게 만든다.
+    """
+    w, e = _approver(conn, ep_id, None, "발주 정책 변경")
+    if e:
+        return None, e
+    pid = str(pid or "").strip()
+    row = conn.execute("SELECT P_ID FROM Product_tb WHERE P_ID = ?", (pid,)).fetchone()
+    if row is None:
+        return None, ["등록되지 않은 품번입니다: %s" % pid]
+    policy = str(policy or "").strip()
+    if policy not in POLICY_LIST:
+        return None, ["발주 정책은 %s 중 하나여야 합니다." % " · ".join(POLICY_LIST)]
+    reason = str(reason or "").strip()
+    if len(reason) < 5:
+        return None, ["변경 사유를 5자 이상 적어주세요."]
+    g = conn.execute("SELECT Sf_Lv FROM Safe_tb WHERE P_ID = ?", (pid,)).fetchone()
+    base = ORDER_POLICY.get((g["Sf_Lv"] if g else None) or "C", "수동")
+    if policy == base:
+        return None, ["등급 기본값과 같습니다(%s 등급 → %s). 예외를 걸 필요가 없습니다."
+                      % ((g["Sf_Lv"] if g else "?"), base)]
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO Order_Policy_tb (P_ID, Policy, Reason, EP_ID, Set_Date)"
+            " VALUES (?,?,?,?,?)", (pid, policy, reason, w["EP_ID"], date))
+    return {"P_ID": pid, "policy": policy, "base": base}, []
+
+
+def clear_order_policy(conn, pid, ep_id):
+    """예외를 거둔다. 그 품목은 다시 등급 기본값을 따른다."""
+    w, e = _approver(conn, ep_id, None, "발주 정책 변경")
+    if e:
+        return None, e
+    pid = str(pid or "").strip()
+    row = conn.execute("SELECT * FROM Order_Policy_tb WHERE P_ID = ?", (pid,)).fetchone()
+    if row is None:
+        return None, ["이 품목에 걸린 예외가 없습니다: %s" % pid]
+    with conn:
+        conn.execute("DELETE FROM Order_Policy_tb WHERE P_ID = ?", (pid,))
+    return {"P_ID": pid}, []
+
+
+def plan_candidates(conn):
+    """지금 제안을 올려야 하는 자재. 왜 빠졌는지도 함께 돌려준다.
+
+    수량은 수요 예측의 권장 발주량을 **그대로** 쓴다. 여기서 다시 계산하면
+    두 화면이 다른 수량을 말한다 — 발주 등록이 수요 예측 값을 쓰는 것과 같다.
+    """
+    rows, base, _span = forecast_list(conn)
+    pol = order_policy_map(conn)
+
+    # 이미 발주가 나가 있는 품목은 또 제안하지 않는다.
+    # (현장에서 가장 흔한 사고가 발주한 줄 모르고 다시 발주하는 것)
+    pend = {it["P_ID"] for h in pending_po(conn) for it in h["items"]}
+    open_plan = {r["P_ID"]: r["Plan_ID"] for r in _rows(
+        conn, "SELECT P_ID, Plan_ID FROM Order_Plan_tb WHERE Status = '대기'")}
+    # ⚠️ 보류뿐 아니라 **반려도 그날은 다시 올리지 않는다.** 반려하자마자 다음
+    #    생성에서 똑같은 제안이 또 올라오면 반려가 아무 의미가 없다. 사유를
+    #    남겼으니 하루는 존중하고, 그래도 필요하면 내일 다시 올라온다.
+    held = {r["P_ID"] for r in _rows(
+        conn, "SELECT P_ID FROM Order_Plan_tb"
+              " WHERE Status IN ('보류','반려')"
+              "   AND COALESCE(Done_Date, Plan_Date) = ?",
+        (_add_days(base, 1),))}
+
+    out, skipped = [], []
+    for r in rows:
+        p = pol.get(r["P_ID"]) or {"policy": "수동", "grade": r["grade"], "custom": False}
+        item = {
+            "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
+            "supplier": r["supplier"], "is_foreign": r["is_foreign"],
+            "grade": r["grade"], "policy": p["policy"], "custom": p["custom"],
+            "policy_base": p.get("base"), "policy_reason": p.get("reason"),
+            "stock": r["stock"], "safe_qty": r["safe_qty"], "daily": r["daily"],
+            "lead_time": r["lead_time"], "deadline": r["deadline"],
+            "days_left": r["days_left"], "urgency": r["urgency"],
+            "qty": r["order_qty"], "price": r["P_Price"], "amount": r["order_amt"],
+            "confidence": r["confidence"], "PkgUnit": r["PkgUnit"],
+            "MinOrderQty": r["MinOrderQty"],
+        }
+        if not r["order_qty"]:
+            continue                       # 지금 발주할 양이 없다
+        if r["deadline"] is None:
+            # 사용 이력이 없어 수량 근거가 없다. 자동으로 넘기면 안 되는 자리다.
+            item["why"] = "사용 이력이 없어 예측할 수 없습니다 — 손으로 판단해야 합니다"
+            skipped.append(item)
+            continue
+        if r["deadline"] > PLAN_LEAD_DAYS:
+            continue                       # 아직 이르다
+        if r["P_ID"] in pend:
+            item["why"] = "이미 발주가 나가 있습니다"
+            skipped.append(item)
+            continue
+        if r["P_ID"] in open_plan:
+            item["why"] = "대기 중인 제안이 있습니다 (%s)" % open_plan[r["P_ID"]]
+            skipped.append(item)
+            continue
+        if r["P_ID"] in held:
+            item["why"] = "오늘 보류·반려한 품목입니다 — 내일 다시 올라옵니다"
+            skipped.append(item)
+            continue
+        # 자동이라도 한도를 넘으면 멈춰 세운다
+        if item["policy"] == "자동" and (item["amount"] or 0) > AUTO_MAX_AMT:
+            item["auto_block"] = ("자동 한도 %s원을 넘습니다 — 승인으로 돌립니다"
+                                  % format(AUTO_MAX_AMT, ","))
+        out.append(item)
+    out.sort(key=lambda x: (x["deadline"], -(x["amount"] or 0)))
+    return {"base": base, "date": _add_days(base, 1),
+            "items": out, "skipped": skipped}
+
+
+def _place_from_plans(conn, date, plans, ep_id=None, note=None):
+    """제안을 **실제 발주로** 바꾼다. 승인과 자동이 같은 길을 쓴다.
+
+    ⚠️ 발주 생성(create_purchase)은 자기 트랜잭션을 연다. 바깥에서 한 번 더
+       `with conn:` 으로 감싸면 커밋이 갈라져 원자성이 깨진다. 그래서
+       **발주를 먼저 만들고**, 그 결과로 제안 상태를 갱신한다.
+    """
+    items = [{"P_ID": p["P_ID"], "qty": p["qty"]} for p in plans]
+    made, errors = create_purchase(conn, date, items)
+    if errors:
+        return None, errors
+    # 품번 -> 발주번호 (협력사별로 나뉘므로 되찾아 붙인다)
+    by_pid = {}
+    for h in made:
+        for it in h["items"]:
+            by_pid[it["P_ID"]] = h["H_ID"]
+    with conn:
+        for p in plans:
+            conn.execute(
+                "UPDATE Order_Plan_tb SET Status='발주', H_ID=?, EP_ID=?,"
+                " Done_Date=?, Note=?, Qty=? WHERE Plan_ID=?",
+                (by_pid.get(p["P_ID"]), ep_id, date, note, p["qty"], p["Plan_ID"]))
+    return made, []
+
+
+def make_plans(conn, date, ep_id=None, pids=None):
+    """제안을 만든다. C등급은 만들면서 바로 발주까지 간다.
+
+    ⚠️ 이 앱에는 스케줄러가 없다. 실제 ERP 라면 매일 새벽 배치가 돌 자리고,
+       여기서는 **사람이 [발주 제안 생성]을 누르는 것**이 그 배치다.
+       조회가 몰래 쓰기를 하지 않는다는 규칙(알림 절)을 지키려면 이게 맞다.
+    """
+    cand = plan_candidates(conn)
+    items = cand["items"]
+    if pids:
+        want = set(pids)
+        items = [i for i in items if i["P_ID"] in want]
+    if not items:
+        return {"made": [], "auto": [], "wait": [], "date": cand["date"]}, []
+
+    made = []
+    with conn:
+        for it in items:
+            pid_plan = next_plan_id(conn, cand["date"])
+            blocked = it.get("auto_block")
+            conn.execute(
+                "INSERT INTO Order_Plan_tb (Plan_ID, Plan_Date, P_ID, Grade, Policy,"
+                " Qty, Unit_Price, Amount, Stock_Qty, Safe_Qty, Daily, Lead_Time,"
+                " Deadline, Status, Auto_Block)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'대기',?)",
+                (pid_plan, cand["date"], it["P_ID"], it["grade"], it["policy"],
+                 it["qty"], it["price"], it["amount"], it["stock"], it["safe_qty"],
+                 it["daily"], it["lead_time"], it["deadline"], blocked))
+            row = dict(it)
+            row["Plan_ID"] = pid_plan
+            made.append(row)
+
+    # C등급 자동 발주 — 한도에 막힌 것은 대기로 남는다
+    auto = [p for p in made if p["policy"] == "자동" and not p.get("auto_block")]
+    placed = []
+    if auto:
+        placed, e = _place_from_plans(conn, cand["date"], auto, None, "등급 C 자동 발주")
+        if e:
+            # 발주가 실패해도 제안은 대기로 남아 사람이 처리할 수 있다
+            auto = []
+    wait = [p for p in made if p not in auto]
+    return {"made": made, "auto": auto, "placed": placed, "wait": wait,
+            "date": cand["date"]}, []
+
+
+def plan_list(conn, limit_months=None):
+    """제안 목록. 최근 것부터."""
+    since = list_since(conn, limit_months) if limit_months else None
+    rows = _rows(conn, """
+        SELECT o.*, p.P_N, p.Spec, p.PkgUnit, p.MinOrderQty,
+               c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
+               s.Lead_Time AS cur_lead, u.Name AS worker
+          FROM Order_Plan_tb o
+          LEFT JOIN Product_tb p ON o.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+          LEFT JOIN Safe_tb s    ON o.P_ID = s.P_ID
+          LEFT JOIN User_tb u    ON o.EP_ID = u.EP_ID
+         WHERE (? IS NULL OR o.Plan_Date >= ? OR o.Status = '대기')
+         ORDER BY o.Plan_Date DESC, o.Plan_ID DESC
+    """, (since, since))
+    return rows
+
+
+def plan_summary(rows):
+    wait = [r for r in rows if r["Status"] == "대기"]
+    return {
+        "total": len(rows),
+        "wait": len(wait),
+        "wait_amt": sum(r["Amount"] or 0 for r in wait),
+        "manual": len([r for r in wait if r["Policy"] == "수동"]),
+        "appr": len([r for r in wait if r["Policy"] == "승인"]),
+        "blocked": len([r for r in wait if r["Auto_Block"]]),
+        "placed": len([r for r in rows if r["Status"] == "발주"]),
+        "placed_amt": sum(r["Amount"] or 0 for r in rows if r["Status"] == "발주"),
+        "auto_placed": len([r for r in rows
+                            if r["Status"] == "발주" and r["Policy"] == "자동"]),
+        "rejected": len([r for r in rows if r["Status"] == "반려"]),
+        "held": len([r for r in rows if r["Status"] == "보류"]),
+    }
+
+
+def wait_plan_cnt(conn):
+    """사람 손이 필요한 제안 수 — 대시보드·알림이 같이 쓴다."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM Order_Plan_tb WHERE Status = '대기'").fetchone()[0]
+
+
+def _plan_workers(conn):
+    ws = _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")
+    for w in ws:
+        w["limit"] = approval_limit(w["Position"])     # None 이면 무제한
+    return ws
+
+
+def order_plan_source(conn):
+    """발주 제안 화면의 기준 데이터."""
+    rows = plan_list(conn)
+    cand = plan_candidates(conn)
+    pol = order_policy_map(conn)
+    custom = [v for v in pol.values() if v["custom"]]
+    for c in custom:
+        r = conn.execute("SELECT P_N, Spec FROM Product_tb WHERE P_ID = ?",
+                         (c["P_ID"],)).fetchone()
+        c["P_N"] = r["P_N"] if r else None
+        c["Spec"] = r["Spec"] if r else None
+    return {
+        "rows": rows, "summary": plan_summary(rows),
+        "cand": cand["items"], "skipped": cand["skipped"],
+        "base": cand["base"], "entry": cand["date"],
+        "policy": ORDER_POLICY, "policy_desc": POLICY_DESC,
+        "policy_list": POLICY_LIST, "auto_max": AUTO_MAX_AMT,
+        "lead_days": PLAN_LEAD_DAYS,
+        "custom": sorted(custom, key=lambda c: c["P_ID"]),
+        "workers": _plan_workers(conn),
+        "approvers": [w for w in _plan_workers(conn) if w["limit"] != 0],
+        "by_grade": {g: {"policy": ORDER_POLICY[g],
+                         "n": sum(1 for v in pol.values() if v["grade"] == g)}
+                     for g in "ABC"},
+    }
+
+
+def _plans_for_action(conn, ids):
+    if not isinstance(ids, (list, tuple)) or not ids:
+        return None, ["처리할 제안을 고르세요."]
+    rows = []
+    for pid in ids:
+        r = conn.execute("SELECT * FROM Order_Plan_tb WHERE Plan_ID = ?",
+                         (str(pid).strip(),)).fetchone()
+        if r is None:
+            return None, ["없는 제안번호입니다: %s" % pid]
+        if r["Status"] != "대기":
+            return None, ["%s 는 이미 처리된 제안입니다 (%s)." % (r["Plan_ID"], r["Status"])]
+        rows.append(dict(r))
+    if len({r["Plan_ID"] for r in rows}) != len(rows):
+        return None, ["같은 제안이 두 번 들어왔습니다."]
+    return rows, []
+
+
+def approve_plans(conn, date, ids, ep_id, qty_map=None, note=None):
+    """제안을 승인해 **실제 발주로** 내보낸다.
+
+    수량을 고칠 수 있다 — A등급(수동)은 담당자가 정하는 게 원칙이고,
+    B등급도 재고 사정으로 줄일 수 있어야 한다. 바꾼 수량이 제안에 남는다.
+    """
+    plans, e = _plans_for_action(conn, ids)
+    if e:
+        return None, e
+    qty_map = qty_map if isinstance(qty_map, dict) else {}
+    total = 0
+    for p in plans:
+        q = qty_map.get(p["Plan_ID"], p["Qty"])
+        try:
+            q = int(q)
+        except (TypeError, ValueError):
+            return None, ["%s 의 수량이 숫자가 아닙니다: %s" % (p["Plan_ID"], q)]
+        if q <= 0:
+            return None, ["%s 의 수량은 1 이상이어야 합니다." % p["Plan_ID"]]
+        p["qty"] = q
+        total += round(q * float(p["Unit_Price"] or 0))
+    # 발주는 돈을 쓰는 일이다. 불출 승인과 같은 직급·한도 기준을 쓴다.
+    w, e = _approver(conn, ep_id, total, "발주 승인")
+    if e:
+        return None, e
+    made, e = _place_from_plans(conn, date, plans, w["EP_ID"], note)
+    if e:
+        return None, e
+    return {"made": made, "cnt": len(plans), "amount": total,
+            "worker": w}, []
+
+
+def reject_plans(conn, date, ids, ep_id, reason):
+    """반려 — 사유를 남긴다. 되돌릴 수 없으니 이유가 있어야 한다."""
+    plans, e = _plans_for_action(conn, ids)
+    if e:
+        return None, e
+    w, e = _approver(conn, ep_id, None, "발주 반려")
+    if e:
+        return None, e
+    reason = str(reason or "").strip()
+    if len(reason) < 2:
+        return None, ["반려 사유를 적어주세요."]
+    with conn:
+        for p in plans:
+            conn.execute(
+                "UPDATE Order_Plan_tb SET Status='반려', EP_ID=?, Done_Date=?, Note=?"
+                " WHERE Plan_ID=?", (w["EP_ID"], date, reason, p["Plan_ID"]))
+    return {"cnt": len(plans)}, []
+
+
+def hold_plans(conn, date, ids, ep_id, note=None):
+    """보류 — '이번에는 넘어간다'. 오늘은 다시 안 올라오고 내일 다시 본다."""
+    plans, e = _plans_for_action(conn, ids)
+    if e:
+        return None, e
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    with conn:
+        for p in plans:
+            conn.execute(
+                "UPDATE Order_Plan_tb SET Status='보류', EP_ID=?, Done_Date=?, Note=?,"
+                " Plan_Date=? WHERE Plan_ID=?",
+                (w["EP_ID"], date, note, date, p["Plan_ID"]))
+    return {"cnt": len(plans)}, []
+
 
 def next_tx_id(conn, date):
     """T_ID 채번 — T + YYYYMMDD + 4자리 순번 (그날 기준).

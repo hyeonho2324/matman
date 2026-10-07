@@ -27,6 +27,7 @@ TODO_ICON = {
     "disburse": "ti-arrow-bar-up",
     "site":     "ti-arrow-back-up",
     "safety":   "ti-shield-check",
+    "order_plan": "ti-clipboard-check",
 }
 
 # ── 메뉴 구조 ───────────────────────────────────────────────
@@ -63,6 +64,7 @@ MENUS = [
     {
         "group": "구매 / 협력사",
         "menu_items": [
+            {"id": "order_plan",   "label": "발주 제안",          "icon": "ti-clipboard-check",   "url": "/order-plan"},
             {"id": "purchase",     "label": "구매 발주",          "icon": "ti-truck-delivery",    "url": "/purchase"},
             {"id": "suppliers",    "label": "협력사",             "icon": "ti-building-store",    "url": "/suppliers"},
             {"id": "calendar",     "label": "발주 캘린더",        "icon": "ti-calendar",          "url": "/calendar"},
@@ -228,6 +230,11 @@ def stock_map():
 @app.route("/risk-radar")
 def risk_radar():
     return render_template("risk_radar.html", **get_menu_context("risk_radar"), page_title="납기 리스크 레이더")
+
+@app.route("/order-plan")
+def order_plan():
+    return render_template("order_plan.html", **get_menu_context("order_plan"),
+                           page_title="발주 제안")
 
 @app.route("/forecast")
 def forecast():
@@ -481,6 +488,14 @@ def _ctx_lot():
             "rows": rows,
             "summary": db.lot_summary(rows, base),
         }
+    finally:
+        conn.close()
+
+
+def _ctx_order_plan():
+    conn = db.connect()
+    try:
+        return db.order_plan_source(conn)
     finally:
         conn.close()
 
@@ -1176,6 +1191,15 @@ def _rows(body, key):
     return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
 
 
+def _ids(body, key):
+    """본문에서 **번호 목록**. `_rows` 는 dict 만 남기므로 문자열 목록이
+    통째로 걸러진다 — 발주 제안 승인이 '고른 제안이 없습니다' 로 막혔다."""
+    v = body.get(key)
+    if not isinstance(v, list):
+        return []
+    return [str(x).strip() for x in v if isinstance(x, (str, int)) and str(x).strip()]
+
+
 def _map(body, key):
     """본문에서 **줄번호 → 값** 묶음. `_rows` 와 달리 dict 를 받는다.
 
@@ -1501,6 +1525,99 @@ def api_safety_preview():
         conn.close()
 
 
+# ── 등급별 발주 정책 — A 수동 · B 승인 · C 자동 ─────────────
+@app.route("/api/plan/candidates")
+def api_plan_candidates():
+    """지금 제안을 올려야 하는 자재 (저장 안 함)."""
+    conn = db.connect()
+    try:
+        return jsonify({"ok": True, "data": db.plan_candidates(conn)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/plan/make", methods=["POST"])
+def api_plan_make():
+    """제안 생성 — C등급은 이 자리에서 발주까지 나간다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.make_plans(conn, _entry_date(body),
+                                    body.get("EP_ID"), body.get("P_IDs"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/plan/approve", methods=["POST"])
+def api_plan_approve():
+    """제안 승인 → 실제 발주. A(수동)·B(승인)가 같은 길을 쓴다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.approve_plans(
+            conn, _entry_date(body), _ids(body, "ids"), body.get("EP_ID"),
+            _map(body, "qty"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/plan/reject", methods=["POST"])
+def api_plan_reject():
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.reject_plans(conn, _entry_date(body), _ids(body, "ids"),
+                                      body.get("EP_ID"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/plan/hold", methods=["POST"])
+def api_plan_hold():
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.hold_plans(conn, _entry_date(body), _ids(body, "ids"),
+                                    body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/plan/policy", methods=["POST"])
+def api_plan_policy():
+    """품목별 정책 예외 — 걸거나(policy) 거두거나(clear)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        if body.get("clear"):
+            out, errors = db.clear_order_policy(conn, body.get("P_ID"), body.get("EP_ID"))
+        else:
+            out, errors = db.set_order_policy(
+                conn, _entry_date(body), body.get("P_ID"), body.get("policy"),
+                body.get("reason"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
 @app.route("/api/safety/apply", methods=["POST"])
 def api_safety_apply():
     """안전재고 일괄 갱신 실행 — Safe_tb 갱신 + Update_Log_tb 이력."""
@@ -1633,6 +1750,7 @@ EMBED_CONTEXT = {
     "stock_count":  _ctx_stock_count,
     "site_return":  _ctx_site_return,
     "lot":          _ctx_lot,
+    "order_plan":   _ctx_order_plan,
     "forecast":     _ctx_forecast,
     "calendar":     _ctx_calendar,
     "risk_radar":   _ctx_risk_radar,

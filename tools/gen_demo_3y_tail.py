@@ -200,4 +200,32 @@ if row:
 
 con.commit()
 print("\n마무리 완료 — %s (%.1fMB)" % (DBF, os.path.getsize(DBF) / 1024 / 1024))
+
+# ── 등급별 발주 정책을 한 바퀴 돌린다 ──────────────────────
+# 마지막 달 발주를 비워 뒀으므로(gen_demo_3y.py 6c) 지금 '발주해야 하는'
+# 자재가 쌓여 있다. 제안 엔진이 그걸 집어 **C등급은 자동으로 발주까지** 내고
+# A·B 는 대기로 남긴다 — 화면을 열면 바로 그 상태가 보인다.
+D.DB_PATH = DBF
+_pc = D.connect()
+_boss = [r[0] for r in _pc.execute("SELECT EP_ID FROM User_tb WHERE Position='부장'")]
+_cand = D.plan_candidates(_pc)
+_date = _cand["date"]
+# 품목별 예외 두 건 — 등급 기본값을 사람이 덮는 경우를 보여 준다
+_auto = [i for i in _cand["items"] if i["policy"] == "자동"]
+_appr = [i for i in _cand["items"] if i["policy"] == "승인"]
+if _auto:
+    D.set_order_policy(_pc, _date, _auto[-1]["P_ID"], "수동",
+                       "거래처가 수기 주문만 받습니다 — 자동 발주에서 뺍니다", _boss[0])
+if _appr:
+    D.set_order_policy(_pc, _date, _appr[-1]["P_ID"], "자동",
+                       "소모성 자재라 승인 없이 자동으로 돌립니다", _boss[0])
+_res, _e = D.make_plans(_pc, _date)
+if _e:
+    print("발주 제안 생성 실패:", _e)
+else:
+    print("발주 제안 %d건 — 자동 발주 %d · 대기 %d (발주서 %d장)"
+          % (len(_res["made"]), len(_res["auto"]), len(_res["wait"]),
+             len(_res.get("placed") or [])))
+_pc.commit(); _pc.close()
+
 con.close()

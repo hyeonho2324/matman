@@ -68,6 +68,7 @@ WIPE = ["Transaction_tb", "Lot_tb", "Purchase_Change_tb", "Purchase_Detail_tb",
         "Purchase_Header_tb", "Production_tb", "Disburse_Req_Item_tb",
         "Disburse_Req_tb", "Inbound_Claim_tb", "Site_Return_tb",
         "Stock_Count_Item_tb", "Stock_Count_tb", "Update_Log_tb",
+        "Order_Plan_tb", "Order_Policy_tb",
         "Price_Log_tb", "Safe_Override_tb"]
 for t in WIPE:
     cur.execute("DELETE FROM %s" % t)
@@ -505,6 +506,14 @@ for m in MONTHS:
                 prod_rows += 1
 
     # ── 6c. 발주 (조건 7) ─────────────────────────────────
+    # ⚠️ **마지막 달은 발주를 돌리지 않는다.** 여기서 전부 발주해 버리면
+    #    오늘 기준으로 '발주해야 하는 자재' 가 한 종도 안 남아서, 등급별
+    #    발주 정책(A 수동 · B 승인 · C 자동) 화면이 텅 빈 채로 열린다.
+    #    마지막 한 바퀴는 **사람이 아니라 제안 엔진이 내는 것**으로 둔다 —
+    #    마무리 스크립트가 make_plans() 를 돌려 그 상태를 만든다.
+    if m == MONTHS[-1]:
+        continue
+
     ord_day = wd(m, 7)
     if ord_day > END:
         ord_day = END
@@ -517,7 +526,10 @@ for m in MONTHS:
         trigger = (s["Sf_Num"] or 0) + DAILY[pid] * lead
         if have > trigger:
             continue
-        target = (s["Sf_Num"] or 0) + DAILY[pid] * (lead + 75)
+        # 한 번에 75일치를 채우면 자재당 발주가 두세 달에 한 번뿐이라,
+        # 어느 시점을 찍어도 '지금 발주할 자재' 가 몇 종 안 된다(7종이었다).
+        # 30일치로 줄이면 발주가 자주 돌고 재고도 과하게 쌓이지 않는다.
+        target = (s["Sf_Num"] or 0) + DAILY[pid] * (lead + 30)
         q = D.round_order_qty(target - have, p["MinOrderQty"], p["PkgUnit"])
         if q > 0:
             pend.setdefault(p["BRN"], []).append((pid, q, lead))

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><i class="ti ti-clipboard-check" style="margin-right:6px;color:var(--fill-accent)"></i>발주 제안</div>
+    <div class="page-subtitle">등급이 발주 방식을 정합니다 — A 직접 확인 · B 승인 · C 자동</div>
+  </div>
+  <div class="page-actions">
+      <a href="/forecast" class="btn"><i class="ti ti-chart-line"></i>수요 예측</a>
+      <a href="/purchase" class="btn"><i class="ti ti-truck-delivery"></i>구매 발주</a>
+      <a href="/safety-stock" class="btn"><i class="ti ti-shield-check"></i>안전재고</a>
+  </div>
+</div>
+
+<!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
+<div style="flex:1;display:flex;flex-direction:column;gap:14px">
+  <div class="embed-box">
+    <iframe
+      src="/embed/order_plan" class="embed-frame"
+      title="발주 제안">
+    </iframe>
+  </div>
+</div>
+{% endblock %}

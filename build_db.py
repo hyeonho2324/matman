@@ -411,6 +411,44 @@ CREATE TABLE Stock_Count_Item_tb (
     PRIMARY KEY (Count_ID, Line)
 );
 
+DROP TABLE IF EXISTS Order_Plan_tb;
+CREATE TABLE Order_Plan_tb (
+    Plan_ID    TEXT PRIMARY KEY,   -- 제안번호 OP+YYYYMMDD+4자리
+    Plan_Date  TEXT NOT NULL,      -- 제안이 만들어진 날
+    P_ID       TEXT NOT NULL,
+    Grade      TEXT,               -- 제안 시점 등급 (A/B/C) — 나중에 바뀌어도 근거는 남는다
+    Policy     TEXT NOT NULL,      -- 적용된 정책 : 수동 / 승인 / 자동
+    -- ⚠️ 근거를 제안 시점 값으로 **박아 둔다**. 나중에 재고가 변해도
+    --    "그때 왜 이만큼 제안했는가" 를 설명할 수 있어야 한다.
+    --    (불출 요청의 Need_Qty·Site_Qty·Stock_Qty 와 같은 생각)
+    Qty        INTEGER NOT NULL,   -- 제안 수량 (MOQ·포장단위 올림 적용)
+    Unit_Price REAL,               -- 제안 시점 단가
+    Amount     INTEGER,            -- 수량 x 단가
+    Stock_Qty  INTEGER,            -- 제안 시점 현재고
+    Safe_Qty   INTEGER,            -- 제안 시점 안전재고
+    Daily      REAL,               -- 일평균 사용량
+    Lead_Time  INTEGER,            -- 계획 리드타임
+    Deadline   INTEGER,            -- 발주 마감까지 남은 일수 (음수면 이미 늦음)
+    Status     TEXT NOT NULL,      -- 대기 / 발주 / 반려 / 보류 / 취소
+    Auto_Block TEXT,               -- 자동이 멈춘 이유 (한도 초과 등)
+    H_ID       TEXT,               -- 발주로 넘어간 번호
+    EP_ID      TEXT,               -- 처리자 (자동이면 NULL)
+    Done_Date  TEXT,
+    Note       TEXT
+);
+
+DROP TABLE IF EXISTS Order_Policy_tb;
+CREATE TABLE Order_Policy_tb (
+    -- 등급이 정한 기본 정책을 **품목별로 덮는다.** C등급인데 금액이 커서
+    -- 자동을 끄고 싶거나, B등급인데 거래처가 까다로워 손으로만 넣고 싶을 때.
+    -- 안전재고 수동 조정(Safe_Override_tb)과 같은 꼴 — 사유 없이는 못 건다.
+    P_ID     TEXT PRIMARY KEY,
+    Policy   TEXT NOT NULL,        -- 수동 / 승인 / 자동
+    Reason   TEXT NOT NULL,
+    EP_ID    TEXT,
+    Set_Date TEXT
+);
+
 DROP TABLE IF EXISTS FG_tb;
 CREATE TABLE FG_tb (
     FG_ID    TEXT PRIMARY KEY,         -- 완제품 코드 FG001~FG015
