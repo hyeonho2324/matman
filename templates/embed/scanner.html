@@ -147,8 +147,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 
 </div>
 <script>
-const LOTS = {{ scan_lots|tojson }};
-const POS  = {{ scan_po|tojson }};
+// ⚠️ LOT 3,426행에 품명·규격·등급·공급사를 되풀이해 실으면 payload 가 1.3MB 가
+//    된다. 자재(201)·구역(5) 조회표를 따로 받아 **여기서 합친다** — 입출고 이력이
+//    쓴 방법 그대로다. 합쳐 두면 아래 코드는 전과 똑같이 l.P_N 을 읽는다.
+const LOTS  = {{ scan_lots|tojson }};
+const PRODS = {{ scan_prods|tojson }};
+const LOCS  = {{ scan_locs|tojson }};
+const POS   = {{ scan_po|tojson }};
+(function(){
+  const pm = {}, lm = {};
+  PRODS.forEach(function(p){ pm[p.P_ID] = p; });
+  LOCS.forEach(function(l){ lm[l.Loc_ID] = l.loc_name; });
+  LOTS.forEach(function(l){
+    const p = pm[l.P_ID];
+    if(p){ l.P_N = p.P_N; l.Spec = p.Spec; l.grade = p.grade; l.supplier = p.supplier; }
+    l.loc_name = lm[l.Loc_ID] || l.loc_name || null;
+  });
+})();
 const hist = [];
 const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

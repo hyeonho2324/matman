@@ -622,7 +622,11 @@ def abc_summary(rows):
 #    3년치가 쌓이자 입출고 이력이 **4.7MB** 가 됐다 — 폰에서 못 연다.
 #    월별 집계(추이 차트)는 작으니 전 기간 그대로 두고 **표만** 자른다.
 #    실제 ERP 도 목록은 최근 구간부터 보여준다.
-LIST_MONTHS = 12
+# 목록(행)을 몇 개월치만 내려보낼지. 월별 집계(추이 차트)는 전 기간 그대로다.
+# 12개월이었는데 재발주 주기를 30일치로 줄이면서 LOT 이 2,163 → 3,426 으로 늘어
+# 입출고 이력이 1.7MB 로 되돌아갔다. 6개월로 좁힌다 — 표는 최근을 보고 차트는
+# 46개월을 본다. **잔여가 남은 LOT 은 아무리 오래됐어도 반드시 들어간다.**
+LIST_MONTHS = 6
 
 
 def list_since(conn, months=None):
@@ -4038,10 +4042,15 @@ def scan_orders(conn):
     """ % (PENDING_WHERE, PENDING_JOIN))
 
 
-def workbench(conn):
+def workbench(conn, scan_all=False):
+    """입고 · 불출 · 스캐너가 함께 쓰는 작업대 데이터.
+
+    `scan_all` 은 **스캐너만** 켠다. 스캐너는 아무 바코드나 읽어야 하므로 소진된
+    LOT 과 지난 발주까지 전건이 필요하지만, 입고·불출 화면은 잔여 LOT 만 쓴다.
+    """
     base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
     _since = list_since(conn)          # 목록은 최근 구간만 (LIST_MONTHS)
-    scan_po = scan_orders(conn)            # 스캐너가 발주 바코드를 읽을 때 쓴다
+    scan_po = scan_orders(conn) if scan_all else []   # 스캐너가 발주 바코드를 읽을 때
 
     # 입고: 발주 → 입고 실적 (LOT 채번 규칙 확인용)
     recent_po = _rows(conn, """
@@ -4108,20 +4117,47 @@ def workbench(conn):
     """)
 
     # 스캐너: 조회 대상 (LOT / 품번)
-    scan_lots = _rows(conn, f"""
-        SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date,
-               lo.Loc_N AS loc_name, l.P_Qty,
-               l.P_Qty - COALESCE(x.out_qty,0) AS remain,
-               c.CP_N AS supplier, l.H_ID,
-               s.Sf_Lv AS grade
-          FROM Lot_tb l
-          JOIN Product_tb p ON l.P_ID = p.P_ID
-          LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
-          LEFT JOIN Company_tb c   ON p.BRN = c.BRN
-          LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
-          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
-         ORDER BY l.Lot_Date DESC
-    """)
+    # ⚠️ **스캐너만 전건이 필요하다.** 입고·불출 화면은 이 표를 `remain > 0` 으로
+    #    걸러서만 쓰는데(잔여 LOT 자동완성·FIFO 묶음), 전건을 보내면 3,426행 중
+    #    301행만 쓰고 나머지 773KB 를 버린다. 화면마다 필요한 만큼만 보낸다.
+    # ⚠️ 전건을 보낼 때는 **자재 정보를 행마다 되풀이하지 않는다.** 품명·규격·
+    #    등급·공급사는 자재 단위(201행)·구역 단위(5행)라 LOT 3,426행에 붙이면
+    #    그만큼이 중복이다. 조회표를 따로 내려보내고 화면이 합친다
+    #    (입출고 이력에서 쓴 방법 그대로).
+    if scan_all:
+        scan_lots = _rows(conn, f"""
+            SELECT l.Lot_ID, l.P_ID, l.Lot_Date, l.Loc_ID, l.H_ID, l.P_Qty,
+                   l.P_Qty - COALESCE(x.out_qty,0) AS remain
+              FROM Lot_tb l
+              LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty
+                           FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+             ORDER BY l.Lot_Date DESC
+        """)
+        scan_prods = _rows(conn, """
+            SELECT p.P_ID, p.P_N, p.Spec, c.CP_N AS supplier, s.Sf_Lv AS grade
+              FROM Product_tb p
+              LEFT JOIN Company_tb c ON p.BRN = c.BRN
+              LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+        """)
+        scan_locs = _rows(conn, "SELECT Loc_ID, Loc_N AS loc_name FROM Location_tb")
+    else:
+        # 입고·불출은 잔여 LOT 만 쓴다 (301행) — 다 붙여 보내도 가볍다
+        scan_prods, scan_locs = [], []
+        scan_lots = _rows(conn, f"""
+            SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date,
+                   lo.Loc_N AS loc_name, l.P_Qty,
+                   l.P_Qty - COALESCE(x.out_qty,0) AS remain,
+                   c.CP_N AS supplier, l.H_ID, s.Sf_Lv AS grade
+              FROM Lot_tb l
+              JOIN Product_tb p ON l.P_ID = p.P_ID
+              LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
+              LEFT JOIN Company_tb c   ON p.BRN = c.BRN
+              LEFT JOIN Safe_tb s      ON p.P_ID = s.P_ID
+              LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty
+                           FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+             WHERE l.P_Qty - COALESCE(x.out_qty,0) > 0
+             ORDER BY l.Lot_Date DESC
+        """)
 
     # 입고 등록 대상 — 아직 입고되지 않은 발주.
     pending = pending_po(conn)
@@ -4145,6 +4181,8 @@ def workbench(conn):
         "disburse": disburse,
         "approvals": approvals,
         "scan_lots": scan_lots,
+        "scan_prods": scan_prods, "scan_locs": scan_locs,
+        # 발주 전건 조회표도 스캐너만 쓴다 (입고·불출은 pending / recent_po 를 본다)
         "scan_po": scan_po,
         "workers": workers,
         "pending": pending,

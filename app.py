@@ -619,6 +619,15 @@ def _ctx_approval():
         conn.close()
 
 
+def _ctx_scanner():
+    """스캐너만 **전건** 조회표가 필요하다 — 소진된 LOT·지난 발주도 읽는다."""
+    conn = db.connect()
+    try:
+        return db.workbench(conn, scan_all=True)
+    finally:
+        conn.close()
+
+
 def _ctx_workbench():
     """입고/불출/스캐너 공용 참조 데이터.
     세 화면이 같은 조회를 하므로 한 번만 읽어 재사용한다."""
@@ -1764,7 +1773,7 @@ EMBED_CONTEXT = {
     # 입출고 작업 화면 3종은 같은 참조 데이터를 공유한다
     "inbound":      _ctx_workbench,
     "disburse":     _ctx_workbench,
-    "scanner":      _ctx_workbench,
+    "scanner":      _ctx_scanner,
 }
 
 
