@@ -214,7 +214,9 @@ tbody tr.on{background:var(--bg-ac)}
 <script>
 const ROWS  = {{ rows|tojson }};
 const SUM   = {{ summary|tojson }};   // LOT 현황 등 시점 스냅샷 지표
-const LOTS  = {{ lots|tojson }};
+// ⚠️ LOT 추적표는 **미리 싣지 않는다.** 655행 507KB 인데 행을 눌러야 쓰는
+//    데이터다. 누를 때 한 건씩 받아 여기 담아 둔다 (두 번째부터는 바로 그린다).
+const LOTS  = [];
 const MON   = {{ monthly|tojson }};
 const TXM   = {{ tx_meta|tojson }};   // 거래 유형 7종 정의
 const PRODS = {{ prods|tojson }};   // P_ID → {P_N, Spec, P_Price, cat_name, supplier, grade}
@@ -403,8 +405,36 @@ function pick(tid){
   sel=tid;
   const x=ROWS.filter(function(v){return v.T_ID===tid;})[0];
   render();
+  if(!x) return;
   const lot=LOTMAP[x.Lot_ID];
-  if(!lot) return;
+  if(lot){ drawPick(x, lot); return; }
+
+  // 아직 안 받은 LOT — 그 한 건만 받아 온다. 도착 전에 다른 행을 눌러도
+  // 깨지지 않게, 돌아왔을 때 아직 그 행이 선택돼 있는지 확인하고 그린다.
+  document.getElementById('dt').textContent = x.Lot_ID;
+  document.getElementById('ds').textContent = esc(x.P_ID);
+  document.getElementById('db').innerHTML =
+    '<div class="pn"><div class="pnh"><i class="ti ti-route"></i>'
+  + '<span class="pnh-t">LOT 추적</span></div>'
+  + '<div style="padding:14px;color:var(--txt3);font-size:11px">불러오는 중입니다...</div></div>';
+  fetch('/api/lot-trace?id=' + encodeURIComponent(x.Lot_ID))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok || !d.data) throw 0;
+      LOTMAP[x.Lot_ID] = d.data;
+      if(sel === tid) drawPick(x, d.data);
+    })
+    .catch(function(){
+      if(sel !== tid) return;
+      document.getElementById('db').innerHTML =
+        '<div class="pn"><div class="pnh"><span class="pnh-t">LOT 추적</span></div>'
+      + '<div style="padding:14px;color:var(--dn);font-size:11px">'
+      + 'LOT 정보를 불러오지 못했습니다.</div></div>';
+    });
+}
+
+function drawPick(x, lot){
+  const tid = x.T_ID;
 
   // 최초 입고는 위에서 Lot_tb 기준으로 따로 그리므로 여기선 뺀다(중복 방지).
   // 그 외 모든 거래(불출·반납·불량·폐기·이동·교환)를 시간순으로 보여준다.

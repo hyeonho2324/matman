@@ -230,12 +230,33 @@ function drawMonth(){
   document.getElementById('weeks').innerHTML = html;
 }
 
+// ⚠️ 날짜별 상세는 **미리 싣지 않는다.** 46개월치가 830KB 인데 날짜를 눌러야
+//    쓰는 데이터다. 누를 때 그 하루만 받아 담아 둔다.
+const DAY = {};
+
 function pick(key){
   sel = key;
   drawMonth();
+  if(DAY[key]){ drawDay(key, DAY[key]); return; }
+  drawDay(key, null);                       // 머리글은 집계로 먼저 그린다
+  fetch('/api/calendar-day?d=' + encodeURIComponent(key))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok) throw 0;
+      DAY[key] = d.data;
+      if(sel === key) drawDay(key, d.data);
+    })
+    .catch(function(){
+      if(sel !== key) return;
+      document.getElementById('db').innerHTML =
+        '<div class="pn"><div class="empty">그날 내역을 불러오지 못했습니다.</div></div>';
+    });
+}
+
+function drawDay(key, data){
   const info = CAL.days[key] || {};
-  const pos = CAL.po_list[key] || [];
-  const ins = CAL.in_list[key] || [];
+  const pos = data ? (data.po || []) : [];
+  const ins = data ? (data['in'] || []) : [];
   const dt = new Date(+key.slice(0,4), +key.slice(5,7)-1, +key.slice(8,10));
   const dowName = '일월화수목금토'[dt.getDay()];
 
@@ -275,7 +296,12 @@ function pick(key){
       + '</div>';
   }
 
-  if(!html) html = '<div class="pn"><div class="empty">이 날짜에는 발주도 입고도 없습니다.</div></div>';
+  if(!html){
+    const empty = !(info.po || info['in']);
+    html = '<div class="pn"><div class="empty">'
+         + (data || empty ? '이 날짜에는 발주도 입고도 없습니다.' : '불러오는 중입니다...')
+         + '</div></div>';
+  }
   document.getElementById('db').innerHTML = html;
 }
 

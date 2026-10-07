@@ -685,11 +685,15 @@ def tx_locations(conn):
     return {r["Loc_ID"]: r["Loc_N"] for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
 
 
-def lot_trace(conn, since=None):
+def lot_trace(conn, since=None, lot_id=None):
     """LOT별 전체 이력 — 발주→입고→불출들→잔량. 추적(traceability)용.
 
     since 를 주면 **그 구간의 거래에 걸린 LOT 만** 돌려준다. 입출고 이력이
-    표를 자르면 그 LOT 정보도 같이 줄어야 한다."""
+    표를 자르면 그 LOT 정보도 같이 줄어야 한다.
+
+    `lot_id` 를 주면 **그 LOT 하나만** 돌려준다. 입출고 이력 화면이 행을 누를 때
+    쓰는 길이다 — 655행(507KB)을 미리 싣는 대신 한 건씩 받는다.
+    """
     lots = _rows(conn, f"""
         SELECT l.Lot_ID, l.P_ID, p.P_N, p.Spec, l.Lot_Date, l.P_Qty,
                l.Loc_ID, lo.Loc_N AS loc_name, l.H_ID,
@@ -713,23 +717,27 @@ def lot_trace(conn, since=None):
           LEFT JOIN User_tb u ON l.EP_ID = u.EP_ID
           LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
           LEFT JOIN ({site_flow()}) sf ON sf.Lot_ID = l.Lot_ID
-         WHERE (? IS NULL OR l.Lot_Date >= ?
+         WHERE (? IS NULL OR l.Lot_ID = ?)
+           AND (? IS NULL OR ? IS NOT NULL OR l.Lot_Date >= ?
                 OR l.Lot_ID IN (SELECT Lot_ID FROM Transaction_tb WHERE T_Date >= ?))
-    """, (since, since, since))
+    """, (lot_id, lot_id, since, lot_id, since, since))
     # 생산 투입 이력 (그 LOT이 어느 완제품에 쓰였나)
     used = {}
+    # ⚠️ 한 LOT 만 볼 때 생산 전건(9,723행)을 훑지 않는다
+    _uw = " WHERE Lot_ID = ?" if lot_id else ""
     for r in _rows(conn, """
         SELECT Lot_ID, FG_ID, Work_Order, Prod_Date, SUM(Prod_Qty) qty
-          FROM Production_tb GROUP BY Lot_ID, FG_ID, Work_Order, Prod_Date
+          FROM Production_tb%s GROUP BY Lot_ID, FG_ID, Work_Order, Prod_Date
          ORDER BY Prod_Date
-    """):
+    """ % _uw, (lot_id,) if lot_id else ()):
         used.setdefault(r["Lot_ID"], []).append(r)
     # 화면에는 LOT당 상위 몇 건만 보여주므로 전량(4,535건)을 실어 보내지 않는다.
     # 전부 담으면 응답이 500KB 이상 불어난다.
     SHOW = 6
     for l in lots:
         u = used.get(l["Lot_ID"], [])
-        l["used_in"] = u[:SHOW]
+        # 부모 키를 줄마다 되풀이하지 않는다 (LOT 하나에 6건씩 곱해진다)
+        l["used_in"] = [{k: v for k, v in x.items() if k != "Lot_ID"} for x in u[:SHOW]]
         l["used_total"] = len(u)
         l["used_fgs"] = sorted({x["FG_ID"] for x in u})
         l["used_qty"] = sum(x["qty"] or 0 for x in u)
@@ -753,8 +761,32 @@ def tx_monthly(conn):
     """)
 
 
+def lot_counts(conn, since=None):
+    """그 구간 LOT 의 보유/소진 건수만 센다.
+
+    ⚠️ 입출고 이력의 KPI 는 이 세 숫자만 쓴다. 655행짜리 추적표를 화면에 실어
+       보내 길이를 재던 것을 SQL 집계로 바꿨다 — 같은 규칙(`since` + 잔여가
+       남은 LOT 은 포함)을 쓰므로 숫자가 달라지지 않는다.
+    """
+    r = conn.execute(f"""
+        SELECT COUNT(*) AS lot_total,
+               SUM(CASE WHEN l.P_Qty - COALESCE(x.out_qty,0) > 0 THEN 1 ELSE 0 END) AS lot_live
+          FROM Lot_tb l
+          LEFT JOIN ({lot_flow()}) x ON x.Lot_ID = l.Lot_ID
+         WHERE (? IS NULL OR l.Lot_Date >= ?
+                OR l.Lot_ID IN (SELECT Lot_ID FROM Transaction_tb WHERE T_Date >= ?))
+    """, (since, since, since)).fetchone()
+    tot, live = r["lot_total"] or 0, r["lot_live"] or 0
+    return {"lot_total": tot, "lot_live": live, "lot_done": tot - live}
+
+
 def tx_summary(rows, lots, prods=None):
+    """`lots` 는 LOT 목록이거나 `lot_counts()` 가 낸 건수 묶음이다."""
     prods = prods or {}
+    cnt = lots if isinstance(lots, dict) else {
+        "lot_total": len(lots),
+        "lot_live": len([l for l in lots if (l["remain"] or 0) > 0]),
+        "lot_done": len([l for l in lots if (l["remain"] or 0) <= 0])}
     price = lambda r: (prods.get(r["P_ID"], {}).get("P_Price") or 0)
     ins = [r for r in rows if r["T_Type"] == "입고"]
     outs = [r for r in rows if r["T_Type"] == "불출"]
@@ -769,9 +801,9 @@ def tx_summary(rows, lots, prods=None):
         "out_amt": sum((r["T_Num"] or 0) * price(r) for r in outs),
         "date_from": min(dates) if dates else "-",
         "date_to": max(dates) if dates else "-",
-        "lot_total": len(lots),
-        "lot_live": len([l for l in lots if (l["remain"] or 0) > 0]),
-        "lot_done": len([l for l in lots if (l["remain"] or 0) <= 0]),
+        "lot_total": cnt["lot_total"],
+        "lot_live": cnt["lot_live"],
+        "lot_done": cnt["lot_done"],
         "workers": len({r["worker"] for r in rows if r["worker"]}),
     }
 
@@ -2594,8 +2626,13 @@ def forecast_summary(rows, base, span):
 
 
 # ── 발주 캘린더 화면 ─────────────────────────────────────────
-def calendar_data(conn):
-    """날짜별 발주·입고 집계 + 각 날짜의 상세 목록."""
+def calendar_data(conn, day=None):
+    """날짜별 발주·입고 집계. `day` 를 주면 **그날 상세만** 함께 돌려준다.
+
+    ⚠️ 46개월치 날짜 상세를 미리 실으면 830KB 다(입고 목록만 715KB). 달력은
+       한 번에 한 달을 보고 상세는 날짜를 눌러야 쓰므로, 격자에 필요한 집계만
+       보내고 상세는 `/api/calendar-day` 로 한 날씩 받는다.
+    """
     # 날짜별 발주
     po_day = _rows(conn, """
         SELECT h.P_Date AS d,
@@ -2622,9 +2659,10 @@ def calendar_data(conn):
     for r in in_day:
         days.setdefault(r["d"], {})["in"] = {"cnt": r["cnt"], "amount": r["amount"], "qty": r["qty"]}
 
-    # 발주 상세 (날짜 클릭용)
+    # 발주 상세 (날짜 클릭용) — 그 하루치만
     po_list = {}
-    for r in _rows(conn, """
+    _dw = " WHERE h.P_Date = ?" if day else ""
+    for r in ([] if day is None else _rows(conn, """
         SELECT h.P_Date AS d, h.H_ID, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
                COUNT(*) AS line_cnt, SUM(pd.P_Qty * p.P_Price) AS amount,
                MIN(l.Lot_Date) AS recv_date
@@ -2633,14 +2671,16 @@ def calendar_data(conn):
           JOIN Product_tb p          ON pd.P_ID = p.P_ID
           LEFT JOIN Company_tb c     ON h.BRN = c.BRN
           LEFT JOIN Lot_tb l         ON l.H_ID = h.H_ID
+         %s
          GROUP BY h.P_Date, h.H_ID, c.CP_N, c.Is_Foreign
          ORDER BY h.P_Date, h.H_ID
-    """):
+    """ % _dw, (day,) if day else ())):
         po_list.setdefault(r["d"], []).append(r)
 
-    # 입고 상세
+    # 입고 상세 — 역시 그 하루치만
     in_list = {}
-    for r in _rows(conn, """
+    _lw = " WHERE l.Lot_Date = ?" if day else ""
+    for r in ([] if day is None else _rows(conn, """
         SELECT l.Lot_Date AS d, l.Lot_ID, l.P_ID, p.P_N, l.P_Qty,
                lo.Loc_N AS loc_name, c.CP_N AS supplier, l.H_ID,
                CAST(julianday(l.Lot_Date) - julianday(h.P_Date) AS INT) AS lead_days,
@@ -2650,8 +2690,9 @@ def calendar_data(conn):
           LEFT JOIN Location_tb lo ON l.Loc_ID = lo.Loc_ID
           LEFT JOIN Company_tb c   ON p.BRN = c.BRN
           LEFT JOIN Purchase_Header_tb h ON l.H_ID = h.H_ID
+         %s
          ORDER BY l.Lot_Date, l.Lot_ID
-    """):
+    """ % _lw, (day,) if day else ())):
         in_list.setdefault(r["d"], []).append(r)
 
     all_dates = sorted(days)

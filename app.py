@@ -371,19 +371,19 @@ def _ctx_tx_history():
     try:
         since = db.list_since(conn)
         rows = db.transaction_list(conn, since)
-        lots = db.lot_trace(conn, since)
+        # ⚠️ LOT 추적표(655행 · 507KB)는 **싣지 않는다.** 행을 눌러야 쓰는
+        #    데이터라 그때 /api/lot-trace 로 한 건씩 받는다 (LOT 이력 모달과 같은 방법).
         prods = db.tx_products(conn)
         return {
             "cut": {"since": since, "months": db.LIST_MONTHS,
                     "total": conn.execute(
                         "SELECT COUNT(*) FROM Transaction_tb").fetchone()[0]} if since else None,
             "rows": rows,
-            "lots": lots,
             "prods": prods,
             "locs": db.tx_locations(conn),
             "monthly": db.tx_monthly(conn),
             "tx_meta": db.TX_META,
-            "summary": db.tx_summary(rows, lots, prods),
+            "summary": db.tx_summary(rows, db.lot_counts(conn, since), prods),
         }
     finally:
         conn.close()
@@ -1535,6 +1535,37 @@ def api_safety_preview():
 
 
 # ── 등급별 발주 정책 — A 수동 · B 승인 · C 자동 ─────────────
+@app.route("/api/calendar-day")
+def api_calendar_day():
+    """그 날짜의 발주·입고 목록 — 달력이 날짜를 누를 때 받는다."""
+    d = (request.args.get("d") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", d):
+        return jsonify({"ok": False, "errors": ["날짜가 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        cal = db.calendar_data(conn, d)
+        return jsonify({"ok": True, "data": {"po": cal["po_list"].get(d, []),
+                                             "in": cal["in_list"].get(d, [])}})
+    finally:
+        conn.close()
+
+
+@app.route("/api/lot-trace")
+def api_lot_trace():
+    """LOT 한 건의 추적 정보 — 입출고 이력이 행을 누를 때 받는다."""
+    lid = (request.args.get("id") or "").strip()
+    if not re.match(r"^[A-Za-z0-9]{1,24}$", lid):
+        return jsonify({"ok": False, "errors": ["LOT 번호가 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        rows = db.lot_trace(conn, None, lid)
+        if not rows:
+            return jsonify({"ok": False, "errors": ["없는 LOT 번호입니다: %s" % lid]}), 404
+        return jsonify({"ok": True, "data": rows[0]})
+    finally:
+        conn.close()
+
+
 @app.route("/api/plan/candidates")
 def api_plan_candidates():
     """지금 제안을 올려야 하는 자재 (저장 안 함)."""
