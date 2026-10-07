@@ -1639,6 +1639,27 @@ def api_plan_hold():
         conn.close()
 
 
+@app.route("/api/setting", methods=["POST"])
+def api_setting():
+    """기준값 조정 — 지금은 자동 발주 한도 하나다.
+
+    누가 바꿀 수 있는지는 db 가 본다(결재 한도 안에서만 올릴 수 있다).
+    """
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.set_setting(
+            conn, _entry_date(body), body.get("key"), body.get("value"),
+            body.get("reason"), body.get("EP_ID"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/plan/policy", methods=["POST"])
 def api_plan_policy():
     """품목별 정책 예외 — 걸거나(policy) 거두거나(clear)."""

@@ -411,6 +411,20 @@ CREATE TABLE Stock_Count_Item_tb (
     PRIMARY KEY (Count_ID, Line)
 );
 
+DROP TABLE IF EXISTS Setting_tb;
+CREATE TABLE Setting_tb (
+    -- ⚠️ **최신 행이 현재값이다.** 설정을 한 칸에 덮어쓰면 "언제 누가 왜 올렸나"
+    --    가 사라진다. 단가(Price_Log_tb)·안전재고(Update_Log_tb)와 같은 모양으로
+    --    이력을 쌓고, 읽을 때 가장 최근 행을 본다.
+    Set_ID    TEXT PRIMARY KEY,   -- SET + YYYYMMDD + 4자리
+    Key       TEXT NOT NULL,      -- 'AUTO_MAX_AMT'
+    Value     TEXT NOT NULL,
+    Old_Value TEXT,
+    Reason    TEXT NOT NULL,
+    EP_ID     TEXT,
+    Set_Date  TEXT NOT NULL
+);
+
 DROP TABLE IF EXISTS Order_Plan_tb;
 CREATE TABLE Order_Plan_tb (
     Plan_ID    TEXT PRIMARY KEY,   -- 제안번호 OP+YYYYMMDD+4자리

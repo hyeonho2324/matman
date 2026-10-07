@@ -14,7 +14,7 @@ python app.py
 > `requirements.txt` 의 waitress 가 로컬 서버로 쓰입니다 — 개발 서버는 큰 응답을
 > 간헐적으로 멈춰서 화면이 빈 채로 굳습니다.
 
-데이터베이스(`data/erp.db`, 25테이블 8,355행)는 받은 그대로 들어 있어 따로 만들 필요가
+데이터베이스(`data/erp.db`, 26테이블 8,355행)는 받은 그대로 들어 있어 따로 만들 필요가
 없습니다. `build_db.py` 는 원본 `ERP.accdb` · CSV 에서 이 파일을 다시 만드는 스크립트라
 원본(`../ProductManager`, `../DB_csv`)이 있어야 돌아갑니다.
 
@@ -96,12 +96,12 @@ LOT 잔여 = 입고 − (불출 + 불량 + 폐기 − 반납)
 ## 프로젝트 구조
 ```
 matman/
-├── app.py              Flask 앱 · 라우트 93개 (화면 26 · API 56 · 쓰기 43)
+├── app.py              Flask 앱 · 라우트 94개 (화면 26 · API 56 · 쓰기 43)
 ├── db.py               SQL 전부 — 화면은 SQL 을 모릅니다
 ├── build_db.py         원본 accdb·CSV → data/erp.db 재생성
 ├── barcode.py          Code128 / QR 생성 (외부 라이브러리 없음)
 ├── requirements.txt
-├── data/erp.db         25테이블 8,355행
+├── data/erp.db         26테이블 8,355행
 ├── static/
 │   ├── css/main.css    전역 스타일 (사이드바/헤더/카드/테이블)
 │   └── js/main.js      사이드바 토글 · 검색 · Toast

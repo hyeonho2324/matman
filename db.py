@@ -4427,6 +4427,127 @@ def create_purchase(conn, date, items):
 #    다시 읽어 처음부터 배분한다. 화면이 보낸 배분을 그대로 믿으면
 #    FIFO 를 건너뛰거나 잔여보다 많이 꺼내는 요청을 막을 방법이 없다.
 
+# ── 운영 설정 — 사람이 바꿀 수 있는 기준값 ──────────────────
+# 코드에 박아 둔 상수는 **현장이 못 바꾼다.** 자동 발주 한도처럼 "회사 사정에
+# 따라 올렸다 내렸다 해야 하는" 값은 설정으로 빼고, 바꾼 사람·사유·이력을 남긴다.
+#
+# ⚠️ 누가 바꿀 수 있나 — **자기 결재 한도까지만 올릴 수 있다.**
+#    자동 발주 한도를 500만으로 올린다는 건 "500만원짜리 발주가 아무 결재 없이
+#    나가도 좋다" 는 뜻이다. 그 책임을 질 수 있는 사람은 그 금액을 결재할 수
+#    있는 사람이다. 직급 이름을 따로 열거하지 않고 APPROVAL_LIMIT 을 그대로 쓴다.
+#      대리(300만) → 300만까지   과장(1,000만) → 1,000만까지
+#      차장(3,000만) → 3,000만까지   부장(무제한) → 제한 없음
+#      사원·주임 → 손댈 수 없다
+SETTING_ID_PRE = "SET"
+AUTO_MAX_DEFAULT = 3_000_000      # 설정이 없을 때의 값
+AUTO_MAX_CEIL = 100_000_000       # 아무리 부장이라도 이 위로는 못 간다
+SETTINGS = {
+    "AUTO_MAX_AMT": {
+        "label": "자동 발주 한도",
+        "unit": "원",
+        "default": AUTO_MAX_DEFAULT,
+        "min": 0,
+        "max": AUTO_MAX_CEIL,
+        "desc": "C등급 자동 발주가 사람 결재 없이 나갈 수 있는 한 건 금액입니다. "
+                "넘으면 자동이 멈추고 승인 대기로 돌아옵니다.",
+    },
+}
+
+
+def next_setting_id(conn, date):
+    pre = SETTING_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Set_ID) FROM Setting_tb WHERE Set_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def get_setting(conn, key):
+    """현재값 + 누가 언제 왜 그렇게 정했는지. 설정이 없으면 기본값."""
+    meta = SETTINGS.get(key) or {}
+    row = conn.execute(
+        "SELECT s.*, u.Name AS worker, u.Position AS worker_pos"
+        "  FROM Setting_tb s LEFT JOIN User_tb u ON s.EP_ID = u.EP_ID"
+        " WHERE s.Key = ? ORDER BY s.Set_Date DESC, s.Set_ID DESC LIMIT 1",
+        (key,)).fetchone()
+    if row is None:
+        return {"key": key, "value": meta.get("default"), "is_default": True,
+                "EP_ID": None, "worker": None, "worker_pos": None,
+                "Set_Date": None, "Reason": None, "Set_ID": None}
+    out = dict(row)
+    out["key"] = key
+    out["is_default"] = False
+    try:
+        out["value"] = int(float(out["Value"]))
+    except (TypeError, ValueError):
+        out["value"] = meta.get("default")
+    return out
+
+
+def setting_history(conn, key, limit=20):
+    return _rows(conn, """
+        SELECT s.*, u.Name AS worker, u.Position AS worker_pos
+          FROM Setting_tb s LEFT JOIN User_tb u ON s.EP_ID = u.EP_ID
+         WHERE s.Key = ? ORDER BY s.Set_Date DESC, s.Set_ID DESC LIMIT ?
+    """, (key, int(limit)))
+
+
+def auto_max(conn):
+    """자동 발주 한도 — 설정이 있으면 그 값, 없으면 기본값."""
+    v = get_setting(conn, "AUTO_MAX_AMT")["value"]
+    return AUTO_MAX_DEFAULT if v is None else int(v)
+
+
+def setting_editors(conn, key="AUTO_MAX_AMT"):
+    """이 설정을 바꿀 수 있는 사람 + 각자 올릴 수 있는 상한."""
+    out = []
+    for w in _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name"):
+        lim = approval_limit(w["Position"])
+        if lim == 0:
+            continue                      # 결재 권한이 없으면 한도도 못 건드린다
+        w["limit"] = lim                  # None 이면 무제한
+        w["cap"] = SETTINGS[key]["max"] if lim is None else lim
+        out.append(w)
+    return out
+
+
+def set_setting(conn, date, key, value, reason, ep_id):
+    """기준값을 바꾼다. **자기 결재 한도 안에서만** 올릴 수 있다."""
+    meta = SETTINGS.get(key)
+    if meta is None:
+        return None, ["바꿀 수 없는 설정입니다: %s" % key]
+    w, e = _approver(conn, ep_id, None, "%s 조정" % meta["label"])
+    if e:
+        return None, e
+    try:
+        v = int(float(str(value).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return None, ["%s는 숫자로 적어주세요." % meta["label"]]
+    if v < meta["min"] or v > meta["max"]:
+        return None, ["%s는 %s ~ %s %s 사이여야 합니다."
+                      % (meta["label"], format(meta["min"], ","),
+                         format(meta["max"], ","), meta["unit"])]
+    lim = approval_limit(w["Position"])
+    if lim is not None and v > lim:
+        return None, ["%s %s의 결재 한도(%s원)까지만 올릴 수 있습니다. "
+                      "한도를 %s원으로 두려면 그 금액을 결재할 수 있는 사람이 정해야 합니다."
+                      % (w["Name"], w["Position"], format(lim, ","), format(v, ","))]
+    reason = str(reason or "").strip()
+    if len(reason) < 5:
+        return None, ["왜 바꾸는지 5자 이상 적어주세요. 기준값은 근거가 남아야 합니다."]
+    cur = get_setting(conn, key)
+    if cur["value"] == v:
+        return None, ["지금 값과 같습니다 (%s%s)." % (format(v, ","), meta["unit"])]
+    sid = next_setting_id(conn, date)
+    with conn:
+        conn.execute(
+            "INSERT INTO Setting_tb (Set_ID, Key, Value, Old_Value, Reason, EP_ID, Set_Date)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (sid, key, str(v), str(cur["value"]), reason, w["EP_ID"], date))
+    return {"Set_ID": sid, "key": key, "old": cur["value"], "value": v,
+            "worker": w}, []
+
+
 # ══════════════════════════════════════════════════════════════
 #  등급별 발주 정책 — A 수동 · B 승인 · C 자동
 # ══════════════════════════════════════════════════════════════
@@ -4452,7 +4573,11 @@ POLICY_DESC = {
 # ⚠️ 자동이라고 무한히 돈을 쓰게 두지 않는다. 한 건이 이 금액을 넘으면
 #    자동을 **멈추고 승인 대기로 떨어뜨린다.** C등급은 싸고 흔한 자재라는
 #    전제 위에서 자동을 허용한 것이므로, 전제가 깨지면 사람이 봐야 한다.
-AUTO_MAX_AMT = 3_000_000
+#
+#    이 값은 **박아 두지 않는다** — `Setting_tb` 에서 읽고(`auto_max()`),
+#    결재 한도가 있는 사람이 자기 한도 안에서 조정한다. 아래는 설정이 없을
+#    때의 기본값이다.
+AUTO_MAX_AMT = AUTO_MAX_DEFAULT
 
 # 발주 마감까지 이만큼 남았으면 제안에 올린다. 마감이 지난 것(음수)도 당연히 올라온다.
 PLAN_LEAD_DAYS = 14
@@ -4542,6 +4667,7 @@ def plan_candidates(conn):
     """
     rows, base, _span = forecast_list(conn)
     pol = order_policy_map(conn)
+    amax = auto_max(conn)          # 설정값 — 사람이 조정할 수 있다
 
     # 이미 발주가 나가 있는 품목은 또 제안하지 않는다.
     # (현장에서 가장 흔한 사고가 발주한 줄 모르고 다시 발주하는 것)
@@ -4594,9 +4720,9 @@ def plan_candidates(conn):
             skipped.append(item)
             continue
         # 자동이라도 한도를 넘으면 멈춰 세운다
-        if item["policy"] == "자동" and (item["amount"] or 0) > AUTO_MAX_AMT:
+        if item["policy"] == "자동" and (item["amount"] or 0) > amax:
             item["auto_block"] = ("자동 한도 %s원을 넘습니다 — 승인으로 돌립니다"
-                                  % format(AUTO_MAX_AMT, ","))
+                                  % format(amax, ","))
         out.append(item)
     out.sort(key=lambda x: (x["deadline"], -(x["amount"] or 0)))
     return {"base": base, "date": _add_days(base, 1),
@@ -4738,7 +4864,12 @@ def order_plan_source(conn):
         "cand": cand["items"], "skipped": cand["skipped"],
         "base": cand["base"], "entry": cand["date"],
         "policy": ORDER_POLICY, "policy_desc": POLICY_DESC,
-        "policy_list": POLICY_LIST, "auto_max": AUTO_MAX_AMT,
+        "policy_list": POLICY_LIST,
+        "auto_max": auto_max(conn),
+        "auto_set": get_setting(conn, "AUTO_MAX_AMT"),
+        "auto_hist": setting_history(conn, "AUTO_MAX_AMT"),
+        "auto_meta": SETTINGS["AUTO_MAX_AMT"],
+        "auto_editors": setting_editors(conn),
         "lead_days": PLAN_LEAD_DAYS,
         "custom": sorted(custom, key=lambda c: c["P_ID"]),
         "workers": _plan_workers(conn),
