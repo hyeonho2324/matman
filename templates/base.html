@@ -6,6 +6,9 @@
   <title>{{ page_title }} · 자재관리 시스템</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/tabler-icons.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <!-- 없으면 브라우저가 페이지마다 /favicon.ico 를 찾다가 404 를 한 번씩 낸다.
+       SVG 라 탭·북마크·홈 화면 어느 크기로도 또렷하다. -->
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   {% block extra_head %}{% endblock %}
 </head>
 <body>

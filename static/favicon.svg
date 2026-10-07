@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 자재 상자 — 외부 라이브러리 없이 손으로 그린다 (barcode.py 와 같은 방침).
+       SVG 라 탭·북마크·홈 화면 어느 크기로도 또렷하다. -->
+  <rect width="32" height="32" rx="7" fill="#2a78d6"/>
+  <g fill="none" stroke="#fff" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M16 7.5 25 12v8l-9 4.5L7 20v-8z"/>
+    <path d="M7 12l9 4.5L25 12"/>
+    <path d="M16 16.5v8"/>
+  </g>
+</svg>

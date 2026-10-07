@@ -3,6 +3,7 @@
 > **관련 문서**
 > - [SAFE_STOCK_DESIGN.md](SAFE_STOCK_DESIGN.md) — 안전재고 전체 설계 명세 + 실측 검증
 > - [MEETING_LOG.md](MEETING_LOG.md) — 개발 회의록 11회분 + 결정사항 반영 여부 대조
+> - [DEMO.md](DEMO.md) — **시연 순서** (5분에 업무 한 바퀴 · 폰 카메라 · 예상 질문)
 > - [DEPLOY.md](DEPLOY.md) — 배포 가이드 (PythonAnywhere / GitHub+Render)
 > - [RETURN_QC_DESIGN.md](RETURN_QC_DESIGN.md) — 반납 검수 설계 명세
 
