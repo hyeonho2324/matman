@@ -55,6 +55,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .ev-in{background:var(--bg-ok);color:#1D6E52}
 .ev b{font-weight:600}
 .ev span{margin-left:auto;opacity:.75}
+/* 발주한 대로 들어왔는지 — 칸 아래 작은 표시 */
+.sts{display:flex;gap:2px;flex-wrap:wrap;margin-top:1px}
+.st{font-size:8px;line-height:1.5;padding:0 3px;border-radius:3px;white-space:nowrap}
+.st-ok{background:var(--bg-ok);color:#1D6E52}
+.st-sh{background:var(--bg-wn);color:#8A5A10}
+.st-pd{background:var(--s2);color:var(--txt3)}
 .heat{height:3px;border-radius:2px;margin-top:auto}
 
 .detail{width:340px;border-left:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;background:var(--s1)}
@@ -148,6 +154,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
         <div class="leg">
           <span><i class="sw" style="background:#2a78d6"></i>발주</span>
           <span><i class="sw" style="background:#1D9E75"></i>입고</span>
+          <span><span class="st st-ok">✓n</span>전량 입고</span>
+          <span><span class="st st-sh">부족 n</span>부족 입고</span>
+          <span><span class="st st-pd">대기 n</span>아직 미입고</span>
           <span>날짜를 클릭하면 상세가 표시됩니다</span>
         </div>
       </div>
@@ -193,6 +202,17 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':
 const won = n => n>=100000000 ? (n/100000000).toFixed(2)+'억' : (n>=10000 ? nf(n/10000)+'만' : nf(n));
 const pad2 = n => (n<10 ? '0'+n : ''+n);
 
+// 발주한 대로 들어왔나 — 파란 칸만 보고는 알 수 없다.
+// 라인 판정(발주 대조 화면과 같은 기준)을 칸 아래에 작게 적는다.
+function stateBar(po){
+  if(!po || !po.lines) return '';
+  const mk = [];
+  if(po.ok)    mk.push('<span class="st st-ok">✓' + po.ok + '</span>');
+  if(po.short) mk.push('<span class="st st-sh">부족 ' + po.short + '</span>');
+  if(po.pend)  mk.push('<span class="st st-pd">대기 ' + po.pend + '</span>');
+  return '<div class="sts">' + mk.join('') + '</div>';
+}
+
 function drawMonth(){
   const ym = MONTHS[mi];
   const y = +ym.slice(0,4), m = +ym.slice(5,7);
@@ -222,7 +242,8 @@ function drawMonth(){
       ins ? ins.cnt/CAL.max_in : 0);
     html += '<div class="cell has ' + (sel===key?'on':'') + '" onclick="pick(\'' + key + '\')">'
       + '<div class="dnum ' + dcls + '">' + d + '</div>'
-      + (po  ? '<div class="ev ev-po"><b>발주 ' + po.cnt + '</b><span>' + won(po.amount) + '</span></div>' : '')
+      + (po  ? '<div class="ev ev-po"><b>발주 ' + po.cnt + '</b><span>' + won(po.amount) + '</span></div>'
+                 + stateBar(po) : '')
       + (ins ? '<div class="ev ev-in"><b>입고 ' + ins.cnt + '</b><span>' + won(ins.amount) + '</span></div>' : '')
       + '<div class="heat" style="background:rgba(42,120,214,' + (0.12 + heat*0.55).toFixed(2) + ')"></div>'
       + '</div>';
@@ -272,11 +293,15 @@ function drawDay(key, data){
       + '<div class="pnh"><i class="ti ti-file-text" style="color:var(--acc)"></i>'
       +   '<span class="pnh-t">발주</span><span class="bg bac">' + pos.length + '건</span></div>'
       + pos.map(function(o){
-          return '<div class="ir"><span class="ik"><span class="mono">' + o.H_ID + '</span><br>'
+          const st = {'완료':'bok','일부':'bac','부족':'bwn','미입고':'bmu'}[o.state] || 'bmu';
+          return '<div class="ir"><span class="ik"><span class="mono">' + o.H_ID + '</span>'
+               + ' <span class="bg ' + st + '">' + esc(o.state || '') + '</span><br>'
                + esc(o.supplier||'-') + (o.is_foreign==='Y'?' <span class="bg bac">해외</span>':'') + '</span>'
                + '<span class="iv">' + won(o.amount) + '원<br>'
                + '<span style="font-size:9px;color:var(--txt3);font-weight:400">' + o.line_cnt + '품목'
-               + (o.recv_date ? ' · 입고 ' + o.recv_date : '') + '</span></span></div>';
+               + (o.ok ? ' · 완료 ' + o.ok : '') + (o.short ? ' · 부족 ' + o.short : '')
+               + (o.pend ? ' · 대기 ' + o.pend : '')
+               + (o.recv_date ? '<br>입고 ' + o.recv_date : '') + '</span></span></div>';
         }).join('')
       + '</div>';
   }
@@ -329,6 +354,16 @@ function dl(){
   a.click();
 }
 
+// ⚠️ 처음 열면 **오늘 달**을 보여준다. 전에는 mi=0 이라 2022년 10월(데이터의
+//    첫 달)이 떠서, 46개월짜리 달력을 매번 끝까지 넘겨야 했다.
+//    오늘 달에 발주·입고가 하나도 없으면 그 달은 MONTHS 에 없으므로
+//    **가장 최근 달**로 떨어뜨린다.
+(function(){
+  const t = new Date();
+  const ym = t.getFullYear() + '-' + pad2(t.getMonth() + 1);
+  const i = MONTHS.indexOf(ym);
+  mi = i >= 0 ? i : MONTHS.length - 1;
+})();
 fillJump();
 drawMonth();
 </script>

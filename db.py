@@ -2665,16 +2665,39 @@ def calendar_data(conn, day=None):
     for r in ([] if day is None else _rows(conn, """
         SELECT h.P_Date AS d, h.H_ID, c.CP_N AS supplier, c.Is_Foreign AS is_foreign,
                COUNT(*) AS line_cnt, SUM(pd.P_Qty * p.P_Price) AS amount,
-               MIN(l.Lot_Date) AS recv_date
+               MIN(l.Lot_Date) AS recv_date,
+               SUM(CASE WHEN l.Lot_ID IS NULL THEN 1 ELSE 0 END)             AS pend,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> pd.P_ID)
+                        THEN 1 ELSE 0 END)                                   AS swap,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND NOT (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> pd.P_ID)
+                         AND l.P_Qty < pd.P_Qty THEN 1 ELSE 0 END)           AS short,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND NOT (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> pd.P_ID)
+                         AND l.P_Qty >= pd.P_Qty THEN 1 ELSE 0 END)          AS ok
           FROM Purchase_Header_tb h
           JOIN Purchase_Detail_tb pd ON h.H_ID = pd.H_ID
           JOIN Product_tb p          ON pd.P_ID = p.P_ID
           LEFT JOIN Company_tb c     ON h.BRN = c.BRN
-          LEFT JOIN Lot_tb l         ON l.H_ID = h.H_ID
+          LEFT JOIN Purchase_Change_tb ch
+                 ON ch.H_ID = pd.H_ID AND ch.Purchase_num = pd.Purchase_num
+          -- ⚠️ LOT 을 **라인마다 하나씩** 붙인다. `l.H_ID = h.H_ID` 로 묶으면
+          --    발주 라인 × LOT 가 곱해져 품목 수가 부풀었다 (3라인이 6으로 보였다).
+          LEFT JOIN Lot_tb l
+                 ON l.Lot_ID = COALESCE(ch.Lot_ID, (
+                        SELECT l2.Lot_ID FROM Lot_tb l2
+                         WHERE l2.H_ID = pd.H_ID AND l2.P_ID = pd.P_ID
+                           AND l2.Lot_ID NOT IN (%s)
+                         LIMIT 1))
          %s
          GROUP BY h.P_Date, h.H_ID, c.CP_N, c.Is_Foreign
          ORDER BY h.P_Date, h.H_ID
-    """ % _dw, (day,) if day else ())):
+    """ % (_CLAIMED_LOTS, _dw), (day,) if day else ())):
+        r["ok"] = (r["ok"] or 0) + (r["swap"] or 0)
+        r["state"] = ("미입고" if r["ok"] + (r["short"] or 0) == 0 else
+                      ("부족" if r["short"] else
+                       ("일부" if r["pend"] else "완료")))
         po_list.setdefault(r["d"], []).append(r)
 
     # 입고 상세 — 역시 그 하루치만
@@ -2694,6 +2717,46 @@ def calendar_data(conn, day=None):
          ORDER BY l.Lot_Date, l.Lot_ID
     """ % _lw, (day,) if day else ())):
         in_list.setdefault(r["d"], []).append(r)
+
+    # ── 그날 발주가 **다 들어왔나** ───────────────────────────
+    # 파란 칸(발주)·초록 칸(입고)만으로는 "발주한 대로 들어왔는지" 를 알 수 없다.
+    # 날짜마다 라인 판정을 세어 칸에 함께 적는다. 판정 기준은 발주 대조 화면
+    # (purchase_orders)과 **같다** — 대체 입고는 발주를 닫은 것으로 본다.
+    for r in _rows(conn, """
+        SELECT h.P_Date AS d,
+               SUM(CASE WHEN l.Lot_ID IS NULL THEN 1 ELSE 0 END)            AS pend,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> d.P_ID)
+                        THEN 1 ELSE 0 END)                                  AS swap,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND NOT (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> d.P_ID)
+                         AND l.P_Qty < d.P_Qty THEN 1 ELSE 0 END)           AS short,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL
+                         AND NOT (ch.In_P_ID IS NOT NULL AND ch.In_P_ID <> d.P_ID)
+                         AND l.P_Qty >= d.P_Qty THEN 1 ELSE 0 END)          AS ok,
+               COUNT(*)                                                     AS lines
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          LEFT JOIN Purchase_Change_tb ch
+                 ON ch.H_ID = d.H_ID AND ch.Purchase_num = d.Purchase_num
+          LEFT JOIN Lot_tb l
+                 ON l.Lot_ID = COALESCE(ch.Lot_ID, (
+                        SELECT l2.Lot_ID FROM Lot_tb l2
+                         WHERE l2.H_ID = d.H_ID AND l2.P_ID = d.P_ID
+                           AND l2.Lot_ID NOT IN (%s)
+                         LIMIT 1))
+         GROUP BY h.P_Date
+    """ % _CLAIMED_LOTS):
+        po = days.get(r["d"], {}).get("po")
+        if po is None:
+            continue
+        po["lines"] = r["lines"]
+        po["ok"] = (r["ok"] or 0) + (r["swap"] or 0)   # 대체는 발주가 닫힌 것이다
+        po["short"] = r["short"] or 0
+        po["pend"] = r["pend"] or 0
+        po["state"] = ("미입고" if po["ok"] + po["short"] == 0 else
+                       ("부족" if po["short"] else
+                        ("일부" if po["pend"] else "완료")))
 
     all_dates = sorted(days)
     months = sorted({d[:7] for d in all_dates})
