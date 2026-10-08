@@ -20,6 +20,7 @@ def too_large(_e):
 
 # 오늘 할 일 카드의 아이콘. db 는 숫자만 내고 표시는 여기서 정한다.
 TODO_ICON = {
+    "due":      "ti-clock-exclamation",
     "inbound":  "ti-arrow-bar-to-down",
     "claim":    "ti-alert-octagon",
     "approval": "ti-check",
@@ -455,6 +456,16 @@ def _ctx_purchase():
             # 발주하기 워크플로우용 — 자재 200종 + 권장 발주량 + 미입고 발주
             "cands": cands,
             "base_date": base,
+            # 약속 납기 · 발주 상태 · 발주에 일어난 일
+            "po_state": db.po_hand_status(conn),   # 사람이 정한 것만 (희소)
+            "po_events": db.po_event_map(conn),
+            "watch": db.due_watch(conn),
+            "due_reasons": [{"cd": k, "blame": v["blame"], "label": v["label"]}
+                            for k, v in db.DUE_REASONS.items()],
+            "due_note_min": db.DUE_NOTE_MIN,
+            "urge_note_min": db.EXPEDITE_NOTE_MIN,
+            "workers": db._plan_workers(conn),
+            "approvers": [w for w in db._plan_workers(conn) if w["limit"] != 0],
         }
     finally:
         conn.close()
@@ -1653,6 +1664,81 @@ def api_pplan_add():
         return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
     finally:
         conn.close()
+
+
+# ── 약속 납기 · 발주 상태 API ─────────────────────
+# 발주를 낸 뒤에 일어나는 일 — 납기 변경 통보 · 독촉 · 마감 · 취소 · 재개.
+# 전에는 적을 칸이 없어 전부 시스템 밖에 있었다. db 의 「약속 납기일」 절 참조.
+
+@app.route("/api/po/detail")
+def api_po_detail():
+    """발주 한 건의 납기 · 상태 · 이벤트 타임라인 (조회만)."""
+    hid = (request.args.get("id") or "").strip()
+    if not re.match(r"^[A-Za-z0-9]{1,20}$", hid):
+        return jsonify({"ok": False, "errors": ["발주번호가 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        out, errors = db.po_detail_extra(conn, hid)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 404
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+def _po_write(fn, body, **kw):
+    """납기/상태 쓰기 다섯 개가 같은 꼴이라 한 곳으로 모은다."""
+    conn = db.connect()
+    try:
+        out, errors = fn(conn, _entry_date(body), body.get("H_ID"), **kw)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/po/due", methods=["POST"])
+def api_po_due():
+    """납기 변경 통보 — 최초 약속은 건드리지 않는다."""
+    body = _body()
+    return _po_write(db.change_due, body, new_due=body.get("due"),
+                     ep_id=body.get("EP_ID"), reason_cd=body.get("reason_cd"),
+                     reason=body.get("reason"), nums=_ids(body, "lines") or None)
+
+
+@app.route("/api/po/expedite", methods=["POST"])
+def api_po_expedite():
+    """독촉 — 몇 번 재촉했는지가 남아야 협력사 평가에 쓸 수 있다."""
+    body = _body()
+    return _po_write(db.expedite_po, body, ep_id=body.get("EP_ID"),
+                     reason=body.get("reason"), nums=_ids(body, "lines") or None)
+
+
+@app.route("/api/po/close", methods=["POST"])
+def api_po_close():
+    """발주 마감 — 미입고 라인을 닫는다."""
+    body = _body()
+    return _po_write(db.close_po, body, ep_id=body.get("EP_ID"),
+                     reason=body.get("reason"), nums=_ids(body, "lines") or None)
+
+
+@app.route("/api/po/cancel", methods=["POST"])
+def api_po_cancel():
+    """발주 취소 — 입고가 하나도 없을 때만."""
+    body = _body()
+    return _po_write(db.cancel_po, body, ep_id=body.get("EP_ID"),
+                     reason=body.get("reason"))
+
+
+@app.route("/api/po/reopen", methods=["POST"])
+def api_po_reopen():
+    """마감·취소를 되돌린다."""
+    body = _body()
+    return _po_write(db.reopen_po, body, ep_id=body.get("EP_ID"),
+                     reason=body.get("reason"))
 
 
 # ── 거래 취소 API ───────────────────────────────────────────

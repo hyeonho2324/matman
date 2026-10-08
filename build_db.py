@@ -177,7 +177,10 @@ DROP TABLE IF EXISTS Purchase_Header_tb;
 CREATE TABLE Purchase_Header_tb (
     H_ID   TEXT PRIMARY KEY,           -- 발주번호 PO...
     BRN    TEXT,                       -- 발주처
-    P_Date TEXT                        -- 발주일
+    P_Date TEXT                        -- 발주일,
+    -- 사람이 정한 상태만 담는다 (NULL / 마감 / 취소).
+    -- 진행·완료는 라인 판정에서 파생한다 — 숫자를 두 번 세지 않는다.
+    Status TEXT
 );
 
 DROP TABLE IF EXISTS Purchase_Detail_tb;
@@ -187,6 +190,11 @@ CREATE TABLE Purchase_Detail_tb (
     P_ID         TEXT,
     P_Qty        INTEGER,              -- 발주수량
     Unit_Price   INTEGER,              -- 발주 시점 단가 (스냅샷)
+    -- 약속 납기 — **라인별**이다. 머리에 하나로 두면 리드타임이 다른
+    -- 자재가 같은 날짜로 평가돼 제때 온 것까지 지연으로 찍힌다.
+    Due_First    TEXT,                 -- 최초 약속 (준수율은 이걸로 잰다)
+    Due_Date     TEXT,                 -- 현재 약속 (통보를 받으면 바뀐다)
+    Closed       TEXT,                 -- 'Y' 면 더 안 받는다 (발주 마감)
     PRIMARY KEY (H_ID, Purchase_num)
 );
 
@@ -533,6 +541,24 @@ CREATE TABLE Cancel_tb (
     Reason_Cd TEXT NOT NULL,      -- CANCEL_REASONS
     Reason    TEXT NOT NULL,      -- 5자 이상
     EP_ID     TEXT
+);
+
+DROP TABLE IF EXISTS PO_Event_tb;
+CREATE TABLE PO_Event_tb (
+    -- 발주에 일어난 일. 납기 변경 · 독촉 · 마감 · 취소를 **한 타임라인**에 모은다.
+    --   따로 세 테이블로 쪼개면 "이 발주에 무슨 일이 있었나" 를 한 곳에서 못 본다.
+    -- ⚠️ Purchase_Change_tb 와 다르다 — 그쪽은 **입고 시점**의 수량·품번 변경이고
+    --    이쪽은 **입고 전후로 사람이 한 일**이다.
+    Ev_ID        TEXT PRIMARY KEY,   -- POE + YYYYMMDD + 4자리
+    H_ID         TEXT NOT NULL,
+    Purchase_num INTEGER,            -- NULL 이면 발주 전체
+    Ev_Type      TEXT NOT NULL,      -- 납기변경 / 독촉 / 마감 / 취소
+    Old_Due      TEXT,               -- 납기변경 전
+    New_Due      TEXT,               -- 납기변경 후
+    Reason_Cd    TEXT,
+    Reason       TEXT NOT NULL,
+    Ev_Date      TEXT,
+    EP_ID        TEXT
 );
 
 DROP TABLE IF EXISTS FG_tb;

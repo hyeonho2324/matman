@@ -154,6 +154,37 @@ tbody tr.on{background:var(--bg-ac)}
    (대시보드 ABC 카드에서 겪은 것과 같은 함정)
    줄이지 말고 넘겨라 — overflow-y:auto 가 스크롤해 준다. */
 .dbody > *{flex-shrink:0}
+/* 납기·상태 모달. 클래스는 .ovl — embed-mobile 의 MODAL_SEL 에 이미 있다 */
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:70;
+  align-items:center;justify-content:center;padding:16px}
+.ovl.on{display:flex}
+.ovb{background:var(--s0);border:0.5px solid var(--border);border-radius:10px;
+  width:460px;max-width:100%;max-height:90vh;display:flex;flex-direction:column}
+.ovh{padding:12px 14px;border-bottom:0.5px solid var(--border);font-size:12px;
+  font-weight:700;display:flex;align-items:center;gap:6px}
+.ovc{padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:9px}
+.ovc > *{flex-shrink:0}
+.ovf{padding:11px 14px;border-top:0.5px solid var(--border);display:flex;gap:7px;
+  justify-content:flex-end}
+.fl{display:flex;flex-direction:column;gap:4px;font-size:11px}
+.fl > span{color:var(--txt3);font-size:10px}
+.fl input,.fl select,.fl textarea{font-family:inherit;font-size:11px;padding:6px 8px;
+  border:0.5px solid var(--border);border-radius:5px;background:var(--s0);color:var(--txt)}
+.fl textarea{resize:vertical;min-height:50px}
+.err{font-size:10.5px;line-height:1.6;color:var(--dn);border:0.5px solid var(--dn);
+  border-radius:6px;padding:9px 10px;white-space:pre-line}
+.evl{display:flex;flex-direction:column;gap:0}
+.evr{display:flex;gap:7px;font-size:10.5px;padding:6px 0;
+  border-bottom:0.5px dashed var(--border)}
+.evr:last-child{border-bottom:0}
+.evr .ed{color:var(--txt3);min-width:66px}
+.evr .et{font-weight:600;min-width:52px}
+.dchip{display:inline-block;padding:1px 5px;border-radius:4px;font-size:9.5px;
+  font-weight:600;margin-left:3px}
+.d-late{background:var(--bg-dn,#fdeeee);color:var(--dn)}
+.d-soon{background:var(--bg-wn,#fdf5e8);color:#9a6a12}
+.d-wait{background:var(--s2);color:var(--txt3)}
+.d-in{background:var(--bg-ok,#e9f5f1);color:var(--ok)}
 .pn{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
 .pnh{padding:6px 10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:5px;background:var(--s2)}
 .pnh-t{font-size:11px;font-weight:500;flex:1}
@@ -389,6 +420,14 @@ table.sh-tb{width:100%;border-collapse:collapse;margin-bottom:10px}
   </div>
 </div>
 
+<div class="ovl" id="pov">
+  <div class="ovb">
+    <div class="ovh"><i class="ti ti-calendar-event"></i><span id="povt">납기</span></div>
+    <div class="ovc" id="povc"></div>
+    <div class="ovf" id="povf"></div>
+  </div>
+</div>
+
 <script>
 const ORD   = {{ orders|tojson }};
 const MON   = {{ monthly|tojson }};
@@ -397,6 +436,17 @@ const EMPTY = {};
 // 기준일 = 데이터의 마지막 발주일
 const PBASE = ORD.map(function(o){return o.date||'';}).filter(Boolean).sort().slice(-1)[0] || '';
 const SETL  = {{ settle|tojson }};    // 잔금·클레임이 있는 발주의 정산 요약
+// 약속 납기 · 발주 상태 · 발주에 일어난 일
+const PST   = {{ po_state|tojson }};     // H_ID → '마감'/'취소' (사람이 정한 것만)
+const PEV   = {{ po_events|tojson }};    // H_ID → {moved, urged, last_urge, n}
+const WATCH = {{ watch|tojson }};        // 납기 지남 · 임박
+const DRSN  = {{ due_reasons|tojson }};
+const DMIN2 = {{ due_note_min|tojson }};
+const UMIN  = {{ urge_note_min|tojson }};
+const APPR  = {{ approvers|tojson }};    // 마감·취소·재개 (직급을 본다)
+const WRK   = {{ workers|tojson }};      // 납기 변경·독촉 (등록 여부만 본다)
+let PD = null;                           // 지금 연 발주의 납기 상세
+const NEWLINE = String.fromCharCode(10);
 const CANDS = {{ cands|tojson }};      // 발주 후보 200종 (권장 발주량 포함)
 const BASE  = {{ base_date|tojson }};  // 데이터 기준일
 function P(pid){ return PRODS[pid] || EMPTY; }
@@ -709,15 +759,220 @@ function settleBlock(hid){
   return h + '</div>';
 }
 
+/* 약속 납기 · 발주 상태.
+
+   `Purchase_Header_tb` 가 H_ID · BRN · P_Date 세 칸뿐이라, 발주를 낸 뒤에
+   일어나는 일이 전부 시스템 밖에 있었다 — "3일 늦어요" 통보를 적을 칸도,
+   몇 번 독촉했는지도, 더 안 받겠다고 닫을 길도 없었다.
+
+   ⚠️ 준수율은 **최초 약속(Due_First)** 으로 잰다. 늦을 때마다 납기를 미뤄 주면
+      준수율이 100% 가 된다 — 그런 지표는 통제가 아니다. */
+function dueBadge(hid){
+  const st = PST[hid], ev = PEV[hid];
+  let h = '';
+  if(st) h += ' <span class="bg bmu">' + esc(st) + '</span>';
+  if(ev && ev.moved) h += ' <span class="bg bwn">납기변경 ' + ev.moved + '</span>';
+  if(ev && ev.urged) h += ' <span class="bg bac">독촉 ' + ev.urged + '</span>';
+  return h;
+}
+
+function dueChip(st, days){
+  if(st === '입고')
+    return '<span class="dchip d-in">' + (days > 0 ? days + '일 늦음'
+         : (days === 0 ? '정시' : Math.abs(days) + '일 빠름')) + '</span>';
+  if(st === '지남') return '<span class="dchip d-late">' + days + '일 지남</span>';
+  if(st === '임박') return '<span class="dchip d-soon">D-' + days + '</span>';
+  if(st === '마감' || st === '취소') return '<span class="dchip d-wait">' + st + '</span>';
+  return '<span class="dchip d-wait">D-' + (days == null ? '?' : days) + '</span>';
+}
+
+/* 상태·라인·버튼은 **상세를 받은 뒤** 그린다(loadDue).
+   목록에 770건의 상태를 미리 실으면 payload 가 108KB 늘어난다. */
+function duePanel(o){
+  return '<div class="pn" id="duepn">'
+    + '<div class="pnh"><i class="ti ti-calendar-event"></i>'
+    +   '<span class="pnh-t">약속 납기 · 상태</span>'
+    +   '<span class="bg bmu" id="duest">' + (PST[o.H_ID] || '…') + '</span></div>'
+    + '<div id="duehead"></div>'
+    + '<div id="duebtn" style="padding:8px 11px 11px;display:flex;gap:6px;flex-wrap:wrap"></div>'
+    + '<div id="duelines" class="note" style="margin:0 11px 11px">불러오는 중입니다...</div>'
+    + '</div>';
+}
+
+function dueHead(){
+  const st = PD.status, ev = PEV[PD.H_ID] || {};
+  const closed = (st.status === '마감' || st.status === '취소');
+  const b = document.getElementById('duest');
+  if(b){
+    b.textContent = st.status;
+    b.className = 'bg ' + (st.status === '완료' ? 'bok'
+      : (closed ? 'bmu' : (st.open ? 'bwn' : 'bac')));
+  }
+  const h = document.getElementById('duehead');
+  if(h) h.innerHTML =
+      '<div class="ir"><span class="ik">라인</span><span class="iv">'
+    +   st.lines + '줄 · 입고 ' + st.recv
+    +   (st.closed ? ' · 마감 ' + st.closed : '')
+    +   (st.open ? ' · <b>대기 ' + st.open + '</b>' : '') + '</span></div>'
+    + (ev.urged ? '<div class="ir"><span class="ik">독촉</span><span class="iv">'
+        + ev.urged + '회 · 마지막 ' + esc(ev.last_urge || '-') + '</span></div>' : '')
+    + (PD.moved ? '<div class="ir"><span class="ik">납기 변경</span>'
+        + '<span class="iv">' + PD.moved + '줄 — <b>준수율은 최초 약속으로 잽니다</b>'
+        + '</span></div>' : '');
+  const g = document.getElementById('duebtn');
+  if(g) g.innerHTML = closed
+      ? '<button class="btn" onclick="dueOpen(&quot;재개&quot;)">'
+        + '<i class="ti ti-rotate"></i>재개</button>'
+      : '<button class="btn" onclick="dueOpen(&quot;납기변경&quot;)">'
+        + '<i class="ti ti-calendar-event"></i>납기 변경</button>'
+        + '<button class="btn" onclick="dueOpen(&quot;독촉&quot;)">'
+        + '<i class="ti ti-urgent"></i>독촉</button>'
+        + '<button class="btn" onclick="dueOpen(&quot;마감&quot;)">'
+        + '<i class="ti ti-lock"></i>마감</button>'
+        + (st.recv ? '' : '<button class="btn btnd" onclick="dueOpen(&quot;취소&quot;)">'
+            + '<i class="ti ti-x"></i>취소</button>');
+}
+
+/* 라인별 납기는 목록에 싣지 않는다 — 발주 770건 × 3,448라인이라 무겁다.
+   발주를 누를 때 그 한 건만 받는다(LOT 추적·날짜 상세와 같은 방법). */
+async function loadDue(hid){
+  PD = null;
+  const r = await fetch('/api/po/detail?id=' + encodeURIComponent(hid));
+  const d = await r.json();
+  if(!d.ok || sel !== hid) return;
+  PD = d.result;
+  dueHead();
+  const el = document.getElementById('duelines');
+  if(!el) return;
+  el.innerHTML = '<table class="cmp"><thead><tr><th>라인</th><th>자재</th>'
+    + '<th>최초 약속</th><th>현재 약속</th><th>판정</th></tr></thead><tbody>'
+    + PD.lines.map(function(l){
+        return '<tr><td>' + l.Purchase_num + '</td>'
+          + '<td>' + esc((l.P_N || '').slice(0, 10)) + '</td>'
+          + '<td>' + esc(l.Due_First || '-') + '</td>'
+          + '<td>' + (l.moved ? '<b style="color:var(--wn)">' + esc(l.Due_Date) + '</b>'
+                              : esc(l.Due_Date || '-')) + '</td>'
+          + '<td>' + dueChip(l.due_state, l.due_days) + '</td></tr>';
+      }).join('')
+    + '</tbody></table>'
+    + (PD.events.length
+        ? '<div class="evl" style="margin-top:8px">'
+          + PD.events.map(function(e){
+              return '<div class="evr"><span class="ed">' + esc(e.Ev_Date) + '</span>'
+                + '<span class="et">' + esc(e.Ev_Type) + '</span><span>'
+                + (e.Old_Due ? esc(e.Old_Due) + ' → <b>' + esc(e.New_Due) + '</b> · ' : '')
+                + (e.Reason_Cd ? esc(e.Reason_Cd) + ' · ' : '')
+                + esc(e.Reason || '') + ' <span style="color:var(--txt3)">'
+                + esc(e.worker || '') + '</span></span></div>';
+            }).join('') + '</div>'
+        : '<div style="margin-top:6px;color:var(--txt3)">이 발주에 일어난 일은 아직 없습니다.</div>');
+}
+
+// ── 납기·상태 쓰기 ────────────────────────────────────────
+let DUEACT = null;
+const DUECFG = {
+  '납기변경': {t: '납기 변경 통보', api: '/api/po/due', who: 'WRK', min: 0,
+             tip: '협력사가 알려 온 **새 날짜**를 적습니다. 최초 약속은 그대로 두고 '
+                + '현재 약속만 바꿉니다 — 준수율은 최초 약속으로 재기 때문입니다.'},
+  '독촉':   {t: '독촉 기록', api: '/api/po/expedite', who: 'WRK', min: 0,
+             tip: '몇 번 재촉했는지가 남아야 협력사 평가에 쓸 수 있습니다.'},
+  '마감':   {t: '발주 마감', api: '/api/po/close', who: 'APPR', min: 0,
+             tip: '미입고 라인을 닫습니다 — **더 안 받는다**는 뜻입니다. '
+                + '입고 화면의 미입고 목록에서 빠집니다.'},
+  '취소':   {t: '발주 취소', api: '/api/po/cancel', who: 'APPR', min: 0,
+             tip: '입고가 **하나도 없을 때만** 됩니다. 하나라도 들어왔으면 마감을 쓰세요.'},
+  '재개':   {t: '발주 재개', api: '/api/po/reopen', who: 'APPR', min: 0,
+             tip: '마감·취소를 되돌립니다. 거래처가 다시 보내겠다고 하는 일은 흔합니다.'},
+};
+
+function dueOpen(act){
+  DUEACT = act;
+  const c = DUECFG[act], who = (c.who === 'APPR' ? APPR : WRK);
+  const least = (act === '독촉') ? UMIN : DMIN2;
+  document.getElementById('povt').textContent = c.t + ' · ' + sel;
+  document.getElementById('povc').innerHTML =
+      '<div class="note">' + c.tip.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') + '</div>'
+    + (act === '납기변경'
+        ? '<label class="fl"><span>새 약속 납기일</span>'
+          + '<input type="date" id="pvd" value="' + esc(nextDue()) + '"></label>'
+          + '<label class="fl"><span>사유</span><select id="pvr">'
+          + DRSN.map(function(r){ return '<option value="' + r.cd + '">' + r.cd
+              + ' (' + r.blame + ' 탓) — ' + esc(r.label) + '</option>'; }).join('')
+          + '</select></label>'
+        : '')
+    + '<label class="fl"><span>설명 (' + least + '자 이상)</span>'
+    +   '<textarea id="pvn" placeholder="' + (act === '독촉'
+          ? '예) 생산라인 대기 중이라 금주 내 출하 요청'
+          : '예) 협력사 원자재 수급 지연 통보') + '"></textarea></label>'
+    + '<label class="fl"><span>담당자'
+    +   (c.who === 'APPR' ? ' (직급·금액 한도를 봅니다)' : '') + '</span><select id="pve">'
+    +   who.map(function(w){ return '<option value="' + w.EP_ID + '">' + esc(w.Name) + ' '
+          + esc(w.Position) + (c.who === 'APPR'
+              ? (w.limit ? ' (한도 ' + nf(w.limit) + '원)' : ' (무제한)') : '')
+          + '</option>'; }).join('')
+    + '</select></label>'
+    + '<div id="pverr"></div>';
+  document.getElementById('povf').innerHTML =
+      '<button class="btn" onclick="dueClose()">닫기</button>'
+    + '<button class="btn ' + (act === '취소' ? 'btnd' : 'btnp')
+    + '" onclick="dueDo()">' + act + '</button>';
+  document.getElementById('pov').classList.add('on');
+}
+
+function nextDue(){
+  // 기본값은 지금 약속에서 일주일 뒤 — 통보는 보통 그 정도 폭이다
+  let base = (PD && PD.due_max) || null;
+  if(!base) return '';
+  const d = new Date(base); d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
+function dueClose(){ document.getElementById('pov').classList.remove('on'); }
+
+async function dueDo(){
+  const c = DUECFG[DUEACT];
+  const body = {H_ID: sel, EP_ID: document.getElementById('pve').value,
+                reason: document.getElementById('pvn').value};
+  if(DUEACT === '납기변경'){
+    body.due = document.getElementById('pvd').value;
+    body.reason_cd = document.getElementById('pvr').value;
+  }
+  const r = await fetch(c.api, {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if(!d.ok){
+    document.getElementById('pverr').innerHTML =
+      '<div class="err">' + esc((d.errors || ['실패했습니다.']).join(NEWLINE)) + '</div>';
+    return;
+  }
+  document.getElementById('povc').innerHTML =
+    '<div class="note" style="border-color:var(--ok)"><b>' + DUEACT + ' 했습니다.</b><br>'
+    + (DUEACT === '납기변경'
+        ? d.result.cnt + '줄 · 새 약속 ' + esc(d.result.new_due)
+          + ' · ' + esc(d.result.reason_cd) + '(' + esc(d.result.blame) + ' 탓)'
+        : (DUEACT === '독촉' ? '누적 ' + d.result.cnt + '회'
+          : (DUEACT === '마감' ? d.result.closed + '줄 · ' + nf(d.result.amount) + '원 · '
+                + esc(d.result.status)
+          : (DUEACT === '취소' ? d.result.lines + '줄 · ' + nf(d.result.amount) + '원'
+            : d.result.reopened + '줄 재개 · ' + esc(d.result.status)))))
+    + '</div>';
+  document.getElementById('povf').innerHTML =
+    '<button class="btn btnp" onclick="location.reload()">목록 새로 보기</button>';
+}
+
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') dueClose(); });
+
 function pick(hid){
   sel=hid;
   const o=ORD.filter(function(v){return v.H_ID===hid;})[0];
   render();
+  loadDue(hid);
 
   document.getElementById('dt').innerHTML =
     '<span class="hid">' + o.H_ID + '</span> ' + esc(o.supplier||'-')
     + (o.is_foreign==='Y' ? ' <span class="bg bac">해외</span>' : '')
-    + (o.short ? ' <span class="bg bdn">부족 '+o.short+'</span>' : '');
+    + (o.short ? ' <span class="bg bdn">부족 '+o.short+'</span>' : '')
+    + dueBadge(o.H_ID);
   document.getElementById('ds').innerHTML =
     '발주 ' + o.date + (o.recv_date ? ' → 입고 ' + o.recv_date : '')
     + '<br>품목 ' + o.line_cnt + '종 · 발주 ' + nf(o.amount) + '원 · 입고 ' + nf(o.in_amount) + '원';
@@ -766,6 +1021,7 @@ function pick(hid){
       : '<div class="note">발주 수량과 입고 수량이 전량 일치합니다.</div>')
   + '</div>'
 
+  + duePanel(o)
   + settleBlock(o.H_ID)
 
   + '<div class="pn">'

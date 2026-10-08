@@ -866,12 +866,18 @@ def supplier_list(conn, period=""):
     # "발주한 대로 들어왔는가" 를 세 갈래로 본다.
     #   품번 준수 — 대체 입고가 아니다 (A 를 주문했는데 B 가 오지 않았다)
     #   수량 준수 — 발주 수량 = 입고 수량
-    #   납기 준수 — 실제 리드타임 <= 계획 리드타임
+    #   납기 준수 — 입고일 <= **최초 약속 납기**(Purchase_Detail_tb.Due_First)
     #   종합      — 셋 다 만족
     #
-    # ⚠️ 약속 납기일 컬럼이 데이터에 없다. 그래서 자재별 계획 리드타임
-    #    (Safe_tb.Lead_Time — 안전재고·발주 계산이 쓰는 그 값)을 약속 납기로 대용한다.
-    #    협력사가 실제로 약속한 날짜가 아니라 우리 쪽 계획값이라는 점을 화면에도 적는다.
+    # ⚠️ **최초 약속으로 잰다.** 협력사가 늦을 때마다 납기를 미뤄 주면 준수율이
+    #    100% 가 된다 — 그런 지표는 통제가 아니다. 변경된 현재 약속(Due_Date)은
+    #    "언제 들어오나" 를 보는 값이고, 평가는 처음 약속한 날로 한다.
+    #    업계에서 OTD(On-Time Delivery)를 original promise 기준으로 재는 이유다.
+    #
+    # ⚠️ 과거 발주의 약속 납기는 알 수 없어 **계획 리드타임으로 백필**했다
+    #    (발주일 + Safe_tb.Lead_Time). 지어낸 값이 아니라 "그때 약속을 알 수 없어
+    #    계획값을 썼다" 는 사실이고, 그래서 이 교체로 숫자가 변하지 않는다 —
+    #    발주 시점 단가를 현재 단가로 채운 것과 같은 처리다.
     #
     # LOT 을 찾을 때 변경 이력을 먼저 본다. 대체 입고는 발주 품번과 LOT 품번이
     # 달라 H_ID+P_ID 로는 못 찾고, 그대로 두면 미입고로 잘못 집계된다.
@@ -886,21 +892,25 @@ def supplier_list(conn, period=""):
                SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty = d.P_Qty THEN 1 ELSE 0 END) AS qty_ok,
                SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty < d.P_Qty THEN 1 ELSE 0 END) AS qty_short,
                SUM(CASE WHEN l.Lot_ID IS NOT NULL AND l.P_Qty > d.P_Qty THEN 1 ELSE 0 END) AS qty_over,
-               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND d.Due_First IS NOT NULL
                         THEN 1 ELSE 0 END) AS due_base,
-               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
-                         AND julianday(l.Lot_Date) - julianday(h.P_Date) <= s.Lead_Time
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL AND d.Due_First IS NOT NULL
+                         AND l.Lot_Date <= d.Due_First
                         THEN 1 ELSE 0 END) AS due_ok,
                SUM(CASE WHEN l.Lot_ID IS NOT NULL
                          AND l.P_Qty = d.P_Qty
                          AND (ch.Chg_ID IS NULL OR ch.In_P_ID = ch.Ord_P_ID)
-                         AND s.Lead_Time IS NOT NULL
-                         AND julianday(l.Lot_Date) - julianday(h.P_Date) <= s.Lead_Time
+                         AND d.Due_First IS NOT NULL
+                         AND l.Lot_Date <= d.Due_First
                         THEN 1 ELSE 0 END) AS all_ok,
-               AVG(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
-                        THEN julianday(l.Lot_Date) - julianday(h.P_Date) - s.Lead_Time END) AS delay,
-               MAX(CASE WHEN l.Lot_ID IS NOT NULL AND s.Lead_Time IS NOT NULL
-                        THEN julianday(l.Lot_Date) - julianday(h.P_Date) - s.Lead_Time END) AS delay_max
+               -- 납기를 미룬 건수 — 준수율과 **나란히** 봐야 한다.
+               -- 준수율이 좋은데 변경이 잦으면 그건 약속을 고쳐 가며 맞춘 것이다.
+               SUM(CASE WHEN d.Due_Date IS NOT NULL AND d.Due_First IS NOT NULL
+                         AND d.Due_Date <> d.Due_First THEN 1 ELSE 0 END) AS due_moved,
+               AVG(CASE WHEN l.Lot_ID IS NOT NULL AND d.Due_First IS NOT NULL
+                        THEN julianday(l.Lot_Date) - julianday(d.Due_First) END) AS delay,
+               MAX(CASE WHEN l.Lot_ID IS NOT NULL AND d.Due_First IS NOT NULL
+                        THEN julianday(l.Lot_Date) - julianday(d.Due_First) END) AS delay_max
           FROM Purchase_Detail_tb d
           JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
           LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
@@ -970,6 +980,7 @@ def supplier_list(conn, period=""):
         c["qty_short"] = m.get("qty_short", 0) or 0
         c["qty_over"] = m.get("qty_over", 0) or 0
         c["due_ok"] = m.get("due_ok", 0) or 0
+        c["due_moved"] = m.get("due_moved", 0) or 0
         c["due_base"] = due_base
         c["all_ok"] = m.get("all_ok", 0) or 0
         c["qty_pct"] = _pct(c["qty_ok"], recv) if recv else None
@@ -1625,6 +1636,11 @@ def worklist(conn):
         "   AND CAST(julianday(End_Date) - julianday(?) AS INT) BETWEEN 0 AND 14",
         (base,)).fetchone()[0]
 
+    # 약속 날짜가 지났는데 안 들어온 발주 — **오늘 독촉할 것**이다.
+    #   전에는 이걸 볼 데가 없었다. 약속 납기일 칸이 없어서 "늦었다" 를
+    #   말할 수가 없었기 때문이다.
+    watch = due_watch(conn)
+
     # 현장에 오래 묶여 있는 자재 — 밀린 일이 아니라 정기 점검이다
     site = [r for r in return_targets(conn, base) if r["is_long"]]
     site_long, site_amt = len(site), sum(r["amount"] for r in site)
@@ -1636,6 +1652,9 @@ def worklist(conn):
         {"key": "claim",    "label": "불량 · 반품",  "n": claims.get("open", 0), "unit": "건",
          "sub": "대체입고 / 환불 / 폐기를 정해야 함", "url": "/inbound",
          "tone": "dn" if claims.get("open") else "mu"},
+        {"key": "due",      "label": "납기 경과",    "n": watch["late_cnt"], "unit": "줄",
+         "sub": "약속한 날이 지났다 — 독촉하거나 납기를 다시 받는다",
+         "url": "/purchase", "tone": "dn" if watch["late_cnt"] else "mu"},
         {"key": "purchase_plan", "label": "구매계획 결재", "n": wait_pplan, "unit": "건",
          "sub": "다음 달 구매 금액 — 마감 전에 올린다", "url": "/purchase-plan",
          "tone": "wn" if wait_pplan else "mu"},
@@ -1683,6 +1702,7 @@ ALERT_MENU = {
     "disburse": "disburse",
     "safety":   "wizard",
     "site":     "site_return",
+    "due":      "purchase",
 }
 
 # 정기 점검은 '밀린 일' 이 아니다. 199종이 주기 도래라고 종에 199가 뜨면
@@ -6536,7 +6556,11 @@ PENDING_JOIN = """
                  ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
                 AND l.Lot_ID NOT IN (%s)
 """ % _CLAIMED_LOTS
-PENDING_WHERE = "ch.Chg_ID IS NULL AND l.Lot_ID IS NULL"
+# 마감한 라인과 취소한 발주는 받을 것이 없다. 전에는 미입고 라인이 영원히
+# 남아 "받을 발주" 목록을 늘렸다 — 거래처가 결품으로 못 보내도 닫을 길이 없었다.
+PENDING_WHERE = ("ch.Chg_ID IS NULL AND l.Lot_ID IS NULL"
+                 " AND COALESCE(d.Closed,'') <> 'Y'"
+                 " AND COALESCE(h.Status,'') NOT IN ('마감','취소')")
 
 
 def next_chg_id(conn, date):
@@ -6559,7 +6583,7 @@ def pending_po(conn):
                COALESCE(d.Unit_Price, p.P_Price) AS price,
                p.P_Price AS cur_price,
                p.MainCat, s.Sf_Lv AS grade, s.Lead_Time AS lead_time,
-               d.P_Qty AS ord_qty
+               d.P_Qty AS ord_qty, d.Due_First, d.Due_Date, d.Closed
           FROM Purchase_Detail_tb d
           JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
           JOIN Product_tb p         ON d.P_ID = p.P_ID
@@ -6571,6 +6595,7 @@ def pending_po(conn):
     """ % (PENDING_JOIN, PENDING_WHERE))
     loc_n = {r["Loc_ID"]: r["Loc_N"]
              for r in _rows(conn, "SELECT Loc_ID, Loc_N FROM Location_tb")}
+    base = po_base(conn)
 
     groups = {}
     for r in rows:
@@ -6588,10 +6613,20 @@ def pending_po(conn):
             "cur_price": r["cur_price"],
             "pkg": r["PkgUnit"], "moq": r["MinOrderQty"],
             "Loc_ID": loc, "loc_name": loc_n.get(loc), "lead_time": lt,
+            # 약속 납기 — 무엇부터 받아야 하는지는 **날짜**가 정한다.
+            # 판정은 `_due_state()` 한 곳에서만 한다(화면마다 다시 세지 않는다).
+            "Due_First": r["Due_First"], "Due_Date": r["Due_Date"],
+            "due_state": _due_state(dict(r, recv=0, closed=0), base)[0],
+            "due_days": _due_state(dict(r, recv=0, closed=0), base)[1],
         })
         g["qty"] += r["ord_qty"] or 0
         g["amount"] += round((r["ord_qty"] or 0) * (r["price"] or 0))
         g["lead_max"] = max(g["lead_max"], lt)
+        due = r["Due_Date"] or r["Due_First"]
+        if due and (g.get("due") is None or due < g["due"]):
+            g["due"] = due                      # 가장 급한 라인이 그 발주의 납기다
+        if g["items"][-1]["due_state"] == "지남":
+            g["late"] = g.get("late", 0) + 1
 
     out = sorted(groups.values(), key=lambda g: (g["P_Date"], g["H_ID"]))
     for g in out:
@@ -9177,3 +9212,470 @@ def cancel_map(conn):
     return {r["Src_ID"]: {"qty": int(r["q"] or 0), "n": r["n"], "Cxl_ID": r["cid"]}
             for r in _rows(conn, "SELECT Src_ID, SUM(Qty) q, COUNT(*) n, MAX(Cxl_ID) cid"
                                  "  FROM Cancel_tb GROUP BY Src_ID")}
+
+
+# ── 약속 납기일 · 발주 상태 ──────────────────────────────────
+#
+# `Purchase_Header_tb` 가 **`H_ID · BRN · P_Date` 세 칸뿐**이었다. 약속 납기일도
+# 상태도 없어서, 발주를 낸 뒤에 일어나는 일이 전부 시스템 밖에 있었다 —
+#
+#   "3일 늦어요" 통보   적을 칸이 없다. 계획 리드타임이 약속 납기 대용이라
+#                      협력사가 알려 와도 지연으로 찍힌다
+#   독촉               몇 번 전화했는지가 안 남는다
+#   발주 마감          미입고 라인이 **영원히** 미입고로 남는다
+#   발주 취소          길이 없다
+#
+# ⚠️ **납기는 라인별이다.** 머리에 하나로 두면 리드타임 3일짜리 볼트와 64일짜리
+#    디스플레이가 같은 날짜로 평가된다 — 3년치를 처음 만들 때 입고 준수율이
+#    42.7% 로 나왔던 바로 그 함정이다.
+#
+# ⚠️ **준수율은 최초 약속(Due_First)으로 잰다.** 늦을 때마다 납기를 미뤄 주면
+#    준수율이 100% 가 된다. 현재 약속(Due_Date)은 "언제 들어오나" 를 보는 값이고,
+#    평가는 처음 약속한 날로 한다.
+PO_EVENT_ID_PRE = "POE"
+PO_EVENTS = ("납기변경", "독촉", "마감", "취소", "재개")
+# 납기가 왜 밀렸는지가 다음 발주를 고친다 — 협력사 탓과 우리 탓을 가른다.
+DUE_REASONS = {
+    "협력사지연": {"blame": "협력사", "label": "협력사 생산·출하가 늦습니다"},
+    "원자재수급": {"blame": "협력사", "label": "협력사의 원자재가 안 들어옵니다"},
+    "물류지연":   {"blame": "협력사", "label": "운송·통관이 지연됩니다"},
+    "당사요청":   {"blame": "당사",   "label": "우리가 미뤄 달라고 했습니다"},
+    "기타":       {"blame": "미상",   "label": "그 밖의 사정"},
+}
+DUE_NOTE_MIN = 5          # 기준값을 바꾸는 일이라 근거가 남아야 한다
+EXPEDITE_NOTE_MIN = 2     # 독촉은 일상 업무다 — 5자를 강제하면 "독촉" 만 쌓인다
+DUE_SOON_DAYS = 7         # 납기 임박 기준
+
+
+def po_base(conn):
+    """납기 판정의 기준일 — 데이터의 마지막 날.
+
+    ⚠️ 실제 '오늘' 을 쓰면 안 된다. 더미데이터의 시간축과 어긋나면 전 발주가
+       '납기 경과' 로 찍힌다 — 전 화면이 쓰는 기준일 규칙과 같다.
+    """
+    return user_base(conn)
+
+
+def next_po_event_id(conn, date):
+    pre = PO_EVENT_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Ev_ID) FROM PO_Event_tb WHERE Ev_ID LIKE ?", (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def _po_head(conn, hid):
+    """발주 머리를 꺼낸다."""
+    hid = str(hid or "").strip()
+    r = conn.execute("""
+        SELECT h.*, c.CP_N AS supplier, c.Is_Foreign AS is_foreign
+          FROM Purchase_Header_tb h LEFT JOIN Company_tb c ON h.BRN = c.BRN
+         WHERE h.H_ID = ?""", (hid,)).fetchone()
+    if r is None:
+        return None, ["등록되지 않은 발주번호입니다: %s" % (hid or "(빈값)")]
+    return dict(r), []
+
+
+def po_lines(conn, hid, base=None):
+    """발주 라인 + 약속 납기 + 입고 여부. 납기 판정을 여기 한 곳에서 한다."""
+    base = base or po_base(conn)
+    rows = _rows(conn, """
+        SELECT d.H_ID, d.Purchase_num, d.P_ID, d.P_Qty AS ord_qty,
+               COALESCE(d.Unit_Price, p.P_Price) AS price,
+               d.Due_First, d.Due_Date, d.Closed,
+               p.P_N, p.Spec, s.Sf_Lv AS grade, s.Lead_Time AS lead_time,
+               h.P_Date, h.Status AS po_status,
+               l.Lot_ID, l.Lot_Date, l.P_Qty AS in_qty
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
+          %s
+         WHERE d.H_ID = ?
+         ORDER BY d.Purchase_num
+    """ % PENDING_JOIN, (hid,))
+    for r in rows:
+        r["recv"] = 1 if r["Lot_ID"] else 0
+        r["closed"] = 1 if (r["Closed"] or "") == "Y" else 0
+        r["moved"] = 1 if (r["Due_Date"] and r["Due_First"]
+                           and r["Due_Date"] != r["Due_First"]) else 0
+        r["due_state"], r["due_days"] = _due_state(r, base)
+    return rows
+
+
+def _due_state(r, base):
+    """납기 판정 한 곳. 화면마다 다시 세지 않는다.
+
+        입고       들어왔다 (늦었으면 며칠 늦었는지)
+        마감/취소  더 안 받는다
+        지남       약속일이 지났는데 안 들어왔다   ← 독촉할 것
+        임박       7일 안에 들어와야 한다
+        대기       아직 여유가 있다
+    """
+    due = r["Due_Date"] or r["Due_First"]
+    if r["recv"]:
+        if due and r["Lot_Date"]:
+            return "입고", int(_days(due, r["Lot_Date"]))
+        return "입고", None
+    if (r.get("po_status") or "") in ("마감", "취소"):
+        return r["po_status"], None
+    if r["closed"]:
+        return "마감", None
+    if not due:
+        return "대기", None
+    d = int(_days(base, due))            # 남은 날 (음수면 지났다)
+    if d < 0:
+        return "지남", -d
+    if d <= DUE_SOON_DAYS:
+        return "임박", d
+    return "대기", d
+
+
+def _days(a, b):
+    """a → b 일수."""
+    return (datetime.date.fromisoformat(b) - datetime.date.fromisoformat(a)).days
+
+
+def po_status(conn, hid=None):
+    """발주 상태. **사람이 정한 것(마감·취소)이 먼저고, 없으면 파생한다.**
+
+    상태를 통째로 저장하면 입고가 날 때마다 갱신해야 하고 언젠가 어긋난다 —
+    「숫자를 두 번 세지 않는다」. 그래서 저장하는 것은 사람의 결정뿐이고
+    진행·완료는 라인 판정이 말한다(`Safe_Override_tb` 가 계산 등급을 덮는 것과 같은 꼴).
+    """
+    where, args = ("WHERE d.H_ID = ?", (hid,)) if hid else ("", ())
+    out = {}
+    for r in _rows(conn, """
+        SELECT d.H_ID, h.Status,
+               COUNT(*) AS lines,
+               SUM(CASE WHEN l.Lot_ID IS NOT NULL THEN 1 ELSE 0 END) AS recv,
+               SUM(CASE WHEN l.Lot_ID IS NULL AND COALESCE(d.Closed,'') = 'Y'
+                        THEN 1 ELSE 0 END) AS closed
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          %s %s
+         GROUP BY d.H_ID
+    """ % (PENDING_JOIN, where), args):
+        n, recv, closed = r["lines"], r["recv"] or 0, r["closed"] or 0
+        st = r["Status"] or ("완료" if recv >= n else
+                             ("마감" if recv + closed >= n else "진행"))
+        out[r["H_ID"]] = {"status": st, "by_hand": 1 if r["Status"] else 0,
+                          "lines": n, "recv": recv, "closed": closed,
+                          "open": n - recv - closed}
+    return out.get(hid) if hid else out
+
+
+def po_hand_status(conn):
+    """**사람이 정한 상태만** (마감·취소). 목록 배지용이다.
+
+    ⚠️ `po_status()` 를 통째로 내려보내면 발주 770건이 화면 payload 에 얹힌다
+       (+108KB). 진행·완료는 목록이 이미 아는 값(미입고 라인 수)에서 나오고,
+       자세한 것은 발주를 누를 때 `/api/po/detail` 로 그 한 건만 받는다 —
+       LOT 추적·날짜 상세와 같은 방법이다.
+    """
+    return {r["H_ID"]: r["Status"] for r in _rows(
+        conn, "SELECT H_ID, Status FROM Purchase_Header_tb WHERE Status IS NOT NULL")}
+
+
+def po_events(conn, hid=None):
+    """발주에 일어난 일 — 납기 변경 · 독촉 · 마감 · 취소를 한 타임라인으로."""
+    where, args = ("WHERE e.H_ID = ?", (hid,)) if hid else ("", ())
+    return _rows(conn, """
+        SELECT e.*, u.Name AS worker, u.Position AS pos, p.P_N
+          FROM PO_Event_tb e
+          LEFT JOIN User_tb u ON e.EP_ID = u.EP_ID
+          LEFT JOIN Purchase_Detail_tb d
+                 ON d.H_ID = e.H_ID AND d.Purchase_num = e.Purchase_num
+          LEFT JOIN Product_tb p ON d.P_ID = p.P_ID
+          %s
+         ORDER BY e.Ev_ID DESC
+    """ % where, args)
+
+
+def po_event_map(conn):
+    """발주번호 → 이벤트 요약. 목록에 배지를 붙이는 데 쓴다."""
+    out = {}
+    for r in _rows(conn, """
+        SELECT H_ID,
+               SUM(CASE WHEN Ev_Type = '납기변경' THEN 1 ELSE 0 END) AS moved,
+               SUM(CASE WHEN Ev_Type = '독촉'   THEN 1 ELSE 0 END) AS urged,
+               MAX(CASE WHEN Ev_Type = '독촉'   THEN Ev_Date END)  AS last_urge,
+               COUNT(*) AS n
+          FROM PO_Event_tb GROUP BY H_ID"""):
+        out[r["H_ID"]] = dict(r)
+    return out
+
+
+def _open_lines(conn, hid, nums=None):
+    """아직 안 들어온 라인. 납기 변경·마감의 대상이다."""
+    rows = [r for r in po_lines(conn, hid) if not r["recv"] and not r["closed"]]
+    if nums is None:
+        return rows, []
+    want = []
+    for n in nums:
+        try:
+            want.append(int(n))
+        except (TypeError, ValueError):
+            return None, ["라인번호가 숫자가 아닙니다: %s" % n]
+    have = {r["Purchase_num"] for r in rows}
+    miss = [n for n in want if n not in have]
+    if miss:
+        return None, ["받을 것이 없는 라인입니다(이미 입고됐거나 마감): %s"
+                      % ", ".join(str(m) for m in miss)]
+    return [r for r in rows if r["Purchase_num"] in want], []
+
+
+def _po_note(reason, least, what):
+    why = str(reason or "").strip()
+    if len(why) < least:
+        return None, ["%s 사유를 %d자 이상 적어주세요." % (what, least)]
+    return why, []
+
+
+def change_due(conn, date, hid, new_due, ep_id, reason_cd=None, reason=None, nums=None):
+    """납기 변경 통보를 적는다. **최초 약속은 건드리지 않는다.**
+
+    ⚠️ 이미 들어온 라인의 약속은 바꾸지 않는다 — 들어온 뒤에 약속을 고치는 것은
+       기록이 아니라 조작이다. 대상은 **아직 안 들어온 라인**뿐이다.
+    """
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    if h["Status"] in ("마감", "취소"):
+        return None, ["%s된 발주입니다. 다시 받으려면 재개하세요." % h["Status"]]
+    w, e = _worker(conn, ep_id)          # 적는 일이라 직급을 묻지 않는다
+    if e:
+        return None, e
+    if not _is_date(new_due):
+        return None, ["새 납기일이 날짜 꼴이 아닙니다: %s" % (new_due or "(빈값)")]
+    if new_due < h["P_Date"]:
+        return None, ["납기일(%s)이 발주일(%s)보다 앞설 수 없습니다."
+                      % (new_due, h["P_Date"])]
+    cd = str(reason_cd or "").strip()
+    if cd not in DUE_REASONS:
+        return None, ["납기 변경 사유를 고르세요 (가능: %s)" % " · ".join(DUE_REASONS)]
+    why, e = _po_note(reason, DUE_NOTE_MIN, "납기 변경")
+    if e:
+        return None, e
+    lines, e = _open_lines(conn, hid, nums)
+    if e:
+        return None, e
+    if not lines:
+        return None, ["받을 라인이 없습니다. 전부 입고됐거나 마감된 발주입니다."]
+    same = [r for r in lines if (r["Due_Date"] or r["Due_First"]) == new_due]
+    if len(same) == len(lines):
+        return None, ["지금 약속과 같은 날짜입니다: %s" % new_due]
+
+    done = []
+    with conn:
+        for r in lines:
+            old = r["Due_Date"] or r["Due_First"]
+            if old == new_due:
+                continue
+            conn.execute("UPDATE Purchase_Detail_tb SET Due_Date = ?"
+                         " WHERE H_ID = ? AND Purchase_num = ?",
+                         (new_due, hid, r["Purchase_num"]))
+            ev = next_po_event_id(conn, date)
+            conn.execute(
+                "INSERT INTO PO_Event_tb (Ev_ID, H_ID, Purchase_num, Ev_Type,"
+                " Old_Due, New_Due, Reason_Cd, Reason, Ev_Date, EP_ID)"
+                " VALUES (?,?,?,'납기변경',?,?,?,?,?,?)",
+                (ev, hid, r["Purchase_num"], old, new_due, cd, why, date, w["EP_ID"]))
+            done.append({"Purchase_num": r["Purchase_num"], "P_ID": r["P_ID"],
+                         "P_N": r["P_N"], "old": old, "new": new_due,
+                         "slip": _days(old, new_due) if old else None, "Ev_ID": ev})
+    return {"H_ID": hid, "lines": done, "cnt": len(done), "new_due": new_due,
+            "reason_cd": cd, "blame": DUE_REASONS[cd]["blame"], "reason": why,
+            "worker": w, "date": date}, []
+
+
+def expedite_po(conn, date, hid, ep_id, reason=None, nums=None):
+    """독촉을 적는다. 몇 번 재촉했는지가 남아야 협력사 평가에 쓸 수 있다."""
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    if h["Status"] in ("마감", "취소"):
+        return None, ["%s된 발주는 독촉할 것이 없습니다." % h["Status"]]
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    why, e = _po_note(reason, EXPEDITE_NOTE_MIN, "독촉")
+    if e:
+        return None, e
+    lines, e = _open_lines(conn, hid, nums)
+    if e:
+        return None, e
+    if not lines:
+        return None, ["받을 라인이 없습니다. 독촉할 것이 없습니다."]
+    with conn:
+        ev = next_po_event_id(conn, date)
+        conn.execute(
+            "INSERT INTO PO_Event_tb (Ev_ID, H_ID, Purchase_num, Ev_Type, Reason,"
+            " Ev_Date, EP_ID) VALUES (?,?,?,'독촉',?,?,?)",
+            (ev, hid, lines[0]["Purchase_num"] if nums and len(lines) == 1 else None,
+             why, date, w["EP_ID"]))
+    n = conn.execute("SELECT COUNT(*) FROM PO_Event_tb WHERE H_ID = ? AND Ev_Type='독촉'",
+                     (hid,)).fetchone()[0]
+    return {"H_ID": hid, "Ev_ID": ev, "cnt": n, "lines": len(lines),
+            "reason": why, "worker": w, "date": date}, []
+
+
+def close_po(conn, date, hid, ep_id, reason=None, nums=None):
+    """발주 마감 — 미입고 라인을 닫는다. **더 안 받는다는 뜻이다.**
+
+    거래처가 결품으로 못 보내거나 우리가 필요 없어졌을 때. 닫으면 입고 화면의
+    미입고 목록에서 빠진다. 전에는 닫을 길이 없어 22라인이 영원히 대기였다.
+    """
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    if h["Status"] in ("마감", "취소"):
+        return None, ["이미 %s된 발주입니다." % h["Status"]]
+    lines, e = _open_lines(conn, hid, nums)
+    if e:
+        return None, e
+    if not lines:
+        return None, ["닫을 라인이 없습니다. 이미 전부 입고된 발주입니다."]
+    amount = sum(round((r["ord_qty"] or 0) * (r["price"] or 0)) for r in lines)
+    # 되돌릴 수 없는 쪽이고 **안 사기로 하는 금액**이라 직급·한도를 본다
+    w, e = _approver(conn, ep_id, amount, "발주 마감")
+    if e:
+        return None, e
+    why, e = _po_note(reason, DUE_NOTE_MIN, "마감")
+    if e:
+        return None, e
+    with conn:
+        for r in lines:
+            conn.execute("UPDATE Purchase_Detail_tb SET Closed = 'Y'"
+                         " WHERE H_ID = ? AND Purchase_num = ?", (hid, r["Purchase_num"]))
+        ev = next_po_event_id(conn, date)
+        conn.execute(
+            "INSERT INTO PO_Event_tb (Ev_ID, H_ID, Purchase_num, Ev_Type, Reason,"
+            " Ev_Date, EP_ID) VALUES (?,?,?,'마감',?,?,?)",
+            (ev, hid, None if nums is None else lines[0]["Purchase_num"],
+             why, date, w["EP_ID"]))
+        # 라인을 전부 닫았으면 머리도 마감으로 적는다
+        st = po_status(conn, hid)
+        if st and st["open"] == 0 and st["recv"] == 0:
+            conn.execute("UPDATE Purchase_Header_tb SET Status = '마감' WHERE H_ID = ?", (hid,))
+    return {"H_ID": hid, "Ev_ID": ev, "closed": len(lines), "amount": amount,
+            "status": po_status(conn, hid)["status"], "reason": why,
+            "worker": w, "date": date}, []
+
+
+def cancel_po(conn, date, hid, ep_id, reason=None):
+    """발주 취소 — **입고가 하나도 없을 때만.**
+
+    하나라도 들어왔으면 그 입고를 없던 일로 할 수 없다. 그때는 마감을 쓴다.
+    """
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    if h["Status"] in ("마감", "취소"):
+        return None, ["이미 %s된 발주입니다." % h["Status"]]
+    st = po_status(conn, hid)
+    if st["recv"] > 0:
+        return None, ["이미 %d줄이 입고된 발주라 취소할 수 없습니다. 남은 라인을 "
+                      "**마감**하세요 — 들어온 물건을 없던 일로 할 수는 없습니다."
+                      % st["recv"]]
+    amount = conn.execute(
+        "SELECT COALESCE(SUM(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price)),0)"
+        "  FROM Purchase_Detail_tb d JOIN Product_tb p ON d.P_ID = p.P_ID"
+        " WHERE d.H_ID = ?", (hid,)).fetchone()[0]
+    w, e = _approver(conn, ep_id, amount, "발주 취소")
+    if e:
+        return None, e
+    why, e = _po_note(reason, DUE_NOTE_MIN, "취소")
+    if e:
+        return None, e
+    with conn:
+        conn.execute("UPDATE Purchase_Header_tb SET Status = '취소' WHERE H_ID = ?", (hid,))
+        ev = next_po_event_id(conn, date)
+        conn.execute(
+            "INSERT INTO PO_Event_tb (Ev_ID, H_ID, Ev_Type, Reason, Ev_Date, EP_ID)"
+            " VALUES (?,?,'취소',?,?,?)", (ev, hid, why, date, w["EP_ID"]))
+    return {"H_ID": hid, "Ev_ID": ev, "amount": int(amount or 0), "lines": st["lines"],
+            "reason": why, "worker": w, "date": date}, []
+
+
+def reopen_po(conn, date, hid, ep_id, reason=None):
+    """마감·취소를 되돌린다. 거래처가 다시 보내겠다고 하는 일은 흔하다."""
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    closed = conn.execute("SELECT COUNT(*) FROM Purchase_Detail_tb"
+                          " WHERE H_ID = ? AND COALESCE(Closed,'') = 'Y'",
+                          (hid,)).fetchone()[0]
+    if not h["Status"] and not closed:
+        return None, ["마감·취소된 발주가 아닙니다."]
+    w, e = _approver(conn, ep_id, None, "발주 재개")
+    if e:
+        return None, e
+    why, e = _po_note(reason, DUE_NOTE_MIN, "재개")
+    if e:
+        return None, e
+    with conn:
+        conn.execute("UPDATE Purchase_Header_tb SET Status = NULL WHERE H_ID = ?", (hid,))
+        conn.execute("UPDATE Purchase_Detail_tb SET Closed = NULL WHERE H_ID = ?", (hid,))
+        ev = next_po_event_id(conn, date)
+        conn.execute(
+            "INSERT INTO PO_Event_tb (Ev_ID, H_ID, Ev_Type, Reason, Ev_Date, EP_ID)"
+            " VALUES (?,?,'재개',?,?,?)", (ev, hid, why, date, w["EP_ID"]))
+    return {"H_ID": hid, "Ev_ID": ev, "reopened": closed,
+            "status": po_status(conn, hid)["status"], "reason": why,
+            "worker": w, "date": date}, []
+
+
+def due_watch(conn, base=None):
+    """납기가 지났거나 임박한 미입고 라인. **오늘 독촉할 것**이다."""
+    base = base or po_base(conn)
+    rows = _rows(conn, """
+        SELECT d.H_ID, d.Purchase_num, d.P_ID, d.P_Qty AS ord_qty,
+               COALESCE(d.Unit_Price, p.P_Price) AS price,
+               d.Due_First, d.Due_Date, d.Closed,
+               h.P_Date, h.Status AS po_status, c.CP_N AS supplier,
+               p.P_N, p.Spec, s.Sf_Lv AS grade,
+               l.Lot_ID, l.Lot_Date, l.P_Qty AS in_qty,
+               (SELECT COUNT(*) FROM PO_Event_tb e
+                 WHERE e.H_ID = d.H_ID AND e.Ev_Type = '독촉') AS urged,
+               (SELECT MAX(Ev_Date) FROM PO_Event_tb e
+                 WHERE e.H_ID = d.H_ID AND e.Ev_Type = '독촉') AS last_urge
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+          LEFT JOIN Company_tb c    ON h.BRN = c.BRN
+          LEFT JOIN Safe_tb s       ON d.P_ID = s.P_ID
+          %s
+         WHERE %s
+    """ % (PENDING_JOIN, PENDING_WHERE))
+    late, soon = [], []
+    for r in rows:
+        r["recv"] = 0
+        r["closed"] = 0
+        r["due_state"], r["due_days"] = _due_state(r, base)
+        r["amount"] = round((r["ord_qty"] or 0) * (r["price"] or 0))
+        if r["due_state"] == "지남":
+            late.append(r)
+        elif r["due_state"] == "임박":
+            soon.append(r)
+    late.sort(key=lambda r: -(r["due_days"] or 0))
+    soon.sort(key=lambda r: (r["due_days"] or 0))
+    return {"late": late, "soon": soon, "base": base,
+            "late_cnt": len(late), "soon_cnt": len(soon),
+            "late_amt": sum(r["amount"] for r in late),
+            "soon_amt": sum(r["amount"] for r in soon)}
+
+
+def po_detail_extra(conn, hid):
+    """구매 발주 상세가 더 보여줄 것 — 납기 · 상태 · 이벤트."""
+    h, e = _po_head(conn, hid)
+    if e:
+        return None, e
+    lines = po_lines(conn, hid)
+    st = po_status(conn, hid)
+    due = [r["Due_Date"] or r["Due_First"] for r in lines if r["Due_Date"] or r["Due_First"]]
+    return {"H_ID": hid, "status": st, "lines": lines, "events": po_events(conn, hid),
+            "due_max": max(due) if due else None,
+            "moved": sum(1 for r in lines if r["moved"]),
+            "reasons": [{"cd": k, "blame": v["blame"], "label": v["label"]}
+                        for k, v in DUE_REASONS.items()],
+            "note_min": DUE_NOTE_MIN, "urge_min": EXPEDITE_NOTE_MIN}, []

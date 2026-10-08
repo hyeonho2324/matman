@@ -217,12 +217,15 @@ function drawList(){
   document.getElementById('list').innerHTML = rows.map(function(o){
     const lines = (mode==='pending') ? o.line_cnt : o.lines;
     const sub = (mode==='pending')
-      ? '발주 ' + o.P_Date + ' · 예상 입고 ' + o.eta
+      ? '발주 ' + o.P_Date + ' · 약속 ' + (o.due || o.eta)
       : '발주 ' + o.P_Date + (o.recv_date ? ' → 입고 ' + o.recv_date + ' (' + o.lead_days + '일)' : ' · 미입고');
     return '<div class="po ' + (sel===o.H_ID?'on':'') + '" data-hid="' + o.H_ID + '" onclick="pick(this.dataset.hid)">'
       + '<div class="po-h"><span class="hid">' + o.H_ID + '</span>'
       +   (o.is_foreign==='Y' ? '<span class="bg bac">해외</span>' : '')
-      +   (mode==='pending' ? '<span class="bg bwn">미입고</span>' : '') + '</div>'
+      +   (mode==='pending'
+            ? (o.late ? '<span class="bg bdn">납기 경과 ' + o.late + '</span>'
+                      : '<span class="bg bwn">미입고</span>')
+            : '') + '</div>'
       + '<div class="po-s">' + esc(o.supplier||'-') + ' · ' + lines + '품목 · ' + won(o.amount) + '원<br>' + sub + '</div>'
       + '</div>';
   }).join('');
