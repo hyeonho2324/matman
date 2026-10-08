@@ -179,9 +179,9 @@ touch /var/www/hyeonhomatman1_pythonanywhere_com_wsgi.py
 ```
 
 > 서버에서 만든 데이터를 남기고 싶다면 먼저 `cp data/erp.db ~/erp.backup.db` 로
-> 빼 두세요. 다만 **이번 갱신은 테이블이 늘어나는 변경**(재고 실사 · 현장 반납 ·
-> 단가 이력)이라 옛 DB 를 그대로 쓰면 새 화면이 "no such table" 로 터집니다.
-> 받은 `data/erp.db` 를 쓰는 게 맞습니다.
+> 빼 두세요. 다만 **갱신마다 테이블이 늘어나는 일이 잦습니다**(재고 실사 · 현장
+> 반납 · 단가 이력 · 발주 제안 · 발주 정책 · 운영 설정). 옛 DB 를 그대로 쓰면
+> 새 화면이 "no such table" 로 터지므로 **받은 `data/erp.db` 를 쓰는 게 맞습니다.**
 
 ### git 으로 안 올렸다면 (파일을 손으로 올린 경우)
 
@@ -199,16 +199,20 @@ Web 탭의 **Source code** · **Working directory** 가 `/home/hyeonhomatman1/ma
 그대로면 설정은 손댈 게 없습니다. 열어 보고 멀쩡하면 `rm -rf ~/matman.old` 로
 옛 폴더를 지웁니다.
 
-### 갱신됐는지 확인
+### 갱신됐는지 확인 (2026-10-08 기준)
 
-갱신 전에는 **404** 가 뜨던 두 주소가 열리면 된 것입니다.
+갱신 전에는 **404** 가 뜨던 주소가 열리면 된 것입니다.
 
-| 주소 | 화면 |
-|---|---|
-| https://hyeonhomatman1.pythonanywhere.com/return | 현장 반납 |
-| https://hyeonhomatman1.pythonanywhere.com/stock-count | 재고 실사 |
+| 주소 | 화면 | 무엇이 보이면 성공인가 |
+|---|---|---|
+| [/order-plan](https://hyeonhomatman1.pythonanywhere.com/order-plan) | **발주 제안** | 대기 3건 · 자동 발주 1 · 자동 멈춤 1 · 품목 예외 2 |
+| [/calendar](https://hyeonhomatman1.pythonanywhere.com/calendar) | 발주 캘린더 | **2026년 10월**로 열리고, 칸에 `✓n 부족 n 대기 n` |
+| [/return](https://hyeonhomatman1.pythonanywhere.com/return) | 현장 반납 | 현장 보유 LOT 197건 |
+| [/stock-count](https://hyeonhomatman1.pythonanywhere.com/stock-count) | 재고 실사 | 15차수 |
+| [/products](https://hyeonhomatman1.pythonanywhere.com/products) | 자재 목록 | 상세에 **현장 보유** 줄, LOT 이력에 `현장 / 투입` 열 |
 
-왼쪽 메뉴 **입출고**에 `현장 반납`, **재고 현황**에 `재고 실사` 가 보이면 됩니다.
+왼쪽 메뉴 **구매/협력사**에 `발주 제안` 이 보이고, 대시보드 '오늘 할 일' 에
+`발주 제안 3` 칸이 생기면 된 것입니다.
 
 > 새로 설치할 라이브러리는 없습니다. 이번 변경은 `flask` · `openpyxl` 밖에
 > 안 씁니다.
