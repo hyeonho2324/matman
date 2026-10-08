@@ -226,6 +226,13 @@ else:
     print("발주 제안 %d건 — 자동 발주 %d · 대기 %d (발주서 %d장)"
           % (len(_res["made"]), len(_res["auto"]), len(_res["wait"]),
              len(_res.get("placed") or [])))
+# 다음 달 구매계획도 한 장 세워 둔다 — 결재 대기 상태로 둬야 시연이 된다
+_pp, _e2 = D.make_purchase_plan(_pc, _date)
+if _e2:
+    print("구매계획 작성 실패:", _e2)
+else:
+    print("월간 구매계획 %s — %d품목 · %s원 (마감 %s · 결재 대기)"
+          % (_pp["month"], _pp["item_cnt"], format(_pp["amount"], ","), _pp["cut"]))
 _pc.commit(); _pc.close()
 
 con.close()

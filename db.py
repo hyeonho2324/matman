@@ -1600,6 +1600,7 @@ def worklist(conn):
     claims = claim_summary(conn)               # 불량·반품
     wait_appr = wait_approval_cnt(conn)        # 승인 대기
     wait_plan = wait_plan_cnt(conn)            # 발주 제안 (A 수동 · B 승인)
+    wait_pplan = wait_plan_approval_cnt(conn)  # 결재를 기다리는 월간 구매계획
     opens = open_requests(conn)                # 승인 끝나고 아직 안 나간 요청
 
     due = conn.execute(
@@ -1626,6 +1627,9 @@ def worklist(conn):
         {"key": "claim",    "label": "불량 · 반품",  "n": claims.get("open", 0), "unit": "건",
          "sub": "대체입고 / 환불 / 폐기를 정해야 함", "url": "/inbound",
          "tone": "dn" if claims.get("open") else "mu"},
+        {"key": "purchase_plan", "label": "구매계획 결재", "n": wait_pplan, "unit": "건",
+         "sub": "다음 달 구매 금액 — 마감 전에 올린다", "url": "/purchase-plan",
+         "tone": "wn" if wait_pplan else "mu"},
         {"key": "order_plan", "label": "발주 제안",  "n": wait_plan,       "unit": "건",
          "sub": "A는 직접 · B는 승인하면 나간다", "url": "/order-plan",
          "tone": "wn" if wait_plan else "mu"},
@@ -1664,6 +1668,7 @@ ALERT_MENU = {
     "inbound":  "inbound",
     "claim":    "inbound",
     "order_plan": "order_plan",
+    "purchase_plan": "purchase_plan",
     "approval": "approval",
     "picking":  "picking",
     "disburse": "disburse",
@@ -4609,6 +4614,287 @@ def set_setting(conn, date, key, value, reason, ep_id):
             (sid, key, str(v), str(cur["value"]), reason, w["EP_ID"], date))
     return {"Set_ID": sid, "key": key, "old": cur["value"], "value": v,
             "worker": w}, []
+
+
+# ══════════════════════════════════════════════════════════════
+#  월간 구매계획 — 다음 달에 얼마치 살지 미리 결재받는다
+# ══════════════════════════════════════════════════════════════
+# 등급별 발주 정책이 **물건**(어느 자재를 어떻게 발주하나)을 통제한다면,
+# 이쪽은 **돈**(다음 달에 얼마가 나가나)을 통제한다. 둘은 대체가 아니라 포개진다.
+#
+#   ① 사전   월간 구매계획 품의 — "다음 달 자재비 n억" 을 미리 승인받는다
+#   ② 집행   그 범위 안에서 개별 발주가 나간다 (발주 제안의 A/B/C 정책)
+#   ③ 사후   계획 대비 집행률로 마감한다
+#
+# ⚠️ **마감일은 월말이 아니다.** 결재에 며칠이 걸리고, 1일부터 집행하려면 그
+#    전에 끝나야 하며, 재무의 월간 자금계획 마감이 보통 25일 전후다. 그래서
+#    실무 관행대로 **전월 25일**을 기본으로 잡고 주말이면 앞 영업일로 당긴다.
+PLAN_CUT_DAY = 25
+PPLAN_ID_PRE = "PB"
+PPLAN_STATUS = ["작성", "승인", "반려"]
+
+
+def _month_add(ym, n):
+    """'YYYY-MM' 에 n 개월."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    t = (y * 12 + (m - 1)) + n
+    return "%04d-%02d" % (t // 12, t % 12 + 1)
+
+
+def _month_days(ym):
+    y, m = int(ym[:4]), int(ym[5:7])
+    ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+    return (datetime.date(ny, nm, 1) - datetime.date(y, m, 1)).days
+
+
+def plan_cut_date(ym):
+    """그 달 계획의 작성 마감일 — 전월 25일, 주말이면 앞 영업일로 당긴다."""
+    prev = _month_add(ym, -1)
+    d = datetime.date(int(prev[:4]), int(prev[5:7]), PLAN_CUT_DAY)
+    while d.weekday() >= 5:          # 토·일이면 금요일로
+        d -= datetime.timedelta(days=1)
+    return d.isoformat()
+
+
+def plan_month_state(conn, ym, base=None):
+    """그 달 계획의 마감까지 며칠 남았는지 / 지났는지."""
+    base = base or conn.execute(
+        "SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    cut = plan_cut_date(ym)
+    left = _days_between(base, cut)
+    return {"month": ym, "cut": cut, "base": base, "left": left,
+            "late": left is not None and left < 0,
+            "days": _month_days(ym)}
+
+
+def next_plan_month(conn, base=None):
+    """지금 짜야 할 달. 마감이 지났으면 그다음 달로 넘어간다."""
+    base = base or conn.execute(
+        "SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    ym = _month_add(base[:7], 1)
+    # 이미 그 달 계획이 승인돼 있으면 다음 달을 짠다
+    while conn.execute("SELECT 1 FROM Purchase_Plan_tb WHERE Month = ?"
+                       " AND Status = '승인'", (ym,)).fetchone():
+        ym = _month_add(ym, 1)
+    return ym
+
+
+def next_pplan_id(conn, ym):
+    pre = PPLAN_ID_PRE + ym.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Plan_ID) FROM Purchase_Plan_tb WHERE Plan_ID LIKE ?",
+        (pre + "%",)).fetchone()[0]
+    return "%s%02d" % (pre, (int(last[-2:]) + 1) if last else 1)
+
+
+def draft_purchase_plan(conn, ym=None):
+    """다음 달 구매계획 초안 — **저장하지 않는다.**
+
+    자재별로 그 달에 발주가 나가야 할 양과 금액을 낸다.
+
+        다음 달 소요  = 일평균 사용량 × 그 달 일수
+        덮이는 양     = 현재고 + 입고 예정 − 안전재고
+        부족          = 소요 − 덮이는 양
+        계획 발주량   = 부족을 MOQ·포장단위로 올림          ← round_order_qty
+
+    ⚠️ 일평균 사용량·현재고·안전재고는 **수요 예측이 쓰는 그 값**을 그대로 쓴다.
+       여기서 다시 계산하면 두 화면이 다른 숫자를 말한다.
+    ⚠️ 안전재고를 빼는 이유 — 안전재고는 **쓰라고 둔 재고가 아니다.** 그걸로
+       다음 달 소요를 덮으면 계획상 이미 안전재고를 까먹는 셈이 된다.
+    """
+    rows, base, _span = forecast_list(conn)
+    ym = ym or next_plan_month(conn, base)
+    st = plan_month_state(conn, ym, base)
+    pol = order_policy_map(conn)
+
+    # 입고 예정 — 미입고 발주 잔량 (이미 돈이 나갈 예정인 물량)
+    inc = {}
+    for h in pending_po(conn):
+        for it in h["items"]:
+            inc[it["P_ID"]] = inc.get(it["P_ID"], 0) + (it["ord_qty"] or 0)
+
+    items = []
+    for r in rows:
+        d = r["daily"] or 0
+        if d <= 0:
+            continue                      # 사용 이력이 없으면 계획에 못 넣는다
+        need = int(round(d * st["days"]))
+        incoming = inc.get(r["P_ID"], 0)
+        cover = (r["stock"] or 0) + incoming - (r["safe_qty"] or 0)
+        short = need - cover
+        qty = round_order_qty(short, r["MinOrderQty"], r["PkgUnit"]) if short > 0 else 0
+        if qty <= 0:
+            continue
+        p = pol.get(r["P_ID"]) or {}
+        items.append({
+            "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
+            "supplier": r["supplier"], "is_foreign": r["is_foreign"],
+            "grade": r["grade"], "policy": p.get("policy"),
+            "need": need, "cover": cover, "short": short, "qty": qty,
+            "price": r["P_Price"], "amount": round(qty * (r["P_Price"] or 0)),
+            "stock": r["stock"], "incoming": incoming, "safe_qty": r["safe_qty"],
+            "daily": r["daily"], "lead_time": r["lead_time"],
+            "PkgUnit": r["PkgUnit"], "MinOrderQty": r["MinOrderQty"],
+        })
+    items.sort(key=lambda x: -(x["amount"] or 0))
+    return {"month": ym, "cut": st["cut"], "left": st["left"], "late": st["late"],
+            "days": st["days"], "base": base, "items": items,
+            "amount": sum(i["amount"] for i in items),
+            "item_cnt": len(items),
+            "by_grade": {g: {"n": sum(1 for i in items if i["grade"] == g),
+                             "amt": sum(i["amount"] for i in items if i["grade"] == g)}
+                         for g in "ABC"}}
+
+
+def make_purchase_plan(conn, date_, ym=None, ep_id=None, note=None):
+    """초안을 **계획으로 저장한다.** 같은 달을 다시 짜면 번호가 올라간다.
+
+    ⚠️ 승인된 계획은 덮지 않는다. 바꾸려면 그 계획을 반려하고 다시 짠다 —
+       승인받은 금액이 소리 없이 바뀌면 결재가 의미를 잃는다.
+    """
+    d = draft_purchase_plan(conn, ym)
+    ym = d["month"]
+    if conn.execute("SELECT 1 FROM Purchase_Plan_tb WHERE Month=? AND Status='승인'",
+                    (ym,)).fetchone():
+        return None, ["%s 계획은 이미 승인됐습니다. 바꾸려면 먼저 반려하세요." % ym]
+    if not d["items"]:
+        return None, ["%s 에 발주할 자재가 없습니다 — 재고와 입고 예정으로 다 덮입니다." % ym]
+    w = None
+    if ep_id:
+        w, e = _worker(conn, ep_id)
+        if e:
+            return None, e
+    pid = next_pplan_id(conn, ym)
+    with conn:
+        # 같은 달의 묵은 초안은 치운다 (승인된 것은 위에서 막았다)
+        conn.execute("DELETE FROM Purchase_Plan_Item_tb WHERE Plan_ID IN"
+                     " (SELECT Plan_ID FROM Purchase_Plan_tb WHERE Month=? AND Status='작성')",
+                     (ym,))
+        conn.execute("DELETE FROM Purchase_Plan_tb WHERE Month=? AND Status='작성'", (ym,))
+        conn.execute(
+            "INSERT INTO Purchase_Plan_tb (Plan_ID, Month, Cut_Date, Base_Date, Status,"
+            " Amount, Item_Cnt, EP_ID, Made_Date, Note)"
+            " VALUES (?,?,?,?,'작성',?,?,?,?,?)",
+            (pid, ym, d["cut"], d["base"], d["amount"], d["item_cnt"],
+             (w or {}).get("EP_ID"), date_, note))
+        for n, it in enumerate(d["items"], start=1):
+            conn.execute(
+                "INSERT INTO Purchase_Plan_Item_tb (Plan_ID, Line, P_ID, Grade, Policy,"
+                " Need_Qty, Cover_Qty, Qty, Unit_Price, Amount, Stock_Qty, Incoming,"
+                " Safe_Qty, Daily, Lead_Time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, n, it["P_ID"], it["grade"], it["policy"], it["need"],
+                 it["cover"], it["qty"], it["price"], it["amount"], it["stock"],
+                 it["incoming"], it["safe_qty"], it["daily"], it["lead_time"]))
+    return {"Plan_ID": pid, "month": ym, "amount": d["amount"],
+            "item_cnt": d["item_cnt"], "cut": d["cut"]}, []
+
+
+def purchase_plan_list(conn):
+    rows = _rows(conn, """
+        SELECT p.*, u.Name AS worker, a.Name AS approver, a.Position AS appr_pos
+          FROM Purchase_Plan_tb p
+          LEFT JOIN User_tb u ON p.EP_ID = u.EP_ID
+          LEFT JOIN User_tb a ON p.Appr_EP_ID = a.EP_ID
+         ORDER BY p.Month DESC, p.Plan_ID DESC
+    """)
+    # 집행 — 그 달에 실제로 나간 발주 금액
+    spent = {r["ym"]: r for r in _rows(conn, """
+        SELECT substr(h.P_Date,1,7) AS ym, COUNT(DISTINCT h.H_ID) AS cnt,
+               SUM(ROUND(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price))) AS amt
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         GROUP BY ym
+    """)}
+    for r in rows:
+        s = spent.get(r["Month"])
+        r["spent"] = int(s["amt"] or 0) if s else 0
+        r["spent_cnt"] = s["cnt"] if s else 0
+        r["used_pct"] = _pct(r["spent"], r["Amount"]) if r["Amount"] else 0
+    return rows
+
+
+def purchase_plan_items(conn, plan_id):
+    return _rows(conn, """
+        SELECT i.*, p.P_N, p.Spec, p.PkgUnit, p.MinOrderQty,
+               c.CP_N AS supplier, c.Is_Foreign AS is_foreign
+          FROM Purchase_Plan_Item_tb i
+          LEFT JOIN Product_tb p ON i.P_ID = p.P_ID
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+         WHERE i.Plan_ID = ? ORDER BY i.Amount DESC, i.Line
+    """, (plan_id,))
+
+
+def approve_purchase_plan(conn, date_, plan_id, ep_id, note=None):
+    """계획 승인 — 금액이 크므로 직급 한도를 본다 (불출 승인과 같은 기준)."""
+    r = conn.execute("SELECT * FROM Purchase_Plan_tb WHERE Plan_ID = ?",
+                     (str(plan_id or "").strip(),)).fetchone()
+    if r is None:
+        return None, ["없는 계획번호입니다: %s" % plan_id]
+    if r["Status"] != "작성":
+        return None, ["이미 처리된 계획입니다 (%s)." % r["Status"]]
+    w, e = _approver(conn, ep_id, r["Amount"], "구매계획 승인")
+    if e:
+        return None, e
+    if r["EP_ID"] and r["EP_ID"] == w["EP_ID"]:
+        return None, ["계획을 세운 사람이 스스로 승인할 수 없습니다."]
+    with conn:
+        conn.execute("UPDATE Purchase_Plan_tb SET Status='승인', Appr_EP_ID=?,"
+                     " Appr_Date=?, Appr_Note=? WHERE Plan_ID=?",
+                     (w["EP_ID"], date_, note, r["Plan_ID"]))
+    return {"Plan_ID": r["Plan_ID"], "amount": r["Amount"], "worker": w}, []
+
+
+def reject_purchase_plan(conn, date_, plan_id, ep_id, reason):
+    r = conn.execute("SELECT * FROM Purchase_Plan_tb WHERE Plan_ID = ?",
+                     (str(plan_id or "").strip(),)).fetchone()
+    if r is None:
+        return None, ["없는 계획번호입니다: %s" % plan_id]
+    if r["Status"] == "반려":
+        return None, ["이미 반려된 계획입니다."]
+    w, e = _approver(conn, ep_id, None, "구매계획 반려")
+    if e:
+        return None, e
+    reason = str(reason or "").strip()
+    if len(reason) < 2:
+        return None, ["반려 사유를 적어주세요."]
+    with conn:
+        conn.execute("UPDATE Purchase_Plan_tb SET Status='반려', Appr_EP_ID=?,"
+                     " Appr_Date=?, Appr_Note=? WHERE Plan_ID=?",
+                     (w["EP_ID"], date_, reason, r["Plan_ID"]))
+    return {"Plan_ID": r["Plan_ID"]}, []
+
+
+def purchase_plan_source(conn):
+    """월간 구매계획 화면의 기준 데이터."""
+    rows = purchase_plan_list(conn)
+    draft = draft_purchase_plan(conn)
+    cur = next(({**dict(r), "items": purchase_plan_items(conn, r["Plan_ID"])}
+                for r in rows if r["Status"] == "작성"), None)
+    base = draft["base"]
+    ws = _rows(conn, "SELECT EP_ID, Name, Position FROM User_tb ORDER BY Name")
+    for w in ws:
+        w["limit"] = approval_limit(w["Position"])
+    return {
+        "rows": rows, "cur": cur, "draft": draft,
+        "base": base, "entry": _add_days(base, 1),
+        "cut_day": PLAN_CUT_DAY,
+        "workers": ws, "approvers": [w for w in ws if w["limit"] != 0],
+        "summary": {
+            "month": draft["month"], "cut": draft["cut"], "left": draft["left"],
+            "late": draft["late"], "amount": draft["amount"],
+            "item_cnt": draft["item_cnt"],
+            "waiting": len([r for r in rows if r["Status"] == "작성"]),
+            "approved": len([r for r in rows if r["Status"] == "승인"]),
+            "last": rows[0] if rows else None,
+        },
+    }
+
+
+def wait_plan_approval_cnt(conn):
+    """결재를 기다리는 구매계획 수 — 대시보드·알림이 같이 쓴다."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM Purchase_Plan_tb WHERE Status = '작성'").fetchone()[0]
 
 
 # ══════════════════════════════════════════════════════════════

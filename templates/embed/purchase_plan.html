@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>월간 구매계획</title>
+<link rel="stylesheet" href="/static/vendor/tabler-icons.css">
+<style>
+:root{
+  --acc:#2a78d6; --ok:#1D9E75; --wn:#EF9F27; --dn:#E24B4A;
+  --s0:#F8F7F4; --s1:#EFEEEA; --s2:#E5E4DF;
+  --border:#D4D3CE; --border-s:#B9B8B3; --txt:#1A1917; --txt3:#898781; --r:6px;
+  --bg-ac:#EAF2FC; --bg-ok:#E7F5F0; --bg-wn:#FDF3E3; --bg-dn:#FBEAEA;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Pretendard','Malgun Gothic',sans-serif;background:var(--s0);
+  color:var(--txt);font-size:12px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px;gap:10px}
+
+.ro{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;
+  border:0.5px solid var(--border);border-radius:var(--r);padding:9px 12px}
+.ro .note{font-size:11px;color:var(--txt3);line-height:1.55}
+.sp{flex:1}
+select,input[type=text],textarea{font-family:inherit;font-size:11px;padding:5px 7px;
+  border:0.5px solid var(--border);border-radius:5px;background:#fff;color:var(--txt)}
+textarea{resize:vertical;min-height:52px;width:100%}
+.btn{font-family:inherit;font-size:11px;padding:6px 11px;border:0.5px solid var(--border);
+  border-radius:5px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.btn:hover{background:var(--s1)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btnp{background:var(--acc);color:#fff;border-color:var(--acc)}
+.btnp:hover{background:#2468bb}
+.btns{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btnd{background:#fff;color:var(--dn);border-color:var(--dn)}
+
+.krow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.kc{background:#fff;border:0.5px solid var(--border);border-radius:var(--r);padding:9px 11px}
+.kl{font-size:10px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+.kv{font-size:19px;font-weight:600;margin-top:2px;letter-spacing:-.4px}
+.ks{font-size:10px;color:var(--txt3);margin-top:1px}
+
+.tabs{display:flex;gap:4px}
+.tab{font-size:11px;padding:6px 12px;border:0.5px solid var(--border);border-radius:5px;
+  background:#fff;cursor:pointer}
+.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tc{font-size:10px;opacity:.75;margin-left:3px}
+
+.main{flex:1;display:flex;gap:10px;overflow:hidden}
+.left{flex:1;display:flex;flex-direction:column;background:#fff;border:0.5px solid var(--border);
+  border-radius:var(--r);overflow:hidden}
+.lh{padding:8px 11px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;
+  gap:8px;font-size:11px;color:var(--txt3);flex-wrap:wrap}
+.listwrap{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+table:not([class]){min-width:820px}
+th{position:sticky;top:0;background:var(--s1);padding:7px 9px;text-align:left;font-weight:500;
+  font-size:10px;color:var(--txt3);border-bottom:0.5px solid var(--border);white-space:nowrap;z-index:1}
+td{padding:7px 9px;border-bottom:0.5px solid var(--border);white-space:nowrap;vertical-align:middle}
+tr.pick{cursor:pointer}
+tr.pick:hover > td{background:var(--s1)}
+tr.on > td{background:var(--bg-ac)}
+.num{text-align:right}
+.pid{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--acc)}
+.nm{font-size:11px}
+.sub{font-size:9px;color:var(--txt3);margin-top:1px}
+
+.bg{display:inline-block;font-size:9px;padding:1px 6px;border-radius:9px;white-space:nowrap}
+.bok{background:var(--bg-ok);color:#0F7A57}
+.bwn{background:var(--bg-wn);color:#9A6412}
+.bdn{background:var(--bg-dn);color:#9B1C1C}
+.bac{background:var(--bg-ac);color:#1D5FA8}
+.bmu{background:var(--s2);color:var(--txt3)}
+
+.right{width:300px;flex-shrink:0;display:flex;flex-direction:column;background:#fff;
+  border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.dh{padding:10px 12px;border-bottom:0.5px solid var(--border)}
+.dh-t{font-size:13px;font-weight:600}
+.dh-s{font-size:10px;color:var(--txt3);margin-top:2px;line-height:1.5}
+.dbody{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:10px 12px}
+/* ⚠️ 세로 flex 는 넘치기 전에 자식을 먼저 줄인다. .pn 의 overflow:hidden 이
+   min-height:auto 바닥을 없애 카드가 0 까지 눌린다 — 줄이지 말고 넘겨라. */
+.dbody > *{flex-shrink:0}
+.pn{border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{background:var(--s1);padding:6px 10px;font-size:10px;color:var(--txt3);
+  display:flex;align-items:center;gap:5px}
+.pnh-t{font-weight:500;color:var(--txt)}
+.ir{display:flex;justify-content:space-between;gap:8px;padding:5px 10px;font-size:11px;
+  border-bottom:0.5px solid var(--s2)}
+.ir:last-child{border-bottom:none}
+.ik{color:var(--txt3);flex-shrink:0}
+.iv{text-align:right;word-break:break-all}
+.mnote{font-size:10px;color:var(--txt3);line-height:1.6;padding:8px 10px;background:var(--s1);
+  border-radius:6px}
+.empty{padding:28px 14px;text-align:center;color:var(--txt3);font-size:11px;line-height:1.7}
+.gg{height:7px;background:var(--s2);border-radius:4px;overflow:hidden;margin:3px 0}
+.gg i{display:block;height:100%;background:var(--acc)}
+.fl{display:flex;flex-direction:column;gap:3px;font-size:11px;margin-top:4px}
+.fl > span{color:var(--txt3);font-size:10px}
+
+/* 덮는 창 — embed-mobile.js 의 MODAL_SEL 과 같은 이름을 쓴다 */
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;
+  justify-content:center;z-index:50;padding:16px}
+.ovl.on{display:flex}
+.ovb{background:#fff;border-radius:10px;max-width:520px;width:100%;max-height:86vh;
+  display:flex;flex-direction:column;overflow:hidden}
+.ovh{padding:11px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px}
+.ovc{padding:12px 14px;overflow:auto;display:flex;flex-direction:column;gap:9px}
+.ovf{padding:10px 14px;border-top:0.5px solid var(--border);display:flex;gap:6px;justify-content:flex-end}
+
+@media(max-width:820px){
+  .krow{grid-template-columns:repeat(2,1fr)}
+  .main{flex-direction:column}
+  .right{width:auto}
+}
+</style>
+<!-- 폰 CSS 는 화면 고유 style **뒤에** 와야 이긴다 (전 embed 공통 규칙) -->
+<link rel="stylesheet" href="/static/css/embed-mobile.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="ro">
+    <div class="note">
+      <b>다음 달에 얼마치 살지를 미리 결재받습니다.</b> 발주 제안이 <b>물건</b>을
+      통제한다면 이쪽은 <b>돈</b>을 통제합니다 — 승인된 계획 안에서 개별 발주가 나갑니다.<br>
+      작성 마감은 <b>전월 <span id="cutday">25</span>일</b>입니다(주말이면 앞 영업일).
+      말일이 아닌 이유 — 결재에 며칠이 걸리고, 1일부터 집행하려면 그 전에 끝나야 하며,
+      재무의 월간 자금계획 마감이 그쯤이기 때문입니다.
+    </div>
+    <div class="sp"></div>
+    <button class="btn btnp" onclick="makePlan()"><i class="ti ti-wand"></i>자동 작성</button>
+  </div>
+
+  <div class="krow">
+    <div class="kc"><div class="kl"><i class="ti ti-calendar"></i>대상 월</div>
+      <div class="kv" id="k1">-</div><div class="ks" id="k1s"></div></div>
+    <div class="kc"><div class="kl"><i class="ti ti-clock"></i>작성 마감</div>
+      <div class="kv" id="k2">-</div><div class="ks" id="k2s"></div></div>
+    <div class="kc"><div class="kl"><i class="ti ti-coin"></i>계획 금액</div>
+      <div class="kv" id="k3">-</div><div class="ks" id="k3s"></div></div>
+    <div class="kc"><div class="kl"><i class="ti ti-check"></i>결재</div>
+      <div class="kv" id="k4">-</div><div class="ks" id="k4s"></div></div>
+    <div class="kc"><div class="kl"><i class="ti ti-progress"></i>이번 달 집행률</div>
+      <div class="kv" id="k5">-</div><div class="ks" id="k5s"></div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-t="draft" onclick="setTab('draft')">계획<span class="tc" id="tc1"></span></button>
+    <button class="tab" data-t="hist" onclick="setTab('hist')">지난 계획<span class="tc" id="tc2"></span></button>
+  </div>
+
+  <div class="main">
+    <div class="left">
+      <div class="lh" id="lh"></div>
+      <div class="listwrap" id="list"></div>
+    </div>
+
+    <div class="right">
+      <div class="dh"><div class="dh-t" id="dht">계획 요약</div>
+        <div class="dh-s" id="dhs"></div></div>
+      <div class="dbody" id="dbody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ovl" id="ovl"><div class="ovb">
+  <div class="ovh"><i class="ti ti-alert-circle"></i><b id="ovt"></b>
+    <div class="sp"></div><button class="btn" onclick="closeOv()">닫기</button></div>
+  <div class="ovc" id="ovc"></div>
+  <div class="ovf" id="ovf"></div>
+</div></div>
+
+<script>
+const ROWS   = {{ rows|tojson }};
+const CUR    = {{ cur|tojson }};
+const DRAFT  = {{ draft|tojson }};
+const SUM    = {{ summary|tojson }};
+const APPRS  = {{ approvers|tojson }};
+const WORKERS= {{ workers|tojson }};
+const CUTDAY = {{ cut_day|tojson }};
+const BASE   = {{ base|tojson }};
+
+const nf = n => (n == null ? '-' : Number(n).toLocaleString('ko-KR'));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const won = n => { n = Math.round(n || 0);
+  return n >= 100000000 ? (n/100000000).toFixed(2) + '억' : (n >= 10000 ? nf(Math.round(n/10000)) + '만' : nf(n)); };
+
+let TAB = 'draft', SELID = (CUR ? CUR.Plan_ID : null);
+
+// 화면이 보여주는 '지금 계획' — 저장된 초안이 있으면 그것, 없으면 방금 뽑은 초안
+const PLAN = CUR;
+const ITEMS = CUR ? CUR.items : DRAFT.items.map(function(i, n){
+  return {Line: n + 1, P_ID: i.P_ID, P_N: i.P_N, Spec: i.Spec, Grade: i.grade,
+          Policy: i.policy, Need_Qty: i.need, Cover_Qty: i.cover, Qty: i.qty,
+          Unit_Price: i.price, Amount: i.amount, Stock_Qty: i.stock,
+          Incoming: i.incoming, Safe_Qty: i.safe_qty, Daily: i.daily,
+          Lead_Time: i.lead_time, supplier: i.supplier, is_foreign: i.is_foreign};
+});
+
+function gradeBadge(g){
+  return '<span class="bg ' + (g === 'A' ? 'bdn' : g === 'B' ? 'bwn' : 'bac') + '">'
+       + esc(g || '-') + '</span>';
+}
+function stBadge(s){
+  const c = {'승인':'bok', '작성':'bwn', '반려':'bdn'}[s] || 'bmu';
+  return '<span class="bg ' + c + '">' + esc(s) + '</span>';
+}
+
+function kpi(){
+  document.getElementById('cutday').textContent = CUTDAY;
+  document.getElementById('k1').textContent = SUM.month;
+  document.getElementById('k1s').textContent = DRAFT.days + '일 · 기준일 ' + BASE;
+  document.getElementById('k2').textContent = SUM.cut;
+  document.getElementById('k2s').innerHTML = SUM.late
+    ? '<b style="color:var(--dn)">마감 ' + Math.abs(SUM.left) + '일 지남</b>'
+    : 'D-' + SUM.left;
+  document.getElementById('k3').textContent = won(PLAN ? PLAN.Amount : DRAFT.amount) + '원';
+  document.getElementById('k3s').textContent = (PLAN ? PLAN.Item_Cnt : DRAFT.item_cnt) + '품목';
+  document.getElementById('k4').innerHTML = PLAN ? stBadge(PLAN.Status) : '<span class="bg bmu">미작성</span>';
+  document.getElementById('k4s').textContent = PLAN
+    ? (PLAN.Status === '승인' ? (PLAN.approver || '') + ' ' + (PLAN.appr_pos || '') : '결재 대기')
+    : '자동 작성을 누르세요';
+  // 이번 달(기준일이 속한 달) 집행률
+  const thisYm = BASE.slice(0, 7);
+  const cu = ROWS.filter(function(r){ return r.Month === thisYm && r.Status === '승인'; })[0];
+  document.getElementById('k5').textContent = cu ? cu.used_pct + '%' : '-';
+  document.getElementById('k5s').textContent = cu
+    ? won(cu.spent) + ' / ' + won(cu.Amount) + '원'
+    : thisYm + ' 승인된 계획 없음';
+  document.getElementById('tc1').textContent = ITEMS.length;
+  document.getElementById('tc2').textContent = ROWS.length;
+}
+
+function setTab(t){ TAB = t;
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.toggle('on', b.dataset.t === t); });
+  draw();
+}
+
+function draw(){
+  if(TAB === 'hist'){ drawHist(); return; }
+  const lh = document.getElementById('lh'), box = document.getElementById('list');
+  lh.innerHTML = '<b style="color:var(--txt)">' + SUM.month + '</b> 계획 · '
+    + ITEMS.length + '품목 · <b style="color:var(--txt)">' + won(PLAN ? PLAN.Amount : DRAFT.amount) + '원</b>'
+    + (PLAN ? ' · ' + stBadge(PLAN.Status) + ' <span class="pid">' + PLAN.Plan_ID + '</span>'
+            : ' · <span class="bg bmu">아직 저장 안 됨 (초안)</span>');
+  if(!ITEMS.length){
+    box.innerHTML = '<div class="empty">이 달에 발주할 자재가 없습니다.<br>'
+      + '현재고와 입고 예정으로 다음 달 소요가 모두 덮입니다.</div>';
+    summary(); return;
+  }
+  box.innerHTML = '<table><thead><tr>'
+    + '<th>자재</th><th>등급 · 정책</th><th class="num">다음 달 소요</th>'
+    + '<th class="num">덮이는 양</th><th class="num">계획 수량</th>'
+    + '<th class="num">금액</th><th>협력사</th></tr></thead><tbody>'
+    + ITEMS.map(function(i){
+        return '<tr class="pick' + (SELID === i.P_ID ? ' on' : '') + '"'
+        + ' onclick="pick(&quot;' + i.P_ID + '&quot;)">'
+        + '<td><div class="nm">' + esc(i.P_N || '') + '</div>'
+        +   '<div class="sub"><span class="pid">' + esc(i.P_ID) + '</span> · '
+        +   esc((i.Spec || '').slice(0, 20)) + '</div></td>'
+        + '<td>' + gradeBadge(i.Grade) + (i.Policy ? ' <span class="bg bmu">' + esc(i.Policy) + '</span>' : '') + '</td>'
+        + '<td class="num">' + nf(i.Need_Qty) + '<div class="sub">일 ' + nf(i.Daily) + '개</div></td>'
+        + '<td class="num">' + nf(i.Cover_Qty)
+        +   '<div class="sub">재고 ' + nf(i.Stock_Qty) + (i.Incoming ? ' + 입고 ' + nf(i.Incoming) : '') + '</div></td>'
+        + '<td class="num"><b>' + nf(i.Qty) + '</b></td>'
+        + '<td class="num">' + nf(i.Amount) + '원</td>'
+        + '<td>' + esc(i.supplier || '-') + (i.is_foreign === 'Y' ? ' <span class="bg bmu">해외</span>' : '') + '</td>'
+        + '</tr>';
+      }).join('') + '</tbody></table>';
+  summary();
+}
+
+function drawHist(){
+  const lh = document.getElementById('lh'), box = document.getElementById('list');
+  lh.innerHTML = '<b style="color:var(--txt)">' + ROWS.length + '건</b> · 승인 '
+    + SUM.approved + ' · 결재 대기 ' + SUM.waiting;
+  if(!ROWS.length){ box.innerHTML = '<div class="empty">아직 작성한 계획이 없습니다.</div>'; return; }
+  box.innerHTML = '<table><thead><tr>'
+    + '<th>대상 월</th><th>계획번호</th><th>상태</th><th class="num">계획 금액</th>'
+    + '<th class="num">집행</th><th class="num">집행률</th><th>마감 · 결재</th>'
+    + '</tr></thead><tbody>'
+    + ROWS.map(function(r){
+        const pct = Math.min(r.used_pct || 0, 100);
+        return '<tr class="pick' + (SELID === r.Plan_ID ? ' on' : '') + '"'
+        + ' onclick="pickPlan(&quot;' + r.Plan_ID + '&quot;)">'
+        + '<td><b>' + esc(r.Month) + '</b><div class="sub">' + r.Item_Cnt + '품목</div></td>'
+        + '<td><span class="pid">' + esc(r.Plan_ID) + '</span></td>'
+        + '<td>' + stBadge(r.Status) + '</td>'
+        + '<td class="num">' + nf(r.Amount) + '원</td>'
+        + '<td class="num">' + nf(r.spent) + '원<div class="sub">' + r.spent_cnt + '건</div></td>'
+        + '<td class="num">' + (r.used_pct || 0) + '%'
+        +   '<div class="gg"><i style="width:' + pct + '%"></i></div></td>'
+        + '<td>' + esc(r.Cut_Date) + '<div class="sub">'
+        +   (r.Status === '승인' ? esc(r.approver || '') + ' ' + esc(r.appr_pos || '') + ' · ' + esc(r.Appr_Date || '')
+             : r.Status === '반려' ? esc(r.Appr_Note || '') : '대기') + '</div></td>'
+        + '</tr>';
+      }).join('') + '</tbody></table>';
+}
+
+function pick(pid){
+  SELID = pid; draw();
+  const i = ITEMS.filter(function(x){ return x.P_ID === pid; })[0];
+  if(!i) return;
+  document.getElementById('dht').textContent = i.P_N || i.P_ID;
+  document.getElementById('dhs').innerHTML = '<span class="pid">' + esc(i.P_ID) + '</span> · '
+    + esc(i.Spec || '');
+  document.getElementById('dbody').innerHTML =
+      '<div class="pn"><div class="pnh"><i class="ti ti-calculator"></i>'
+    +   '<span class="pnh-t">어떻게 이 수량이 나왔나</span></div>'
+    +   ir('다음 달 소요', nf(i.Need_Qty) + '개')
+    +   ir('일평균 사용량', nf(i.Daily) + '개/일 × ' + DRAFT.days + '일')
+    +   ir('현재고', nf(i.Stock_Qty) + '개')
+    +   ir('입고 예정', nf(i.Incoming) + '개')
+    +   ir('안전재고', '− ' + nf(i.Safe_Qty) + '개')
+    +   ir('덮이는 양', '<b>' + nf(i.Cover_Qty) + '</b>개')
+    +   ir('부족', '<b>' + nf(i.Need_Qty - i.Cover_Qty) + '</b>개')
+    +   ir('계획 수량', '<b>' + nf(i.Qty) + '</b>개')
+    +   '<div class="mnote" style="border-radius:0">MOQ(' + nf(i.MinOrderQty || 0)
+    +     ') · 포장단위(' + nf(i.PkgUnit || 1) + ')로 올렸습니다. 안전재고는 덮는 양에서'
+    +     ' 빼 둡니다 — 쓰라고 둔 재고가 아니라서입니다.</div>'
+    + '</div>'
+    + '<div class="pn"><div class="pnh"><i class="ti ti-coin"></i>'
+    +   '<span class="pnh-t">금액</span></div>'
+    +   ir('단가', nf(i.Unit_Price) + '원')
+    +   ir('금액', '<b>' + nf(i.Amount) + '원</b>')
+    +   ir('협력사', esc(i.supplier || '-'))
+    +   ir('리드타임', nf(i.Lead_Time) + '일')
+    + '</div>';
+}
+
+function pickPlan(pid){
+  SELID = pid; drawHist();
+  const r = ROWS.filter(function(x){ return x.Plan_ID === pid; })[0];
+  if(!r) return;
+  document.getElementById('dht').textContent = r.Month + ' 구매계획';
+  document.getElementById('dhs').innerHTML = '<span class="pid">' + esc(r.Plan_ID) + '</span> · '
+    + stBadge(r.Status);
+  document.getElementById('dbody').innerHTML =
+      '<div class="pn"><div class="pnh"><i class="ti ti-file-text"></i>'
+    +   '<span class="pnh-t">계획</span></div>'
+    +   ir('대상 월', esc(r.Month) + ' (' + r.Item_Cnt + '품목)')
+    +   ir('계획 금액', '<b>' + nf(r.Amount) + '원</b>')
+    +   ir('작성 마감', esc(r.Cut_Date))
+    +   ir('산출 기준일', esc(r.Base_Date))
+    +   ir('작성', (r.worker ? esc(r.worker) : '<span class="bg bok">자동</span>')
+         + ' · ' + esc(r.Made_Date))
+    + '</div>'
+    + '<div class="pn"><div class="pnh"><i class="ti ti-progress"></i>'
+    +   '<span class="pnh-t">집행</span><span class="bg bmu">' + (r.used_pct || 0) + '%</span></div>'
+    +   ir('실제 발주', nf(r.spent) + '원 · ' + r.spent_cnt + '건')
+    +   ir('계획 대비', nf(r.Amount - r.spent) + '원 남음')
+    +   '<div class="mnote" style="border-radius:0">그 달에 등록된 발주 금액을'
+    +     ' 발주 시점 단가로 더한 값입니다.</div>'
+    + '</div>'
+    + (r.Status === '작성'
+       ? '<div class="pn"><div class="pnh"><i class="ti ti-check"></i>'
+         + '<span class="pnh-t">결재</span></div>'
+         + '<div style="padding:8px 10px">'
+         + '<label class="fl"><span>승인자 — 계획 금액을 결재할 수 있어야 합니다</span>'
+         + '<select id="apep">' + APPRS.map(function(w){
+             return '<option value="' + w.EP_ID + '">' + esc(w.Name) + ' ' + esc(w.Position)
+                  + ' (' + (w.limit == null ? '무제한' : nf(w.limit) + '원') + ')</option>';
+           }).join('') + '</select></label>'
+         + '<label class="fl"><span>의견 (선택)</span><textarea id="apnote"></textarea></label>'
+         + '<div style="display:flex;gap:6px;margin-top:8px">'
+         + '<button class="btn btnd" onclick="rejectPlan(&quot;' + r.Plan_ID + '&quot;)">반려</button>'
+         + '<button class="btn btns" style="flex:1" onclick="approvePlan(&quot;' + r.Plan_ID + '&quot;)">승인</button>'
+         + '</div></div></div>'
+       : (r.Appr_Note ? '<div class="mnote">' + esc(r.Appr_Note) + '</div>' : ''));
+}
+
+function summary(){
+  document.getElementById('dht').textContent = SUM.month + ' 계획 요약';
+  document.getElementById('dhs').textContent = PLAN
+    ? PLAN.Plan_ID + ' · ' + PLAN.Status : '아직 저장되지 않은 초안입니다';
+  const g = DRAFT.by_grade || {};
+  document.getElementById('dbody').innerHTML =
+      '<div class="pn"><div class="pnh"><i class="ti ti-report-money"></i>'
+    +   '<span class="pnh-t">얼마나 사는가</span></div>'
+    +   ir('계획 금액', '<b>' + nf(PLAN ? PLAN.Amount : DRAFT.amount) + '원</b>')
+    +   ir('품목', (PLAN ? PLAN.Item_Cnt : DRAFT.item_cnt) + '종')
+    +   ir('A등급', nf(g.A ? g.A.amt : 0) + '원 · ' + (g.A ? g.A.n : 0) + '종')
+    +   ir('B등급', nf(g.B ? g.B.amt : 0) + '원 · ' + (g.B ? g.B.n : 0) + '종')
+    +   ir('C등급', nf(g.C ? g.C.amt : 0) + '원 · ' + (g.C ? g.C.n : 0) + '종')
+    + '</div>'
+    + '<div class="pn"><div class="pnh"><i class="ti ti-clock"></i>'
+    +   '<span class="pnh-t">일정</span></div>'
+    +   ir('대상 월', SUM.month + ' (' + DRAFT.days + '일)')
+    +   ir('작성 마감', SUM.cut + (SUM.late ? ' <span class="bg bdn">지남</span>'
+                                            : ' <span class="bg bok">D-' + SUM.left + '</span>'))
+    +   ir('산출 기준일', BASE)
+    +   '<div class="mnote" style="border-radius:0">마감은 <b>전월 ' + CUTDAY + '일</b>입니다.'
+    +     ' 결재에 며칠이 걸리고, 1일부터 집행하려면 그 전에 끝나야 하며, 재무의 월간'
+    +     ' 자금계획 마감이 그쯤이라서입니다.</div>'
+    + '</div>'
+    + (PLAN && PLAN.Status === '작성'
+       ? '<div class="pn"><div class="pnh"><i class="ti ti-check"></i>'
+         + '<span class="pnh-t">결재</span></div>'
+         + '<div class="mnote" style="border-radius:0">[지난 계획] 탭에서 이 계획을 눌러'
+         + ' 승인하거나 반려할 수 있습니다.</div></div>'
+       : '');
+}
+
+function ir(k, v){
+  return '<div class="ir"><span class="ik">' + k + '</span><span class="iv">' + v + '</span></div>';
+}
+
+// ── 쓰기 ────────────────────────────────────────────────────
+async function post(url, body){
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify(body)});
+  let d = {};
+  try{ d = await r.json(); }catch(e){ d = {ok: false, errors: ['응답을 읽지 못했습니다.']}; }
+  return d;
+}
+function reload(){ location.reload(); }
+
+async function makePlan(){
+  const d = await post('/api/pplan/make', {});
+  if(!d.ok){ alertOv('작성하지 못했습니다', (d.errors || []).join(String.fromCharCode(10))); return; }
+  alertOv(d.result.month + ' 계획을 작성했습니다',
+    d.result.item_cnt + '품목 · ' + nf(d.result.amount) + '원' + String.fromCharCode(10)
+    + '[지난 계획] 탭에서 결재를 올릴 수 있습니다.', reload);
+}
+async function approvePlan(pid){
+  const d = await post('/api/pplan/approve', {Plan_ID: pid,
+    EP_ID: document.getElementById('apep').value,
+    note: (document.getElementById('apnote') || {}).value || ''});
+  if(!d.ok){ alertOv('승인하지 못했습니다', (d.errors || []).join(String.fromCharCode(10))); return; }
+  alertOv('승인했습니다', nf(d.result.amount) + '원' + String.fromCharCode(10)
+    + '이 범위 안에서 발주가 나갑니다.', reload);
+}
+async function rejectPlan(pid){
+  const note = (document.getElementById('apnote') || {}).value || '';
+  if(note.trim().length < 2){
+    alertOv('사유를 적어주세요', '반려는 되돌릴 수 없습니다 — 의견 칸에 이유를 남기세요.'); return;
+  }
+  const d = await post('/api/pplan/reject', {Plan_ID: pid,
+    EP_ID: document.getElementById('apep').value, reason: note});
+  if(!d.ok){ alertOv('반려하지 못했습니다', (d.errors || []).join(String.fromCharCode(10))); return; }
+  alertOv('반려했습니다', '다시 작성할 수 있습니다.', reload);
+}
+
+// 브라우저 alert 은 iframe 안에서 막히면 아무 일도 안 일어난 것처럼 보인다
+function alertOv(title, msg, after){
+  document.getElementById('ovt').textContent = title;
+  document.getElementById('ovc').innerHTML = '<div class="mnote" style="white-space:pre-line">'
+    + esc(msg) + '</div>';
+  document.getElementById('ovf').innerHTML =
+    '<button class="btn btnp" onclick="closeOv(' + (after ? 'true' : '') + ')">확인</button>';
+  document.getElementById('ovl').classList.add('on');
+  closeOv.after = after || null;
+}
+function closeOv(run){
+  document.getElementById('ovl').classList.remove('on');
+  if(run && closeOv.after){ const f = closeOv.after; closeOv.after = null; f(); }
+}
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeOv(); });
+document.getElementById('ovl').addEventListener('click', function(e){
+  if(e.target.id === 'ovl') closeOv(); });
+
+kpi(); draw();
+</script>
+<script src="/static/js/embed-mobile.js"></script>
+</body>
+</html>

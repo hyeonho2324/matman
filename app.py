@@ -28,6 +28,7 @@ TODO_ICON = {
     "site":     "ti-arrow-back-up",
     "safety":   "ti-shield-check",
     "order_plan": "ti-clipboard-check",
+    "purchase_plan": "ti-calendar-dollar",
 }
 
 # ── 메뉴 구조 ───────────────────────────────────────────────
@@ -64,6 +65,7 @@ MENUS = [
     {
         "group": "구매 / 협력사",
         "menu_items": [
+            {"id": "purchase_plan", "label": "월간 구매계획",     "icon": "ti-calendar-dollar",   "url": "/purchase-plan"},
             {"id": "order_plan",   "label": "발주 제안",          "icon": "ti-clipboard-check",   "url": "/order-plan"},
             {"id": "purchase",     "label": "구매 발주",          "icon": "ti-truck-delivery",    "url": "/purchase"},
             {"id": "suppliers",    "label": "협력사",             "icon": "ti-building-store",    "url": "/suppliers"},
@@ -230,6 +232,11 @@ def stock_map():
 @app.route("/risk-radar")
 def risk_radar():
     return render_template("risk_radar.html", **get_menu_context("risk_radar"), page_title="납기 리스크 레이더")
+
+@app.route("/purchase-plan")
+def purchase_plan():
+    return render_template("purchase_plan.html", **get_menu_context("purchase_plan"),
+                           page_title="월간 구매계획")
 
 @app.route("/order-plan")
 def order_plan():
@@ -488,6 +495,14 @@ def _ctx_lot():
             "rows": rows,
             "summary": db.lot_summary(rows, base),
         }
+    finally:
+        conn.close()
+
+
+def _ctx_purchase_plan():
+    conn = db.connect()
+    try:
+        return db.purchase_plan_source(conn)
     finally:
         conn.close()
 
@@ -1534,6 +1549,83 @@ def api_safety_preview():
         conn.close()
 
 
+# ── 월간 구매계획 — 다음 달 구매 금액을 미리 결재받는다 ──────
+@app.route("/api/pplan/draft")
+def api_pplan_draft():
+    """초안 미리보기 (저장 안 함). ?month=YYYY-MM 로 달을 고를 수 있다."""
+    ym = (request.args.get("month") or "").strip() or None
+    if ym and not re.match(r"^\d{4}-\d{2}$", ym):
+        return jsonify({"ok": False, "errors": ["월 형식이 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        return jsonify({"ok": True, "data": db.draft_purchase_plan(conn, ym)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pplan/make", methods=["POST"])
+def api_pplan_make():
+    """초안을 계획으로 저장한다 (자동 작성)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.make_purchase_plan(
+            conn, _entry_date(body), body.get("month"),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/pplan/approve", methods=["POST"])
+def api_pplan_approve():
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.approve_purchase_plan(
+            conn, _entry_date(body), body.get("Plan_ID"),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pplan/reject", methods=["POST"])
+def api_pplan_reject():
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.reject_purchase_plan(
+            conn, _entry_date(body), body.get("Plan_ID"),
+            body.get("EP_ID"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pplan/items")
+def api_pplan_items():
+    pid = (request.args.get("id") or "").strip()
+    if not re.match(r"^[A-Za-z0-9]{1,20}$", pid):
+        return jsonify({"ok": False, "errors": ["계획번호가 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        rows = db.purchase_plan_items(conn, pid)
+        if not rows:
+            return jsonify({"ok": False, "errors": ["없는 계획번호입니다: %s" % pid]}), 404
+        return jsonify({"ok": True, "data": rows})
+    finally:
+        conn.close()
+
+
 # ── 등급별 발주 정책 — A 수동 · B 승인 · C 자동 ─────────────
 @app.route("/api/calendar-day")
 def api_calendar_day():
@@ -1812,6 +1904,7 @@ EMBED_CONTEXT = {
     "site_return":  _ctx_site_return,
     "lot":          _ctx_lot,
     "order_plan":   _ctx_order_plan,
+    "purchase_plan": _ctx_purchase_plan,
     "forecast":     _ctx_forecast,
     "calendar":     _ctx_calendar,
     "risk_radar":   _ctx_risk_radar,

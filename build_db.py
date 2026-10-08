@@ -411,6 +411,47 @@ CREATE TABLE Stock_Count_Item_tb (
     PRIMARY KEY (Count_ID, Line)
 );
 
+DROP TABLE IF EXISTS Purchase_Plan_tb;
+CREATE TABLE Purchase_Plan_tb (
+    -- 월간 구매계획 — "다음 달에 얼마치 살 예정인가" 를 미리 결재받는다.
+    -- 발주 제안(Order_Plan_tb)이 '물건' 축이라면 이쪽은 '돈' 축이다.
+    Plan_ID    TEXT PRIMARY KEY,   -- PB + YYYYMM + 2자리 (다시 짜면 번호가 올라간다)
+    Month      TEXT NOT NULL,      -- 대상 월 'YYYY-MM'
+    Cut_Date   TEXT NOT NULL,      -- 작성 마감일 (전월 25일 · 주말이면 앞 영업일)
+    Base_Date  TEXT NOT NULL,      -- 산출 기준일
+    Status     TEXT NOT NULL,      -- 작성 / 승인 / 반려
+    Amount     INTEGER NOT NULL,   -- 계획 금액 합계
+    Item_Cnt   INTEGER NOT NULL,
+    EP_ID      TEXT,               -- 작성자 (자동 작성이면 비어 있다)
+    Made_Date  TEXT NOT NULL,
+    Appr_EP_ID TEXT,
+    Appr_Date  TEXT,
+    Appr_Note  TEXT,
+    Note       TEXT
+);
+
+DROP TABLE IF EXISTS Purchase_Plan_Item_tb;
+CREATE TABLE Purchase_Plan_Item_tb (
+    Plan_ID    TEXT NOT NULL,
+    Line       INTEGER NOT NULL,
+    P_ID       TEXT NOT NULL,
+    Grade      TEXT,
+    Policy     TEXT,               -- 그 자재의 발주 정책 (수동/승인/자동)
+    -- ⚠️ 근거를 **작성 시점 값으로 박아 둔다.** 다음 달이 되면 재고도 사용량도
+    --    달라진다. "그때 왜 이만큼으로 잡았나" 를 설명할 수 있어야 한다.
+    Need_Qty   INTEGER,            -- 다음 달 예상 소요 (일평균 × 그 달 일수)
+    Cover_Qty  INTEGER,            -- 덮이는 양 (현재고 + 입고 예정 − 안전재고)
+    Qty        INTEGER NOT NULL,   -- 계획 발주량 (MOQ·포장단위 올림)
+    Unit_Price REAL,
+    Amount     INTEGER NOT NULL,
+    Stock_Qty  INTEGER,
+    Incoming   INTEGER,            -- 미입고 발주 잔량
+    Safe_Qty   INTEGER,
+    Daily      REAL,
+    Lead_Time  INTEGER,
+    PRIMARY KEY (Plan_ID, Line)
+);
+
 DROP TABLE IF EXISTS Setting_tb;
 CREATE TABLE Setting_tb (
     -- ⚠️ **최신 행이 현재값이다.** 설정을 한 칸에 덮어쓰면 "언제 누가 왜 올렸나"

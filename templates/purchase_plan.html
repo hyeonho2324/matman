@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><i class="ti ti-calendar-dollar" style="margin-right:6px;color:var(--fill-accent)"></i>월간 구매계획</div>
+    <div class="page-subtitle">다음 달 구매 금액을 마감 전에 올려 결재받습니다 — 발주는 그 범위 안에서 나갑니다</div>
+  </div>
+  <div class="page-actions">
+      <a href="/order-plan" class="btn"><i class="ti ti-clipboard-check"></i>발주 제안</a>
+      <a href="/forecast" class="btn"><i class="ti ti-chart-line"></i>수요 예측</a>
+      <a href="/purchase" class="btn"><i class="ti ti-truck-delivery"></i>구매 발주</a>
+  </div>
+</div>
+
+<!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
+<div style="flex:1;display:flex;flex-direction:column;gap:14px">
+  <div class="embed-box">
+    <iframe
+      src="/embed/purchase_plan" class="embed-frame"
+      title="월간 구매계획">
+    </iframe>
+  </div>
+</div>
+{% endblock %}
