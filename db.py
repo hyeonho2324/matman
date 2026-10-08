@@ -3056,6 +3056,8 @@ def monthly_report(conn):
         SELECT substr(Lot_Date,1,7) AS ym, COUNT(*) AS cnt FROM Lot_tb GROUP BY ym
     """)
 
+    pva = plan_actual(conn)        # 전월에 세운 구매계획이 그달에 지켜졌나
+
     out = []
     for ym in months:
         t, o, r, l = tx.get(ym, {}), po.get(ym, {}), prod.get(ym, {}), lot.get(ym, {})
@@ -3070,6 +3072,8 @@ def monthly_report(conn):
             "wo_cnt": r.get("wo", 0), "fg_cnt": r.get("fg", 0),
             "prod_amt": r.get("amt", 0) or 0,
             "lot_cnt": l.get("cnt", 0),
+            # 전월에 세운 구매계획 대비 그달 실적 (승인된 계획이 없으면 None)
+            "plan": pva.get(ym),
         })
 
     # 월별 상위 품목 (불출 금액 기준)
@@ -4687,21 +4691,46 @@ def next_pplan_id(conn, ym):
     return "%s%02d" % (pre, (int(last[-2:]) + 1) if last else 1)
 
 
+def daily_recent(conn, days=90):
+    """최근 n일 **실적 기준** 일평균 사용량. 구매계획이 이걸 쓴다.
+
+    ⚠️ 수요 예측의 d 는 전 기간 평균이다. 생산이 늘어온 회사에서는 다음 달을
+       과소평가하고(여기 데이터로 집행률 160%), 줄어든 회사에서는 과대평가한다.
+       구매계획은 **다음 한 달**을 보는 일이라 직전 구간이 맞다 — 실무에서도
+       직전 3개월 이동평균을 흔히 쓴다.
+    """
+    base = conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+    if not base:
+        return {}
+    since = _add_days(base, -int(days))
+    out = {}
+    for r in _rows(conn, f"""
+        SELECT l.P_ID, SUM(t.T_Num) AS qty
+          FROM Transaction_tb t JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+         WHERE {DEMAND_T} AND t.T_Date >= ?
+         GROUP BY l.P_ID
+    """, (since,)):
+        out[r["P_ID"]] = round((r["qty"] or 0) / float(days), 4)
+    return out
+
+
 def draft_purchase_plan(conn, ym=None):
     """다음 달 구매계획 초안 — **저장하지 않는다.**
 
-    자재별로 그 달에 발주가 나가야 할 양과 금액을 낸다.
+        다음 달 소요  = 일평균 사용량 × 그 달 일수      ← 최근 90일 실적 기준
+        월초 가용     = 현재고 + 입고 예정
+        월말 목표     = 안전재고 + 리드타임 소요        ← 그달 말에도 남아 있어야 한다
+        계획 발주량   = 소요 + 월말 목표 − 월초 가용     → MOQ·포장단위로 올림
 
-        다음 달 소요  = 일평균 사용량 × 그 달 일수
-        덮이는 양     = 현재고 + 입고 예정 − 안전재고
-        부족          = 소요 − 덮이는 양
-        계획 발주량   = 부족을 MOQ·포장단위로 올림          ← round_order_qty
-
-    ⚠️ 일평균 사용량·현재고·안전재고는 **수요 예측이 쓰는 그 값**을 그대로 쓴다.
-       여기서 다시 계산하면 두 화면이 다른 숫자를 말한다.
-    ⚠️ 안전재고를 빼는 이유 — 안전재고는 **쓰라고 둔 재고가 아니다.** 그걸로
-       다음 달 소요를 덮으면 계획상 이미 안전재고를 까먹는 셈이 된다.
+    ⚠️ **구매 = 소비 + 재고 변동**이다. 처음에는 `소요 − (재고 − 안전재고)` 로
+       짰는데, 그러면 "지금 있는 재고를 다 쓸 때까지 안 산다" 는 계획이 된다.
+       월말에도 안전재고와 리드타임분은 남아 있어야 하므로 그만큼을 더해야
+       실제 발주와 맞는다 — 안 그러면 집행률이 수백 %로 뜬다(실제로 683% 였다).
+    ⚠️ 일평균은 **최근 90일**로 잡는다(`daily_recent`). 수요 예측의 d 는 전 기간
+       평균이라 46개월 동안 생산이 늘어온 이 데이터에서는 다음 달을 과소평가한다 —
+       그걸로 짜면 집행률이 160% 로 뜬다. 재고·안전재고는 수요 예측과 같은 값을 쓴다.
     """
+    recent = daily_recent(conn)
     rows, base, _span = forecast_list(conn)
     ym = ym or next_plan_month(conn, base)
     st = plan_month_state(conn, ym, base)
@@ -4715,14 +4744,19 @@ def draft_purchase_plan(conn, ym=None):
 
     items = []
     for r in rows:
-        d = r["daily"] or 0
+        # 최근 90일 실적이 있으면 그걸, 없으면 전 기간 평균을 쓴다
+        d = recent.get(r["P_ID"]) or (r["daily"] or 0)
         if d <= 0:
             continue                      # 사용 이력이 없으면 계획에 못 넣는다
         need = int(round(d * st["days"]))
         incoming = inc.get(r["P_ID"], 0)
-        cover = (r["stock"] or 0) + incoming - (r["safe_qty"] or 0)
-        short = need - cover
-        qty = round_order_qty(short, r["MinOrderQty"], r["PkgUnit"]) if short > 0 else 0
+        start = (r["stock"] or 0) + incoming
+        # 월말 목표 = **발주가 실제로 채우는 수준**이다. 안전재고 + 리드타임분만
+        # 잡으면(ROP) 계획이 늘 모자란다 — 발주는 ROP 까지가 아니라 그 위로
+        # 한 달치를 더 채우기 때문이다(수요 예측·발주 제안과 같은 보충 수준).
+        target = int(round((r["safe_qty"] or 0) + d * ((r["lead_time"] or 0) + 30)))
+        buy = need + target - start
+        qty = round_order_qty(buy, r["MinOrderQty"], r["PkgUnit"]) if buy > 0 else 0
         if qty <= 0:
             continue
         p = pol.get(r["P_ID"]) or {}
@@ -4730,10 +4764,10 @@ def draft_purchase_plan(conn, ym=None):
             "P_ID": r["P_ID"], "P_N": r["P_N"], "Spec": r["Spec"],
             "supplier": r["supplier"], "is_foreign": r["is_foreign"],
             "grade": r["grade"], "policy": p.get("policy"),
-            "need": need, "cover": cover, "short": short, "qty": qty,
+            "need": need, "start": start, "target": target, "buy": buy, "qty": qty,
             "price": r["P_Price"], "amount": round(qty * (r["P_Price"] or 0)),
             "stock": r["stock"], "incoming": incoming, "safe_qty": r["safe_qty"],
-            "daily": r["daily"], "lead_time": r["lead_time"],
+            "daily": d, "daily_all": r["daily"], "lead_time": r["lead_time"],
             "PkgUnit": r["PkgUnit"], "MinOrderQty": r["MinOrderQty"],
         })
     items.sort(key=lambda x: -(x["amount"] or 0))
@@ -4780,11 +4814,13 @@ def make_purchase_plan(conn, date_, ym=None, ep_id=None, note=None):
         for n, it in enumerate(d["items"], start=1):
             conn.execute(
                 "INSERT INTO Purchase_Plan_Item_tb (Plan_ID, Line, P_ID, Grade, Policy,"
-                " Need_Qty, Cover_Qty, Qty, Unit_Price, Amount, Stock_Qty, Incoming,"
-                " Safe_Qty, Daily, Lead_Time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " Need_Qty, Start_Qty, Target_Qty, Qty, Unit_Price, Amount,"
+                " Stock_Qty, Incoming, Safe_Qty, Daily, Lead_Time)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (pid, n, it["P_ID"], it["grade"], it["policy"], it["need"],
-                 it["cover"], it["qty"], it["price"], it["amount"], it["stock"],
-                 it["incoming"], it["safe_qty"], it["daily"], it["lead_time"]))
+                 it["start"], it["target"], it["qty"], it["price"], it["amount"],
+                 it["stock"], it["incoming"], it["safe_qty"], it["daily"],
+                 it["lead_time"]))
     return {"Plan_ID": pid, "month": ym, "amount": d["amount"],
             "item_cnt": d["item_cnt"], "cut": d["cut"]}, []
 
@@ -4889,6 +4925,129 @@ def purchase_plan_source(conn):
             "last": rows[0] if rows else None,
         },
     }
+
+
+def plan_actual(conn):
+    """월별 **계획 대비 실적** — 전월에 세운 구매계획이 그달에 얼마나 지켜졌나.
+
+    집행률만 보면 안 된다. 계획한 3억을 다 썼어도 **계획에 없던 걸 샀다면**
+    계획이 맞은 게 아니다. 그래서 넷을 함께 낸다.
+
+        집행률     실제 발주 금액 ÷ 계획 금액        100% 에 가까울수록 좋다
+        계획 오차  |실제 − 계획| ÷ 계획               낮을수록 좋다
+        품목 적중  계획한 품목 중 실제로 발주한 품목 비율
+        비계획     그달 발주 금액 중 **계획에 없던 품목**이 차지하는 비중
+
+    ⚠️ **승인된 계획만** 평가한다. 결재를 못 받은 계획은 지킬 의무가 없다.
+    ⚠️ 집행률만 보면 안 된다. 계획한 3억을 다 썼어도 **계획에 없던 걸 샀다면**
+       계획이 맞은 게 아니다. 그래서 품목 적중·비계획을 함께 낸다.
+    ⚠️ 품목별 절대편차로 '정확도' 를 내 봤더니 전 달이 0% 였다. 발주는 MOQ·
+       포장단위로 묶여 나가서 **한 달 단위로는 품목별 금액이 맞을 수가 없다** —
+       그 지표는 버리고 금액 오차와 품목 적중으로 갈랐다.
+    """
+    plans = {}
+    for r in _rows(conn, """
+        SELECT Plan_ID, Month, Amount, Item_Cnt, Appr_Date
+          FROM Purchase_Plan_tb WHERE Status = '승인' ORDER BY Month, Plan_ID
+    """):
+        plans[r["Month"]] = r                      # 한 달에 승인은 하나다
+    if not plans:
+        return {}
+
+    # 계획 줄 (품목별 금액)
+    pitem = {}
+    for r in _rows(conn, """
+        SELECT p.Month, i.P_ID, i.Qty, i.Amount
+          FROM Purchase_Plan_Item_tb i
+          JOIN Purchase_Plan_tb p ON p.Plan_ID = i.Plan_ID
+         WHERE p.Status = '승인'
+    """):
+        pitem.setdefault(r["Month"], {})[r["P_ID"]] = r
+
+    # 실제 발주 (발주 시점 단가 — "그때 얼마에 샀나" 가 기준이다)
+    aitem = {}
+    for r in _rows(conn, """
+        SELECT substr(h.P_Date,1,7) AS ym, d.P_ID,
+               SUM(d.P_Qty) AS qty,
+               SUM(ROUND(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price))) AS amt
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         GROUP BY ym, d.P_ID
+    """):
+        aitem.setdefault(r["ym"], {})[r["P_ID"]] = r
+
+    base_ym = (conn.execute("SELECT MAX(T_Date) FROM Transaction_tb").fetchone()[0]
+               or "")[:7]
+    out = {}
+    for ym, pl in plans.items():
+        pi, ai = pitem.get(ym, {}), aitem.get(ym, {})
+        plan_amt = pl["Amount"] or 0
+        act_amt = sum(a["amt"] or 0 for a in ai.values())
+        done = [p for p in pi if p in ai]
+        miss = [p for p in pi if p not in ai]
+        extra = [p for p in ai if p not in pi]
+        extra_amt = sum(ai[p]["amt"] or 0 for p in extra)
+        gap = abs(act_amt - plan_amt)
+        out[ym] = {
+            "Plan_ID": pl["Plan_ID"], "month": ym,
+            "plan_amt": plan_amt, "plan_items": len(pi),
+            "act_amt": int(act_amt), "act_items": len(ai),
+            "done": len(done), "miss": len(miss),
+            "extra": len(extra), "extra_amt": int(extra_amt),
+            "exec_pct": _pct(act_amt, plan_amt) if plan_amt else 0,
+            "hit_pct": _pct(len(done), len(pi)) if pi else 0,
+            "off_pct": _pct(extra_amt, act_amt) if act_amt else 0,
+            "err_pct": _pct(gap, plan_amt) if plan_amt else 0,
+            "gap": int(act_amt - plan_amt),
+            # 기준일이 속한 달은 아직 안 끝났다 — 집행률을 그대로 읽으면 안 된다
+            "partial": ym == base_ym,
+        }
+    return out
+
+
+def plan_actual_items(conn, ym):
+    """그달 품목별 계획 vs 실적. 어긋난 금액이 큰 것부터."""
+    pi = {r["P_ID"]: r for r in _rows(conn, """
+        SELECT i.P_ID, i.Qty, i.Amount
+          FROM Purchase_Plan_Item_tb i
+          JOIN Purchase_Plan_tb p ON p.Plan_ID = i.Plan_ID
+         WHERE p.Status = '승인' AND p.Month = ?
+    """, (ym,))}
+    ai = {r["P_ID"]: r for r in _rows(conn, """
+        SELECT d.P_ID, SUM(d.P_Qty) AS qty,
+               SUM(ROUND(d.P_Qty * COALESCE(d.Unit_Price, p.P_Price))) AS amt
+          FROM Purchase_Header_tb h
+          JOIN Purchase_Detail_tb d ON h.H_ID = d.H_ID
+          JOIN Product_tb p         ON d.P_ID = p.P_ID
+         WHERE substr(h.P_Date,1,7) = ?
+         GROUP BY d.P_ID
+    """, (ym,))}
+    if not pi and not ai:
+        return []
+    names = {r["P_ID"]: r for r in _rows(conn, """
+        SELECT p.P_ID, p.P_N, p.Spec, s.Sf_Lv AS grade, c.CP_N AS supplier
+          FROM Product_tb p
+          LEFT JOIN Safe_tb s    ON p.P_ID = s.P_ID
+          LEFT JOIN Company_tb c ON p.BRN = c.BRN
+    """)}
+    rows = []
+    for pid in set(pi) | set(ai):
+        p, a = pi.get(pid), ai.get(pid)
+        pa = (p["Amount"] or 0) if p else 0
+        aa = (a["amt"] or 0) if a else 0
+        n = names.get(pid, {})
+        rows.append({
+            "P_ID": pid, "P_N": n.get("P_N"), "Spec": n.get("Spec"),
+            "grade": n.get("grade"), "supplier": n.get("supplier"),
+            "plan_qty": (p["Qty"] if p else 0), "plan_amt": int(pa),
+            "act_qty": (a["qty"] if a else 0), "act_amt": int(aa),
+            "gap": int(aa - pa),
+            "state": ("계획 외" if not p else ("미집행" if not a else
+                      ("초과" if aa > pa else ("부족" if aa < pa else "일치")))),
+        })
+    rows.sort(key=lambda r: -abs(r["gap"]))
+    return rows
 
 
 def wait_plan_approval_cnt(conn):

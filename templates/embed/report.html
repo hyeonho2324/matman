@@ -199,6 +199,54 @@ function trend(){
        + '<span><i class="sw" style="background:#1D9E75"></i>발주 금액</span></div>';
 }
 
+// 전월에 세운 구매계획이 이 달에 얼마나 지켜졌나.
+// ⚠️ 집행률 하나만 보면 안 된다 — 계획한 금액을 다 썼어도 **계획에 없던 걸**
+//    샀으면 계획이 맞은 게 아니다. 그래서 넷을 나란히 둔다.
+function planSec(m){
+  const q = m.plan;
+  if(!q){
+    return '<div class="sec">'
+      + '<div class="sech"><i class="ti ti-calendar-dollar" style="color:var(--acc)"></i>'
+      + '<span class="sech-t">구매계획 대비 실적</span>'
+      + '<span class="sech-m">전월에 세운 계획과 맞대 봅니다</span></div>'
+      + '<div class="empty">이 달은 <b>승인된 구매계획이 없습니다</b>.'
+      + ' 계획은 전월 25일까지 올려 결재받습니다.</div></div>';
+  }
+  const tone = function(v, good, warn){           // 100 에 가까울수록 좋은 지표
+    const gap = Math.abs(v - 100);
+    return gap <= good ? 'var(--ok)' : (gap <= warn ? 'var(--wn)' : 'var(--dn)');
+  };
+  const low = function(v, good, warn){            // 낮을수록 좋은 지표
+    return v <= good ? 'var(--ok)' : (v <= warn ? 'var(--wn)' : 'var(--dn)');
+  };
+  return '<div class="sec">'
+    + '<div class="sech"><i class="ti ti-calendar-dollar" style="color:var(--acc)"></i>'
+    +   '<span class="sech-t">구매계획 대비 실적</span>'
+    +   '<span class="sech-m">' + q.Plan_ID + ' · 계획 ' + won(q.plan_amt) + '원 → 실제 '
+    +   won(q.act_amt) + '원'
+    +   (q.partial ? ' · <b style="color:var(--wn)">이 달은 진행 중입니다</b>' : '') + '</span></div>'
+    + '<div class="cards" style="margin:0;padding:11px 13px">'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-progress"></i>집행률</div>'
+    +     '<div class="c-v" style="color:' + tone(q.exec_pct, 15, 40) + '">' + q.exec_pct + '<small>%</small></div>'
+    +     '<div class="c-s">계획 금액 대비 실제 발주</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-arrows-diff"></i>계획 오차</div>'
+    +     '<div class="c-v" style="color:' + low(q.err_pct, 15, 40) + '">' + q.err_pct + '<small>%</small></div>'
+    +     '<div class="c-s">' + (q.gap >= 0 ? '+' : '−') + won(Math.abs(q.gap)) + '원 '
+    +     (q.gap >= 0 ? '더 샀습니다' : '덜 샀습니다') + '</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-checkbox"></i>품목 적중</div>'
+    +     '<div class="c-v" style="color:' + low(100 - q.hit_pct, 20, 50) + '">' + q.hit_pct + '<small>%</small></div>'
+    +     '<div class="c-s">계획 ' + q.plan_items + '종 중 ' + q.done + '종 집행 · 미집행 ' + q.miss + '</div></div>'
+    +   '<div class="card"><div class="c-l"><i class="ti ti-alert-triangle"></i>비계획 구매</div>'
+    +     '<div class="c-v" style="color:' + low(q.off_pct, 10, 25) + '">' + q.off_pct + '<small>%</small></div>'
+    +     '<div class="c-s">계획에 없던 ' + q.extra + '종 · ' + won(q.extra_amt) + '원</div></div>'
+    + '</div>'
+    + '<div class="note" style="padding:0 13px 11px">'
+    +   '<b>집행률만 보면 안 됩니다.</b> 계획한 금액을 다 썼어도 계획에 없던 걸 샀다면'
+    +   ' 계획이 맞은 게 아닙니다 — 그래서 품목 적중과 비계획 구매를 함께 봅니다.'
+    +   ' 계획은 <b>전월 25일</b>에 마감해 결재받은 것입니다.'
+    + '</div></div>';
+}
+
 function render(){
   drawTabs();
   const m = M[mi], p = mi>0 ? M[mi-1] : null;
@@ -243,6 +291,8 @@ function render(){
   +     '<div class="c-v">' + m.wo_cnt + '<small>건</small></div>'
   +     '<div class="c-s">완제품 ' + m.fg_cnt + '종 · 자재비 ' + won(m.prod_amt) + '원 ' + delta(m.wo_cnt, p&&p.wo_cnt) + '</div></div>'
   + '</div>'
+
+  + planSec(m)
 
   + '<div class="sec">'
   +   '<div class="sech"><i class="ti ti-chart-bar" style="color:var(--acc)"></i>'

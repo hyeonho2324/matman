@@ -69,6 +69,7 @@ WIPE = ["Transaction_tb", "Lot_tb", "Purchase_Change_tb", "Purchase_Detail_tb",
         "Disburse_Req_tb", "Inbound_Claim_tb", "Site_Return_tb",
         "Stock_Count_Item_tb", "Stock_Count_tb", "Update_Log_tb",
         "Order_Plan_tb", "Order_Policy_tb",
+        "Purchase_Plan_Item_tb", "Purchase_Plan_tb", "Setting_tb",
         "Price_Log_tb", "Safe_Override_tb"]
 for t in WIPE:
     cur.execute("DELETE FROM %s" % t)
@@ -370,6 +371,7 @@ print("초기 재고 — 발주 %d장 · LOT %d개 · %s개"
 ARRIVE = {}          # 입고 예정 (도착일 -> [(hid, num, pid, 발주량, 실입고, ep)])
 OPEN_PO = []         # 미입고로 남길 발주
 claims, returns, counts, prices = 0, 0, 0, 0
+plans_made = 0
 req_rows, prod_rows = 0, 0
 ontime_ok, ontime_all = 0, 0
 
@@ -679,10 +681,79 @@ for m in MONTHS:
                 PROD[pid]["P_Price"] = new
                 prices += 1
 
+    # ── 6g. 월간 구매계획 (전월 25일에 다음 달 것을 짠다) ─────
+    # 실무 관행대로 **전월 25일**에 마감한다(주말이면 앞 영업일). 그 시점에
+    # 아는 것만으로 짠다 — 그때 재고·입고 예정·안전재고·일평균 사용량.
+    # ⚠️ 여기서 rnd 를 쓰지 않는다. 난수를 한 번이라도 당기면 그 뒤 모든 달의
+    #    발주·불출이 밀려 **데이터 전체가 달라진다.** 계획은 기록일 뿐이다.
+    if m != MONTHS[-1]:
+        cut = date(m.year, m.month, 25)
+        while cut.weekday() >= 5:
+            cut -= timedelta(days=1)
+        nxt = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+        nxt2 = date(nxt.year + (nxt.month == 12), nxt.month % 12 + 1, 1)
+        ndays = (nxt2 - nxt).days
+        nym = "%04d-%02d" % (nxt.year, nxt.month)
+        # 입고 예정 — 아직 안 온 발주 잔량
+        coming = {}
+        for k, v in ARRIVE.items():
+            for r in v:
+                coming[r[2]] = coming.get(r[2], 0) + r[4]
+        # ⚠️ 일평균은 **최근 90일 실적**으로 잡는다. DAILY 는 전 기간 평균이라
+        #    생산이 늘어온 이 회사에서는 다음 달을 과소평가한다 (집행률 160%).
+        #    앱의 구매계획(daily_recent)과 같은 기준이다.
+        win = d2s(cut - timedelta(days=90))
+        used90 = {}
+        for _t in TX:
+            if _t[2] == "불출" and _t[3] >= win and _t[3] <= d2s(cut):
+                _p = LOTS[_t[1]]["P_ID"]
+                used90[_p] = used90.get(_p, 0) + _t[4]
+        plines = []
+        for pid in 用:
+            dly = used90.get(pid, 0) / 90.0 or DAILY.get(pid, 0)
+            if dly <= 0:
+                continue
+            # 구매 = 소비 + 재고 변동. 월말에도 안전재고와 리드타임분은 남아야 한다
+            need = int(round(dly * ndays))
+            st_qty = stock(pid, cut)
+            start = st_qty + coming.get(pid, 0)
+            # 발주가 실제로 채우는 수준 (6c 의 target 과 같다)
+            target = int(round((SAFE[pid]["Sf_Num"] or 0)
+                               + dly * ((SAFE[pid]["Lead_Time"] or 0) + 30)))
+            buy = need + target - start
+            if buy <= 0:
+                continue
+            q = D.round_order_qty(buy, PROD[pid]["MinOrderQty"], PROD[pid]["PkgUnit"])
+            if q <= 0:
+                continue
+            price = float(PROD[pid]["P_Price"] or 0)
+            plines.append((pid, need, start, target, q, price, round(q * price),
+                           st_qty, coming.get(pid, 0),
+                           SAFE[pid]["Sf_Num"], dly, SAFE[pid]["Lead_Time"]))
+        if plines:
+            bid = "PB" + nym.replace("-", "") + "01"
+            cur.execute(
+                "INSERT INTO Purchase_Plan_tb (Plan_ID,Month,Cut_Date,Base_Date,Status,"
+                "Amount,Item_Cnt,EP_ID,Made_Date,Appr_EP_ID,Appr_Date,Appr_Note)"
+                " VALUES (?,?,?,?,'승인',?,?,NULL,?,?,?,?)",
+                (bid, nym, d2s(cut), d2s(cut), sum(x[6] for x in plines),
+                 len(plines), d2s(cut), BOSS[0], d2s(wd(cut, 2)), "%s 정기" % nym))
+            for n, x in enumerate(sorted(plines, key=lambda y: -y[6]), start=1):
+                cur.execute(
+                    "INSERT INTO Purchase_Plan_Item_tb (Plan_ID,Line,P_ID,Grade,Policy,"
+                    "Need_Qty,Start_Qty,Target_Qty,Qty,Unit_Price,Amount,Stock_Qty,"
+                    "Incoming,Safe_Qty,Daily,Lead_Time)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (bid, n, x[0], SAFE[x[0]]["Sf_Lv"],
+                     D.ORDER_POLICY.get(SAFE[x[0]]["Sf_Lv"] or "C"),
+                     x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8], x[9], x[10], x[11]))
+            plans_made += 1
+
 print("월 루프 끝 — 거래 %s · LOT %s · 요청라인 %s · 생산 %s"
       % tuple(format(x, ",") for x in (len(TX), len(LOTS), req_rows, prod_rows)))
 print("  클레임 %d · 반납 %d · 실사 %d · 단가변경 %d" % (claims, returns, counts, prices))
 print("  입고 준수 %d/%d = %.1f%%" % (ontime_ok, ontime_all, ontime_ok / max(ontime_all, 1) * 100))
+print("  월간 구매계획 %d개월분 (전월 25일 마감 · 승인)" % plans_made)
 
 # ══════════════════════════════════════════════════════════
 #  7. 거래 일괄 적재 · 미입고 발주 남기기

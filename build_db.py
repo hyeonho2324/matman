@@ -439,8 +439,10 @@ CREATE TABLE Purchase_Plan_Item_tb (
     Policy     TEXT,               -- 그 자재의 발주 정책 (수동/승인/자동)
     -- ⚠️ 근거를 **작성 시점 값으로 박아 둔다.** 다음 달이 되면 재고도 사용량도
     --    달라진다. "그때 왜 이만큼으로 잡았나" 를 설명할 수 있어야 한다.
+    --    계획 수량 = 소요 + 월말 목표 − 월초 가용  (구매 = 소비 + 재고 변동)
     Need_Qty   INTEGER,            -- 다음 달 예상 소요 (일평균 × 그 달 일수)
-    Cover_Qty  INTEGER,            -- 덮이는 양 (현재고 + 입고 예정 − 안전재고)
+    Start_Qty  INTEGER,            -- 월초 가용 (현재고 + 입고 예정)
+    Target_Qty INTEGER,            -- 월말 목표 재고 (안전재고 + 리드타임 소요)
     Qty        INTEGER NOT NULL,   -- 계획 발주량 (MOQ·포장단위 올림)
     Unit_Price REAL,
     Amount     INTEGER NOT NULL,
