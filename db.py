@@ -4901,6 +4901,142 @@ def reject_purchase_plan(conn, date_, plan_id, ep_id, reason):
     return {"Plan_ID": r["Plan_ID"]}, []
 
 
+def _plan_for_edit(conn, plan_id):
+    """고칠 수 있는 계획인가 — **작성 상태만** 손댈 수 있다."""
+    r = conn.execute("SELECT * FROM Purchase_Plan_tb WHERE Plan_ID = ?",
+                     (str(plan_id or "").strip(),)).fetchone()
+    if r is None:
+        return None, ["없는 계획번호입니다: %s" % plan_id]
+    if r["Status"] != "작성":
+        return None, ["%s 계획이라 고칠 수 없습니다. 승인된 계획을 바꾸려면 "
+                      "먼저 반려하세요 — 승인받은 금액이 소리 없이 바뀌면 "
+                      "결재가 의미를 잃습니다." % r["Status"]]
+    return dict(r), []
+
+
+def _resum_plan(conn, plan_id):
+    """줄이 바뀌면 머리의 금액·품목 수를 다시 센다.
+
+    ⚠️ 품목 수는 **수량이 남은 줄**만 센다. 0 으로 내린 줄(이번 달은 안 산다)을
+       품목에 넣으면 "44품목 계획" 인데 실제로는 40종만 사는 일이 생긴다.
+    """
+    r = conn.execute(
+        "SELECT COALESCE(SUM(Amount),0) amt, SUM(CASE WHEN Qty > 0 THEN 1 ELSE 0 END) n"
+        "  FROM Purchase_Plan_Item_tb WHERE Plan_ID = ?", (plan_id,)).fetchone()
+    conn.execute("UPDATE Purchase_Plan_tb SET Amount = ?, Item_Cnt = ? WHERE Plan_ID = ?",
+                 (int(r["amt"] or 0), int(r["n"] or 0), plan_id))
+    return int(r["amt"] or 0), int(r["n"] or 0)
+
+
+def edit_plan_items(conn, date, plan_id, changes, ep_id, note=None):
+    """계획 줄의 수량을 고친다. **수량 0 이면 이번 달은 안 사는 것**이다.
+
+    자동 산출은 과거 소비만 본다. 신제품 투입·설비 교체·고객사 물량 변경처럼
+    계획 담당자만 아는 사정은 손으로 넣어야 한다. 실무에서도 구매계획은
+    "MRP 초안 → 사람이 가감 → 품의" 순서다.
+
+    ⚠️ 줄을 **지우지 않고 0 으로 내린다.** 지우면 "왜 뺐는지" 가 사라진다 —
+       자동 산출이 올렸다는 사실과 사람이 뺐다는 사실이 같이 남아야 한다.
+    """
+    pl, e = _plan_for_edit(conn, plan_id)
+    if e:
+        return None, e
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    if not isinstance(changes, dict) or not changes:
+        return None, ["고칠 줄이 없습니다."]
+    rows = {r["Line"]: dict(r) for r in _rows(
+        conn, "SELECT * FROM Purchase_Plan_Item_tb WHERE Plan_ID = ?", (pl["Plan_ID"],))}
+    todo = []
+    for k, v in changes.items():
+        try:
+            line = int(k)
+        except (TypeError, ValueError):
+            return None, ["줄번호가 숫자가 아닙니다: %s" % k]
+        if line not in rows:
+            return None, ["없는 줄번호입니다: %s" % line]
+        q = v.get("qty") if isinstance(v, dict) else v
+        try:
+            q = int(q)
+        except (TypeError, ValueError):
+            return None, ["%d번 줄 수량이 숫자가 아닙니다: %s" % (line, q)]
+        if q < 0:
+            return None, ["%d번 줄 수량은 0 이상이어야 합니다. 0 은 '이번 달은 "
+                          "안 산다' 는 뜻입니다." % line]
+        why = (v.get("note") if isinstance(v, dict) else None) or ""
+        why = str(why).strip()
+        if q != rows[line]["Qty"] and len(why) < 2:
+            return None, ["%d번 줄을 고치는 이유를 적어주세요. 자동 산출과 다른 "
+                          "값은 근거가 남아야 합니다." % line]
+        todo.append((line, q, why))
+    with conn:
+        for line, q, why in todo:
+            r = rows[line]
+            amt = round(q * float(r["Unit_Price"] or 0))
+            conn.execute(
+                "UPDATE Purchase_Plan_Item_tb SET Qty = ?, Amount = ?, Is_Manual = ?,"
+                " Note = ? WHERE Plan_ID = ? AND Line = ?",
+                (q, amt, "Y" if q != r["Qty"] or r["Is_Manual"] == "Y" else None,
+                 why or r["Note"], pl["Plan_ID"], line))
+        amt, cnt = _resum_plan(conn, pl["Plan_ID"])
+        conn.execute("UPDATE Purchase_Plan_tb SET EP_ID = ? WHERE Plan_ID = ?",
+                     (w["EP_ID"], pl["Plan_ID"]))
+    return {"Plan_ID": pl["Plan_ID"], "changed": len(todo),
+            "amount": amt, "item_cnt": cnt, "worker": w}, []
+
+
+def add_plan_item(conn, date, plan_id, pid, qty, ep_id, note=None):
+    """계획에 없던 자재를 손으로 넣는다 — 다음 달에 처음 쓰는 자재 같은 경우다."""
+    pl, e = _plan_for_edit(conn, plan_id)
+    if e:
+        return None, e
+    w, e = _worker(conn, ep_id)
+    if e:
+        return None, e
+    pid = str(pid or "").strip()
+    p = conn.execute("""
+        SELECT p.*, s.Sf_Lv, s.Sf_Num, s.Lead_Time
+          FROM Product_tb p LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+         WHERE p.P_ID = ?""", (pid,)).fetchone()
+    if p is None:
+        return None, ["등록되지 않은 품번입니다: %s" % pid]
+    if conn.execute("SELECT 1 FROM Purchase_Plan_Item_tb WHERE Plan_ID = ? AND P_ID = ?",
+                    (pl["Plan_ID"], pid)).fetchone():
+        return None, ["이미 계획에 있는 자재입니다. 그 줄의 수량을 고치세요: %s" % pid]
+    try:
+        qty = int(qty)
+    except (TypeError, ValueError):
+        return None, ["수량이 숫자가 아닙니다: %s" % qty]
+    if qty <= 0:
+        return None, ["수량은 1 이상이어야 합니다."]
+    note = str(note or "").strip()
+    if len(note) < 2:
+        return None, ["왜 넣는지 적어주세요. 자동 산출이 안 집은 자재입니다."]
+    # 근거는 **지금 값**을 박아 둔다 (자동 산출 줄과 같은 규칙)
+    st = conn.execute("SELECT COALESCE(stock, 0) q FROM (%s) WHERE P_ID = ?"
+                      % STOCK_SQL, (pid,)).fetchone()
+    st = st["q"] if st else 0
+    d = daily_recent(conn).get(pid, 0)
+    line = (conn.execute("SELECT COALESCE(MAX(Line),0)+1 n FROM Purchase_Plan_Item_tb"
+                         " WHERE Plan_ID = ?", (pl["Plan_ID"],)).fetchone()["n"])
+    amt = round(qty * float(p["P_Price"] or 0))
+    with conn:
+        conn.execute(
+            "INSERT INTO Purchase_Plan_Item_tb (Plan_ID, Line, P_ID, Grade, Policy,"
+            " Need_Qty, Start_Qty, Target_Qty, Qty, Unit_Price, Amount, Stock_Qty,"
+            " Incoming, Safe_Qty, Daily, Lead_Time, Is_Manual, Note)"
+            " VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,0,?,?,?,'Y',?)",
+            (pl["Plan_ID"], line, pid, p["Sf_Lv"],
+             ORDER_POLICY.get(p["Sf_Lv"] or "C"), st, qty, p["P_Price"], amt,
+             st, p["Sf_Num"], d, p["Lead_Time"], note))
+        amt_t, cnt = _resum_plan(conn, pl["Plan_ID"])
+        conn.execute("UPDATE Purchase_Plan_tb SET EP_ID = ? WHERE Plan_ID = ?",
+                     (w["EP_ID"], pl["Plan_ID"]))
+    return {"Plan_ID": pl["Plan_ID"], "Line": line, "P_ID": pid, "qty": qty,
+            "amount": amt_t, "item_cnt": cnt}, []
+
+
 def purchase_plan_source(conn):
     """월간 구매계획 화면의 기준 데이터."""
     rows = purchase_plan_list(conn)
@@ -4916,6 +5052,11 @@ def purchase_plan_source(conn):
         "base": base, "entry": _add_days(base, 1),
         "cut_day": PLAN_CUT_DAY,
         "workers": ws, "approvers": [w for w in ws if w["limit"] != 0],
+        # 자재 추가용 — 자동 산출이 안 집은 자재를 손으로 넣을 때 고른다
+        "products": _rows(conn, """
+            SELECT p.P_ID, p.P_N, p.Spec, p.P_Price, s.Sf_Lv AS grade
+              FROM Product_tb p LEFT JOIN Safe_tb s ON p.P_ID = s.P_ID
+             ORDER BY p.P_ID"""),
         "summary": {
             "month": draft["month"], "cut": draft["cut"], "left": draft["left"],
             "late": draft["late"], "amount": draft["amount"],

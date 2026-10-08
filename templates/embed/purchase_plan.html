@@ -59,6 +59,9 @@ td{padding:7px 9px;border-bottom:0.5px solid var(--border);white-space:nowrap;ve
 tr.pick{cursor:pointer}
 tr.pick:hover > td{background:var(--s1)}
 tr.on > td{background:var(--bg-ac)}
+tr.off > td{opacity:.5;text-decoration:line-through}
+.qty{width:74px;text-align:right;font-family:inherit;font-size:11px;padding:4px 6px;
+  border:0.5px solid var(--border);border-radius:5px}
 .num{text-align:right}
 .pid{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--acc)}
 .nm{font-size:11px}
@@ -179,6 +182,11 @@ const APPRS  = {{ approvers|tojson }};
 const WORKERS= {{ workers|tojson }};
 const CUTDAY = {{ cut_day|tojson }};
 const BASE   = {{ base|tojson }};
+const PRODS  = {{ products|tojson }};
+// 작성 상태일 때만 고칠 수 있다. 승인되면 잠긴다 — 승인받은 금액이 소리 없이
+// 바뀌면 결재가 의미를 잃는다.
+const EDIT   = !!(CUR && CUR.Status === '작성');
+let CHG = {};                       // 줄번호 → {qty, note}
 
 const nf = n => (n == null ? '-' : Number(n).toLocaleString('ko-KR'));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -240,10 +248,18 @@ function setTab(t){ TAB = t;
 function draw(){
   if(TAB === 'hist'){ drawHist(); return; }
   const lh = document.getElementById('lh'), box = document.getElementById('list');
+  const nChg = Object.keys(CHG).length;
   lh.innerHTML = '<b style="color:var(--txt)">' + SUM.month + '</b> 계획 · '
-    + ITEMS.length + '품목 · <b style="color:var(--txt)">' + won(PLAN ? PLAN.Amount : DRAFT.amount) + '원</b>'
+    + ITEMS.filter(function(i){ return cq(i) > 0; }).length + '품목 · '
+    + '<b style="color:var(--txt)">' + won(sumAmt()) + '원</b>'
     + (PLAN ? ' · ' + stBadge(PLAN.Status) + ' <span class="pid">' + PLAN.Plan_ID + '</span>'
-            : ' · <span class="bg bmu">아직 저장 안 됨 (초안)</span>');
+            : ' · <span class="bg bmu">아직 저장 안 됨 (초안)</span>')
+    + (EDIT ? '<div class="sp"></div>'
+        + (nChg ? '<span style="color:var(--wn)">고친 줄 ' + nChg + '</span>' : '')
+        + '<button class="btn" onclick="openAdd()"><i class="ti ti-plus"></i>자재 추가</button>'
+        + '<button class="btn btnp" onclick="saveEdits()"' + (nChg ? '' : ' disabled')
+        + '><i class="ti ti-device-floppy"></i>수정 반영</button>'
+      : '');
   if(!ITEMS.length){
     box.innerHTML = '<div class="empty">이 달에 발주할 자재가 없습니다.<br>'
       + '현재고와 입고 예정으로 다음 달 소요가 모두 덮입니다.</div>';
@@ -251,23 +267,38 @@ function draw(){
   }
   box.innerHTML = '<table><thead><tr>'
     + '<th>자재</th><th>등급 · 정책</th><th class="num">다음 달 소요</th>'
-    + '<th class="num">덮이는 양</th><th class="num">계획 수량</th>'
+    + '<th class="num">월초 가용 / 월말 목표</th><th class="num">계획 수량</th>'
     + '<th class="num">금액</th><th>협력사</th></tr></thead><tbody>'
     + ITEMS.map(function(i){
-        return '<tr class="pick' + (SELID === i.P_ID ? ' on' : '') + '"'
+        return '<tr class="pick' + (SELID === i.P_ID ? ' on' : '')
+        + (cq(i) === 0 ? ' off' : '') + '"'
         + ' onclick="pick(&quot;' + i.P_ID + '&quot;)">'
-        + '<td><div class="nm">' + esc(i.P_N || '') + '</div>'
+        + '<td><div class="nm">' + esc(i.P_N || '')
+        +   (i.Is_Manual === 'Y' || CHG[i.Line] ? ' <span class="bg bwn">손댐</span>' : '')
+        +   (cq(i) === 0 ? ' <span class="bg bmu">이번 달 제외</span>' : '') + '</div>'
         +   '<div class="sub"><span class="pid">' + esc(i.P_ID) + '</span> · '
         +   esc((i.Spec || '').slice(0, 20)) + '</div></td>'
         + '<td>' + gradeBadge(i.Grade) + (i.Policy ? ' <span class="bg bmu">' + esc(i.Policy) + '</span>' : '') + '</td>'
         + '<td class="num">' + nf(i.Need_Qty) + '<div class="sub">일 ' + nf(i.Daily) + '개</div></td>'
-        + '<td class="num">' + nf(i.Cover_Qty)
+        + '<td class="num">' + nf(i.Start_Qty) + ' / ' + nf(i.Target_Qty)
         +   '<div class="sub">재고 ' + nf(i.Stock_Qty) + (i.Incoming ? ' + 입고 ' + nf(i.Incoming) : '') + '</div></td>'
-        + '<td class="num"><b>' + nf(i.Qty) + '</b></td>'
-        + '<td class="num">' + nf(i.Amount) + '원</td>'
+        + '<td class="num" ' + (EDIT ? 'onclick="event.stopPropagation()"' : '') + '>'
+        +   (EDIT
+              ? '<input type="number" class="qty" min="0" value="' + cq(i) + '"'
+                + ' onchange="setQ(' + i.Line + ',this.value)">'
+                + (cq(i) !== i.Qty ? '<div class="sub">자동 ' + nf(i.Qty) + '</div>' : '')
+              : '<b>' + nf(i.Qty) + '</b>') + '</td>'
+        + '<td class="num">' + nf(Math.round(cq(i) * (i.Unit_Price || 0))) + '원</td>'
         + '<td>' + esc(i.supplier || '-') + (i.is_foreign === 'Y' ? ' <span class="bg bmu">해외</span>' : '') + '</td>'
         + '</tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>'
+    + (EDIT ? '<div class="mnote" style="margin:10px 11px">'
+        + '<b>수량을 고치면 사유를 묻습니다.</b> 자동 산출은 과거 소비만 봅니다 — '
+        + '신제품 투입이나 설비 교체처럼 담당자만 아는 사정은 손으로 넣어야 하고, '
+        + '자동값과 다르면 <b>왜 다른지가 남아야</b> 합니다. '
+        + '<b>수량 0 은 이번 달은 안 산다</b>는 뜻입니다 — 줄을 지우지 않는 이유는 '
+        + '자동 산출이 올렸다는 사실과 사람이 뺐다는 사실이 같이 남아야 해서입니다.</div>'
+      : '');
   summary();
 }
 
@@ -296,6 +327,59 @@ function drawHist(){
              : r.Status === '반려' ? esc(r.Appr_Note || '') : '대기') + '</div></td>'
         + '</tr>';
       }).join('') + '</tbody></table>';
+}
+
+function cq(i){ return CHG[i.Line] != null ? CHG[i.Line].qty : i.Qty; }
+function sumAmt(){
+  return ITEMS.reduce(function(a, i){ return a + Math.round(cq(i) * (i.Unit_Price || 0)); }, 0);
+}
+function setQ(line, v){
+  const i = ITEMS.filter(function(x){ return x.Line === line; })[0];
+  let q = parseInt(v, 10);
+  if(isNaN(q) || q < 0) q = 0;
+  if(q === i.Qty){ delete CHG[line]; draw(); return; }
+  const why = prompt((q === 0 ? '이번 달 제외' : '수량 ' + nf(i.Qty) + ' → ' + nf(q))
+    + ' — 왜 바꾸는지 적어주세요 (2자 이상)', (CHG[line] || {}).note || '');
+  if(why == null || why.trim().length < 2){ draw(); return; }
+  CHG[line] = {qty: q, note: why.trim()};
+  draw();
+}
+async function saveEdits(){
+  const d = await post('/api/pplan/edit', {Plan_ID: PLAN.Plan_ID, lines: CHG,
+    EP_ID: (WORKERS[0] || {}).EP_ID});
+  if(!d.ok){ alertOv('고치지 못했습니다', (d.errors || []).join(String.fromCharCode(10))); return; }
+  alertOv('수정했습니다', d.result.changed + '줄 · ' + nf(d.result.amount) + '원 · '
+    + d.result.item_cnt + '품목', reload);
+}
+function openAdd(){
+  document.getElementById('ovt').textContent = '계획에 자재 추가';
+  document.getElementById('ovc').innerHTML =
+      '<div class="mnote">자동 산출은 <b>과거 소비</b>만 봅니다. 다음 달에 처음 쓰는 '
+    + '자재는 잡히지 않으니 손으로 넣습니다 — 넣은 줄은 <b>손댐</b>으로 표시됩니다.</div>'
+    + '<label class="fl"><span>품번</span>'
+    +   '<input type="text" id="adpid" list="adlist" placeholder="예) V01010001">'
+    +   '<datalist id="adlist">'
+    +   PRODS.slice(0, 400).map(function(p){
+          return '<option value="' + p.P_ID + '">' + esc(p.P_N) + '</option>'; }).join('')
+    +   '</datalist></label>'
+    + '<label class="fl"><span>수량</span><input type="number" id="adqty" min="1" value="100"></label>'
+    + '<label class="fl"><span>사유 (2자 이상)</span>'
+    +   '<textarea id="adwhy" placeholder="예) 11월부터 신규 라인에 들어갑니다"></textarea></label>';
+  document.getElementById('ovf').innerHTML =
+      '<button class="btn" onclick="closeOv()">취소</button>'
+    + '<button class="btn btnp" onclick="saveAdd()">추가</button>';
+  document.getElementById('ovl').classList.add('on');
+}
+async function saveAdd(){
+  const d = await post('/api/pplan/add', {Plan_ID: PLAN.Plan_ID,
+    P_ID: document.getElementById('adpid').value,
+    qty: document.getElementById('adqty').value,
+    note: document.getElementById('adwhy').value,
+    EP_ID: (WORKERS[0] || {}).EP_ID});
+  if(!d.ok){ alertOv('넣지 못했습니다', (d.errors || []).join(String.fromCharCode(10))); return; }
+  closeOv();
+  alertOv('추가했습니다', d.result.P_ID + ' ' + nf(d.result.qty) + '개 · 계획 '
+    + nf(d.result.amount) + '원 · ' + d.result.item_cnt + '품목', reload);
 }
 
 function pick(pid){

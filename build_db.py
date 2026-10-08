@@ -451,6 +451,11 @@ CREATE TABLE Purchase_Plan_Item_tb (
     Safe_Qty   INTEGER,
     Daily      REAL,
     Lead_Time  INTEGER,
+    -- 사람이 손댄 줄. 자동 산출은 **과거 소비**만 본다 — 신제품·설비 교체처럼
+    -- 계획 담당자만 아는 사정은 손으로 넣는다. 'Y' 로 남겨 둬야 나중에
+    -- "계획이 틀린 건가, 사람이 바꾼 건가" 를 가를 수 있다.
+    Is_Manual  TEXT,
+    Note       TEXT,               -- 고친 이유 (수량 0 = 이번 달은 안 산다)
     PRIMARY KEY (Plan_ID, Line)
 );
 

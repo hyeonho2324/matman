@@ -1611,6 +1611,42 @@ def api_pplan_reject():
         conn.close()
 
 
+@app.route("/api/pplan/edit", methods=["POST"])
+def api_pplan_edit():
+    """계획 줄 수량 조정 — 작성 상태에서만. 0 이면 이번 달은 안 산다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.edit_plan_items(
+            conn, _entry_date(body), body.get("Plan_ID"), _map(body, "lines"),
+            body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/pplan/add", methods=["POST"])
+def api_pplan_add():
+    """자동 산출이 안 집은 자재를 계획에 넣는다."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.add_plan_item(
+            conn, _entry_date(body), body.get("Plan_ID"), body.get("P_ID"),
+            body.get("qty"), body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/pplan/items")
 def api_pplan_items():
     pid = (request.args.get("id") or "").strip()
