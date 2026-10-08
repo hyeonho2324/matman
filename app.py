@@ -391,6 +391,14 @@ def _ctx_tx_history():
             "monthly": db.tx_monthly(conn),
             "tx_meta": db.TX_META,
             "summary": db.tx_summary(rows, db.lot_counts(conn, since), prods),
+            # 취소 — 어느 거래가 되돌려졌는지 + 누가 되돌릴 수 있는지
+            "cancels": db.cancel_map(conn),
+            "cancel_log": db.cancel_list(conn, since),
+            "cancel_reasons": [{"cd": k, "label": v}
+                               for k, v in db.CANCEL_REASONS.items()],
+            "cancel_note_min": db.CANCEL_NOTE_MIN,
+            # 취소는 되돌리는 쪽이라 직급을 본다 — 권한 있는 사람만 내려보낸다
+            "approvers": [w for w in db._plan_workers(conn) if w["limit"] != 0],
         }
     finally:
         conn.close()
@@ -1638,6 +1646,60 @@ def api_pplan_add():
         out, errors = db.add_plan_item(
             conn, _entry_date(body), body.get("Plan_ID"), body.get("P_ID"),
             body.get("qty"), body.get("EP_ID"), body.get("note"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
+# ── 거래 취소 API ───────────────────────────────────────────
+# 오입력을 되돌린다. 원 거래는 지우지 않고 **반대 부호 거래**로 상계한다(역분개).
+# 입고만은 상계할 거래가 없어 손대지 않은 LOT 을 거둔다. db.make_cancel 참조.
+
+@app.route("/api/cancel/check")
+def api_cancel_check():
+    """이 거래를 취소할 수 있나 — 가능 수량 · 요청 후보 · 막는 이유."""
+    tid = (request.args.get("id") or "").strip()
+    if not re.match(r"^[A-Za-z0-9]{1,20}$", tid):
+        return jsonify({"ok": False, "errors": ["거래번호가 올바르지 않습니다."]}), 400
+    conn = db.connect()
+    try:
+        out, _ = db.cancel_check(conn, tid)
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/cancel/preview", methods=["POST"])
+def api_cancel_preview():
+    """취소하면 재고·요청이 어떻게 되는지 (저장 안 함)."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.preview_cancel(
+            conn, _entry_date(body), body.get("T_ID"), body.get("qty"),
+            body.get("EP_ID"), body.get("reason_cd"), body.get("reason"),
+            body.get("req") if isinstance(body.get("req"), dict) else None)
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    finally:
+        conn.close()
+
+
+@app.route("/api/cancel", methods=["POST"])
+def api_cancel():
+    """취소 실행 — 역분개 거래 + 취소 전표."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.make_cancel(
+            conn, _entry_date(body), body.get("T_ID"), body.get("qty"),
+            body.get("EP_ID"), body.get("reason_cd"), body.get("reason"),
+            body.get("req") if isinstance(body.get("req"), dict) else None)
         if errors:
             return jsonify({"ok": False, "errors": errors}), 400
         return jsonify({"ok": True, "result": out})

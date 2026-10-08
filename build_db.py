@@ -511,6 +511,30 @@ CREATE TABLE Order_Policy_tb (
     Set_Date TEXT
 );
 
+DROP TABLE IF EXISTS Cancel_tb;
+CREATE TABLE Cancel_tb (
+    -- 오입력을 되돌린 기록. **원 거래를 지우지 않는다** —
+    --   불출·반납·불량·폐기 : 같은 유형 **음수 수량** 거래로 상계한다(역분개)
+    --   입고                : 효과가 Lot_tb.P_Qty 에 있어 상계할 거래가 없다.
+    --                         아무것도 손대지 않은 LOT 만 거두고 여기 옮겨 담는다
+    Cxl_ID    TEXT PRIMARY KEY,   -- CXL + YYYYMMDD + 4자리
+    Cxl_Date  TEXT,
+    Kind      TEXT,               -- 거래 / 입고
+    Src_ID    TEXT,               -- 원 거래번호(T_ID)
+    Lot_ID    TEXT,
+    P_ID      TEXT,
+    T_Type    TEXT,               -- 원 거래 유형
+    Qty       INTEGER,            -- 취소 수량
+    Amount    INTEGER,            -- 취소 금액 (한도 판정 근거)
+    T_ID      TEXT,               -- 역분개 거래번호 (입고 취소는 NULL — 거뒀다)
+    H_ID      TEXT,               -- 입고 취소로 다시 미입고가 된 발주
+    Req_ID    TEXT,               -- 불출 취소로 되돌린 요청
+    Req_num   INTEGER,
+    Reason_Cd TEXT NOT NULL,      -- CANCEL_REASONS
+    Reason    TEXT NOT NULL,      -- 5자 이상
+    EP_ID     TEXT
+);
+
 DROP TABLE IF EXISTS FG_tb;
 CREATE TABLE FG_tb (
     FG_ID    TEXT PRIMARY KEY,         -- 완제품 코드 FG001~FG015

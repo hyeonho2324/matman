@@ -72,6 +72,15 @@ TX_MOVE = [t for t, _, _, _, k in TX_TYPES if k == "move"]
 TX_RETURN = next((t for t, sg, _, _, k in TX_TYPES if k == "in" and sg > 0), "반납")
 
 
+def _is_date(d):
+    """YYYY-MM-DD 꼴이고 실제로 있는 날짜인가."""
+    try:
+        datetime.date.fromisoformat(str(d or ""))
+        return True
+    except ValueError:
+        return False
+
+
 def _inlist(vals):
     """SQL IN 절에 넣을 문자열. 비어 있으면 매칭되지 않는 값을 넣는다."""
     return ", ".join("'%s'" % v for v in vals) if vals else "''"
@@ -8786,3 +8795,385 @@ def create_products_bulk(conn, date, rows, ep_id, note=None):
     by_grade = {g: sum(1 for d in done if d["grade"] == g) for g in ("A", "B", "C")}
     return {"items": done, "cnt": len(done), "by_grade": by_grade,
             "worker": w["Name"], "date": date, "note": note}, []
+
+
+# ── 거래 취소 — 역분개 ───────────────────────────────────────
+#
+# 현장에서 가장 흔한 일이 **오입력**이다. 1,000개를 100개로 치고, 엉뚱한 LOT 에서
+# 불출하고, 입고 수량을 잘못 넣는다. 그런데 되돌리는 길이 없어서 현장이
+# **반납으로 땜질**하게 됐다 — 그러면 "현장에 나갔다 돌아왔다" 는 거짓이 이력에
+# 남고 일평균 사용량·ABC·협력사 지표가 전부 오염된다.
+#
+# ⚠️ **원 거래를 지우지 않는다.** 지우면 그 거래를 근거로 삼은 것들(요청 진행률 ·
+#    LOT 타임라인 · 월별 집계)이 설명을 잃는다. 회계의 역분개와 같다 —
+#    **반대 부호 거래를 취소일 자로 새로 남기고** 둘을 전표로 잇는다.
+#
+# 효과를 되돌리는 방법이 유형마다 다르다.
+#
+#   불출·반납·불량·폐기   재고 부호가 ±1 이라 **같은 유형 음수 수량**으로 상계된다.
+#                        집계가 전부 `SUM(T_Num)` 이라 **고칠 코드가 없다** —
+#                        잔량·현장 보유·출고·**수요(일평균)** 가 알아서 빠진다.
+#   입고                 효과가 `Lot_tb.P_Qty` 에 있다. 상계할 거래가 없으므로
+#                        **아무것도 손대지 않은 LOT 만** 거두고 전표에 옮겨 담는다.
+#   이동·교환            총량이 안 변한다. 되돌리기가 '다시 옮기기' 라서 취소가 아니다.
+#
+# ⚠️ **전표가 쥔 거래는 그 전표 쪽에서 취소해야 한다.** 실사(`Stock_Count_Item_tb`) ·
+#    클레임(`Inbound_Claim_tb`) · 현장 반납(`Site_Return_tb`) 이 가리키는 거래를
+#    여기서 상계하면 전표가 거짓이 된다 — 전표는 그대로 "반납 500" 이라고 말하는데
+#    거래만 0 이 되는 식이다. 그래서 막고 **어느 전표가 쥐고 있는지** 알려 준다.
+CANCEL_ID_PRE = "CXL"
+CANCEL_NOTE_MIN = 5
+# 사유는 분류로 받는다. 자유 텍스트만 받으면 "잘못 눌렀음" 이 쌓인다 —
+# 재고 실사·현장 반납과 같은 기준이다. 다만 취소는 일상 업무가 아니라 예외 처리라
+# **설명도 필수**로 받는다(수동 조정·운영 설정과 같은 5자).
+CANCEL_REASONS = {
+    "오입력":   "수량을 잘못 넣었습니다",
+    "대상착오": "다른 자재·LOT 에 등록했습니다",
+    "중복등록": "같은 건을 두 번 등록했습니다",
+    "작업취소": "작업지시가 취소·변경됐습니다",
+    "기타":     "그 밖의 사정",
+}
+
+
+def next_cancel_id(conn, date):
+    pre = CANCEL_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Cxl_ID) FROM Cancel_tb WHERE Cxl_ID LIKE ?", (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+def _tx_owner(conn, tid):
+    """이 거래를 쥐고 있는 전표가 있나 — 있으면 그쪽에서 취소해야 한다."""
+    for sql, what, where in (
+        ("SELECT Count_ID FROM Stock_Count_Item_tb WHERE T_ID = ?",
+         "재고 실사", "재고 실사"),
+        ("SELECT Claim_ID FROM Inbound_Claim_tb WHERE T_ID = ?",
+         "입고 클레임", "입고 처리의 불량·반품 탭"),
+        ("SELECT Ret_ID FROM Site_Return_tb WHERE T_ID = ? OR Bad_T_ID = ?",
+         "현장 반납", "현장 반납 이력"),
+    ):
+        args = (tid, tid) if " OR " in sql else (tid,)
+        r = conn.execute(sql, args).fetchone()
+        if r is not None:
+            return {"what": what, "id": r[0], "where": where}
+    return None
+
+
+def _lot_one(conn, lot_id):
+    """LOT 한 건의 잔량·현장 보유. 두 수를 여기서 다시 세지 않는다."""
+    return conn.execute(f"""
+        SELECT l.Lot_ID, l.P_ID, l.P_Qty, l.H_ID, l.Lot_Date, l.Loc_ID,
+               p.P_N, p.Spec, p.P_Price,
+               l.P_Qty - COALESCE(x.out_qty, 0) AS stock,
+               COALESCE(sf.site, 0)             AS site
+          FROM Lot_tb l
+          LEFT JOIN Product_tb p ON l.P_ID = p.P_ID
+          LEFT JOIN (SELECT Lot_ID, {LOT_DELTA} AS out_qty
+                       FROM Transaction_tb GROUP BY Lot_ID) x ON x.Lot_ID = l.Lot_ID
+          LEFT JOIN ({site_flow()}) sf ON sf.Lot_ID = l.Lot_ID
+         WHERE l.Lot_ID = ?
+    """, (lot_id,)).fetchone()
+
+
+def _cancel_src(conn, tid):
+    """취소 대상을 꺼내고 **취소할 수 있는지** 판정한다.
+
+    kind 는 둘이다 — `거래`(역분개) · `입고`(LOT 거두기).
+    """
+    tid = str(tid or "").strip()
+    t = conn.execute("SELECT * FROM Transaction_tb WHERE T_ID = ?", (tid,)).fetchone()
+    if t is None:
+        return None, ["등록되지 않은 거래번호입니다: %s" % (tid or "(빈값)")]
+    if (t["T_Num"] or 0) < 0:
+        return None, ["취소를 되돌린 거래입니다. 취소의 취소는 하지 않습니다 — "
+                      "필요하면 다시 등록하세요."]
+    lot = _lot_one(conn, t["Lot_ID"])
+    if lot is None:
+        return None, ["거래에 걸린 LOT 이 없습니다: %s" % t["Lot_ID"]]
+
+    sign = TX_SIGN.get(t["T_Type"], 0)
+    if sign == 0 and t["T_Type"] != TX_RECEIPT:
+        return None, ["%s 거래는 창고 총량을 바꾸지 않아 상계할 것이 없습니다. "
+                      "자리를 되돌리려면 재고 실사의 `구역오류` 로 다시 옮기세요."
+                      % t["T_Type"]]
+    own = _tx_owner(conn, tid)
+    if own:
+        return None, ["%s %s 전표가 쥐고 있는 거래입니다. %s 에서 취소하세요 — "
+                      "여기서 상계하면 전표는 그대로인데 거래만 0 이 됩니다."
+                      % (own["what"], own["id"], own["where"])]
+
+    done = conn.execute(
+        "SELECT COALESCE(SUM(Qty),0) FROM Cancel_tb WHERE Src_ID = ?", (tid,)).fetchone()[0]
+    done = int(done or 0)
+    src = {"T_ID": tid, "T_Type": t["T_Type"], "T_Date": t["T_Date"],
+           "T_Num": int(t["T_Num"] or 0), "src_EP_ID": t["EP_ID"], "sign": sign,
+           "Lot_ID": lot["Lot_ID"], "P_ID": lot["P_ID"], "P_N": lot["P_N"],
+           "Spec": lot["Spec"], "Lot_Date": lot["Lot_Date"], "Loc_ID": lot["Loc_ID"],
+           "lot_qty": int(lot["P_Qty"] or 0), "stock": int(lot["stock"] or 0),
+           "site": int(lot["site"] or 0), "H_ID": lot["H_ID"],
+           "price": float(lot["P_Price"] or 0),
+           "cancelled": done, "left": int(t["T_Num"] or 0) - done}
+
+    if t["T_Type"] == TX_RECEIPT:
+        # 입고 취소 = LOT 거두기. 손댄 적이 있으면 거둘 수 없다.
+        src["kind"] = "입고"
+        blocks = []
+        if done:
+            blocks.append("이미 취소된 입고입니다")
+        n = conn.execute("SELECT COUNT(*) FROM Transaction_tb WHERE Lot_ID = ? AND T_ID <> ?",
+                         (lot["Lot_ID"], tid)).fetchone()[0]
+        if n:
+            blocks.append("이 LOT 에 거래가 %d건 더 있습니다" % n)
+        for sql, what in (
+            ("SELECT COUNT(*) FROM Production_tb WHERE Lot_ID = ?", "생산 투입"),
+            ("SELECT COUNT(*) FROM Inbound_Claim_tb WHERE Lot_ID = ? OR New_Lot_ID = ?",
+             "입고 클레임"),
+            ("SELECT COUNT(*) FROM Stock_Count_Item_tb WHERE Lot_ID = ?", "재고 실사"),
+            ("SELECT COUNT(*) FROM Site_Return_tb WHERE Lot_ID = ?", "현장 반납"),
+        ):
+            args = (lot["Lot_ID"], lot["Lot_ID"]) if " OR " in sql else (lot["Lot_ID"],)
+            k = conn.execute(sql, args).fetchone()[0]
+            if k:
+                blocks.append("%s %d건" % (what, k))
+        src["blocks"] = blocks
+        if blocks:
+            return None, ["이 입고는 거둘 수 없습니다 — %s. 입고는 상계할 거래가 없어 "
+                          "**손대지 않은 LOT 만** 거둘 수 있습니다. 이미 쓴 입고는 "
+                          "입고 처리의 불량·반품(폐기·환불)으로 처리하세요."
+                          % " · ".join(blocks)]
+        # 발주 시점 단가가 있으면 그것을 쓴다 — 그게 청구받은 금액이다.
+        up = conn.execute(
+            "SELECT Unit_Price FROM Purchase_Detail_tb WHERE H_ID = ? AND P_ID = ?",
+            (lot["H_ID"], lot["P_ID"])).fetchone()
+        if up and up[0]:
+            src["price"] = float(up[0])
+    else:
+        src["kind"] = "거래"
+        if src["left"] <= 0:
+            return None, ["이미 전량 취소된 거래입니다 (%s개)." % format(src["T_Num"], ",")]
+    return src, []
+
+
+def cancel_candidates(conn, pid, qty=None):
+    """불출 취소 때 되돌릴 **요청 줄 후보**.
+
+    ⚠️ `Transaction_tb` 에 `Req_ID` 가 없다 — 불출은 `Done_Qty` 를 더하기만 한다.
+       "이 불출이 어느 요청 때문이었나" 를 역추적할 수 없어 **사람이 고른다.**
+       후보가 하나면 화면이 미리 골라 둔다. CLAUDE.md 「못 하는 것」 참조.
+    """
+    rows = _rows(conn, """
+        SELECT i.Req_ID, i.Req_num, i.Done_Qty,
+               COALESCE(i.Appr_Qty, i.Req_Qty) AS eff_qty,
+               r.Status, r.Req_Date, r.FG_ID, f.FG_N, r.Work_Order
+          FROM Disburse_Req_Item_tb i
+          JOIN Disburse_Req_tb r ON i.Req_ID = r.Req_ID
+          LEFT JOIN FG_tb f      ON r.FG_ID = f.FG_ID
+         WHERE i.P_ID = ? AND i.Done_Qty > 0
+         -- 진행 중인 요청을 앞에 둔다. 방금 낸 불출이면 거기에 걸려 있다.
+         ORDER BY CASE WHEN r.Status = '불출완료' THEN 1 ELSE 0 END,
+                  r.Req_Date DESC, i.Req_ID DESC
+         LIMIT 20
+    """, (pid,))
+    if qty:
+        for r in rows:
+            r["fits"] = 1 if (r["Done_Qty"] or 0) >= int(qty) else 0
+    return rows
+
+
+def cancel_cap(src):
+    """되돌릴 수 있는 상한과 그 이유.
+
+    남은 수량만 보면 안 된다 — 불출은 **현장에 남아 있는 만큼**(투입·반납된 몫은
+    못 되돌린다), 반납은 **창고에 남아 있는 만큼**(이미 나갔으면 못 되돌린다)이다.
+    """
+    if src["kind"] == "입고":
+        return src["T_Num"], None
+    if src["T_Type"] == TX_DISBURSE:
+        if src["site"] < src["left"]:
+            return max(src["site"], 0), "현장 보유 %s개까지" % format(src["site"], ",")
+        return src["left"], None
+    if src["sign"] > 0:
+        if src["stock"] < src["left"]:
+            return max(src["stock"], 0), "창고 잔량 %s개까지" % format(src["stock"], ",")
+        return src["left"], None
+    return src["left"], None
+
+
+def cancel_check(conn, tid):
+    """화면용 — 이 거래를 취소할 수 있나, 얼마까지, 무엇이 바뀌나."""
+    src, e = _cancel_src(conn, tid)
+    if e:
+        return {"ok": 0, "errors": e}, []
+    out = dict(src)
+    cap, why = cancel_cap(src)
+    out.update({"ok": 1, "cap": cap, "cap_why": why,
+                "note_min": CANCEL_NOTE_MIN,
+                "reasons": [{"cd": k, "label": v} for k, v in CANCEL_REASONS.items()]})
+    if src["kind"] == "거래" and src["T_Type"] == TX_DISBURSE:
+        out["reqs"] = cancel_candidates(conn, src["P_ID"], cap)
+    return out, []
+
+
+def preview_cancel(conn, date, tid, qty, ep_id, reason_cd=None, reason=None, req=None):
+    """취소 미리보기 — 재고가 어떻게 되는지. 아무것도 저장하지 않는다."""
+    src, e = _cancel_src(conn, tid)
+    if e:
+        return None, e
+    cap, cap_why = cancel_cap(src)
+
+    if src["kind"] == "입고":
+        qty = src["T_Num"]                       # 입고는 통째로만 거둔다
+    else:
+        try:
+            qty = int(qty)
+        except (TypeError, ValueError):
+            return None, ["취소 수량이 숫자가 아닙니다: %s" % qty]
+        if qty <= 0:
+            return None, ["취소 수량은 1 이상이어야 합니다."]
+        if qty > src["left"]:
+            return None, ["취소 수량이 남은 수량을 넘습니다. 거래 %s개 · 이미 취소 %s개 · "
+                          "남은 %s개" % (format(src["T_Num"], ","),
+                                         format(src["cancelled"], ","),
+                                         format(src["left"], ","))]
+        if src["T_Type"] == TX_DISBURSE and qty > src["site"]:
+            return None, ["현장에 %s개만 남아 있어 %s개를 되돌릴 수 없습니다. 이미 생산에 "
+                          "투입되거나 반납된 몫은 취소로 되돌리지 않습니다 — 생산 실적을 "
+                          "먼저 보세요." % (format(src["site"], ","), format(qty, ","))]
+        if src["sign"] > 0 and qty > src["stock"]:
+            return None, ["창고 잔량이 %s개뿐이어서 %s개를 되돌릴 수 없습니다. 되돌릴 "
+                          "물건이 이미 나갔습니다."
+                          % (format(src["stock"], ","), format(qty, ","))]
+
+    # 사유 — 분류 필수 + 설명 5자
+    cd = str(reason_cd or "").strip()
+    if not cd:
+        return None, ["취소 사유를 고르세요."]
+    if cd not in CANCEL_REASONS:
+        return None, ["없는 취소 사유입니다: %s (가능: %s)" % (cd, " · ".join(CANCEL_REASONS))]
+    why = str(reason or "").strip()
+    if len(why) < CANCEL_NOTE_MIN:
+        return None, ["취소 사유 설명을 %d자 이상 적어주세요. 되돌릴 수 없는 작업입니다."
+                      % CANCEL_NOTE_MIN]
+
+    # 날짜 — **취소일 자**로 넣는다. 원 거래일에 꽂으면 그달 집계가 소리 없이 바뀐다.
+    date = str(date or "").strip()
+    if not _is_date(date):
+        return None, ["취소일이 날짜 꼴이 아닙니다: %s" % (date or "(빈값)")]
+    if date < src["T_Date"]:
+        return None, ["취소일(%s)이 원 거래일(%s)보다 앞섭니다. 되돌리는 일은 그 뒤에만 "
+                      "일어납니다." % (date, src["T_Date"])]
+
+    amount = int(round(qty * src["price"]))
+    # 권한 — 되돌리는 쪽이라 직급·금액을 본다(_approver).
+    #   ⚠️ 자기결재 금지는 걸지 않는다. 오입력을 낸 사람이 바로 고치는 게 정상이고,
+    #      통제는 사유가 남는 것으로 걸린다.
+    w, e = _approver(conn, ep_id, amount, "거래 취소")
+    if e:
+        return None, e
+
+    # 요청 되돌리기 (불출만)
+    rq = None
+    if src["T_Type"] == TX_DISBURSE and isinstance(req, dict) and req.get("Req_ID"):
+        rid = str(req.get("Req_ID") or "").strip()
+        try:
+            rnum = int(req.get("Req_num"))
+        except (TypeError, ValueError):
+            return None, ["요청 줄번호가 숫자가 아닙니다: %s" % req.get("Req_num")]
+        r = conn.execute("""
+            SELECT i.*, r.Status FROM Disburse_Req_Item_tb i
+              JOIN Disburse_Req_tb r ON i.Req_ID = r.Req_ID
+             WHERE i.Req_ID = ? AND i.Req_num = ?""", (rid, rnum)).fetchone()
+        if r is None:
+            return None, ["없는 요청 줄입니다: %s #%s" % (rid, rnum)]
+        if r["P_ID"] != src["P_ID"]:
+            return None, ["요청 줄의 자재가 다릅니다. 요청 %s · 거래 %s"
+                          % (r["P_ID"], src["P_ID"])]
+        if (r["Done_Qty"] or 0) < qty:
+            return None, ["요청 줄의 불출 누계가 %s개뿐이어서 %s개를 되돌릴 수 없습니다."
+                          % (format(int(r["Done_Qty"] or 0), ","), format(qty, ","))]
+        rq = {"Req_ID": rid, "Req_num": rnum, "done_qty": int(r["Done_Qty"] or 0),
+              "after": int(r["Done_Qty"] or 0) - qty, "status": r["Status"]}
+
+    out = dict(src)
+    out.update({
+        "qty": qty, "amount": amount, "worker": w, "date": date, "cap": cap,
+        "cap_why": cap_why, "reason_cd": cd, "reason": why, "req": rq,
+        "reason_label": CANCEL_REASONS[cd],
+        "lot_drop": 1 if src["kind"] == "입고" else 0,
+    })
+    if src["kind"] == "입고":
+        out["stock_after"] = 0
+        out["chg_cnt"] = conn.execute(
+            "SELECT COUNT(*) FROM Purchase_Change_tb WHERE Lot_ID = ?",
+            (src["Lot_ID"],)).fetchone()[0]
+    else:
+        out["stock_after"] = src["stock"] + (qty if src["sign"] < 0 else -qty)
+    out["site_after"] = (src["site"] - qty if src["T_Type"] == TX_DISBURSE
+                         else src["site"])
+    return out, []
+
+
+def make_cancel(conn, date, tid, qty, ep_id, reason_cd=None, reason=None, req=None):
+    """취소 실행 — 역분개 거래 1건(또는 LOT 거두기) + 취소 전표 1건."""
+    p, e = preview_cancel(conn, date, tid, qty, ep_id, reason_cd, reason, req)
+    if e:
+        return None, e
+
+    cid = next_cancel_id(conn, date)
+    rev = None
+    with conn:                                   # 전부 성공 아니면 전부 실패
+        if p["kind"] == "거래":
+            # 역분개 — 같은 유형, 음수 수량. 집계가 전부 SUM(T_Num) 이라 알아서 빠진다.
+            rev = next_tx_id(conn, date)
+            conn.execute(
+                "INSERT INTO Transaction_tb (T_ID, Lot_ID, T_Type, T_Date, T_Num, EP_ID)"
+                " VALUES (?,?,?,?,?,?)",
+                (rev, p["Lot_ID"], p["T_Type"], date, -p["qty"], p["worker"]["EP_ID"]))
+            if p["req"]:
+                conn.execute(
+                    "UPDATE Disburse_Req_Item_tb SET Done_Qty = Done_Qty - ?"
+                    " WHERE Req_ID = ? AND Req_num = ?",
+                    (p["qty"], p["req"]["Req_ID"], p["req"]["Req_num"]))
+                p["req"]["status_after"] = _refresh_req_status(conn, p["req"]["Req_ID"])
+        else:
+            # 입고 거두기 — LOT · 입고 거래 · 그 LOT 의 발주 변경 이력을 함께 거둔다.
+            #   발주 라인이 다시 미입고가 되어 입고 화면에 돌아온다.
+            conn.execute("DELETE FROM Purchase_Change_tb WHERE Lot_ID = ?", (p["Lot_ID"],))
+            conn.execute("DELETE FROM Transaction_tb WHERE T_ID = ?", (p["T_ID"],))
+            conn.execute("DELETE FROM Lot_tb WHERE Lot_ID = ?", (p["Lot_ID"],))
+        conn.execute(
+            "INSERT INTO Cancel_tb (Cxl_ID, Cxl_Date, Kind, Src_ID, Lot_ID, P_ID,"
+            " T_Type, Qty, Amount, T_ID, H_ID, Req_ID, Req_num, Reason_Cd, Reason, EP_ID)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, date, p["kind"], p["T_ID"], p["Lot_ID"], p["P_ID"], p["T_Type"],
+             p["qty"], p["amount"], rev,
+             p["H_ID"] if p["kind"] == "입고" else None,
+             p["req"]["Req_ID"] if p["req"] else None,
+             p["req"]["Req_num"] if p["req"] else None,
+             p["reason_cd"], p["reason"], p["worker"]["EP_ID"]))
+    p["Cxl_ID"] = cid
+    p["rev_T_ID"] = rev
+    return p, []
+
+
+def cancel_list(conn, since=None):
+    """취소 이력 — 무엇을 왜 되돌렸는지."""
+    where, args = [], []
+    if since:
+        where.append("c.Cxl_Date >= ?")
+        args.append(since)
+    return _rows(conn, """
+        SELECT c.*, p.P_N, p.Spec, u.Name AS worker, u.Position AS pos
+          FROM Cancel_tb c
+          LEFT JOIN Product_tb p ON c.P_ID = p.P_ID
+          LEFT JOIN User_tb u    ON c.EP_ID = u.EP_ID
+         %s
+         ORDER BY c.Cxl_ID DESC
+    """ % ("WHERE " + " AND ".join(where) if where else ""), tuple(args))
+
+
+def cancel_map(conn):
+    """거래번호 → 취소된 수량. 화면이 '취소됨' 배지를 붙이는 데 쓴다."""
+    return {r["Src_ID"]: {"qty": int(r["q"] or 0), "n": r["n"], "Cxl_ID": r["cid"]}
+            for r in _rows(conn, "SELECT Src_ID, SUM(Qty) q, COUNT(*) n, MAX(Cxl_ID) cid"
+                                 "  FROM Cancel_tb GROUP BY Src_ID")}
