@@ -20,6 +20,7 @@ def too_large(_e):
 
 # 오늘 할 일 카드의 아이콘. db 는 숫자만 내고 표시는 여기서 정한다.
 TODO_ICON = {
+    "kaizen":   "ti-bulb",
     "due":      "ti-clock-exclamation",
     "inbound":  "ti-arrow-bar-to-down",
     "claim":    "ti-alert-octagon",
@@ -93,6 +94,7 @@ MENUS = [
             {"id": "forecast",     "label": "수요 예측",          "icon": "ti-chart-line",        "url": "/forecast"},
             {"id": "simulator",    "label": "발주 시뮬레이터",    "icon": "ti-adjustments",       "url": "/simulator"},
             {"id": "report",       "label": "월간 리포트",        "icon": "ti-file-text",         "url": "/report"},
+            {"id": "kaizen",       "label": "업무 개선",          "icon": "ti-bulb",              "url": "/kaizen"},
             {"id": "wizard",       "label": "안전재고 일괄 갱신", "icon": "ti-wand",              "url": "/wizard"},
         ]
     },
@@ -251,6 +253,12 @@ def forecast():
 @app.route("/simulator")
 def simulator():
     return render_template("simulator.html", **get_menu_context("simulator"), page_title="발주 시뮬레이터")
+
+@app.route("/kaizen")
+def kaizen():
+    return render_template("kaizen.html", **get_menu_context("kaizen"),
+                           page_title="업무 개선")
+
 
 @app.route("/report")
 def report():
@@ -437,6 +445,22 @@ def _ctx_production():
             "summary": db.production_summary(orders),
             "src": db.production_source(conn),
         }
+    finally:
+        conn.close()
+
+
+def _ctx_kaizen():
+    conn = db.connect()
+    try:
+        # ⚠️ 탐지는 **조회다.** 제안을 저장해 두면 데이터가 변했는데 옛 제안이
+        #    남는다 — 열 때마다 다시 찾는다(0.2초).
+        out = db.kaizen_scan(conn)
+        out["log"] = db.kaizen_log(conn)
+        out["workers"] = db._plan_workers(conn)
+        out["approvers"] = [w for w in db._plan_workers(conn) if w["limit"] != 0]
+        out["status_opts"] = list(db.KAIZEN_STATUS)
+        out["note_min"] = db.KAIZEN_NOTE_MIN
+        return out
     finally:
         conn.close()
 
@@ -1666,6 +1690,38 @@ def api_pplan_add():
         conn.close()
 
 
+# ── 업무 개선 API ───────────────────────────────────────────
+# 제안 자체는 저장하지 않는다(탐지는 조회다). 저장하는 것은 사람의 판단뿐이다.
+
+@app.route("/api/kaizen/scan")
+def api_kaizen_scan():
+    """지금 고칠 거리 (조회만). hidden=1 이면 보류해 둔 것까지 본다."""
+    show = request.args.get("hidden") == "1"
+    conn = db.connect()
+    try:
+        return jsonify({"ok": True, "result": db.kaizen_scan(conn, show_hidden=show)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/kaizen/act", methods=["POST"])
+def api_kaizen_act():
+    """제안에 판단을 남긴다 — 진행 / 보류 / 해소."""
+    body = _body()
+    conn = db.connect()
+    try:
+        out, errors = db.kaizen_act(
+            conn, _entry_date(body), body.get("rule"), body.get("target"),
+            body.get("status"), body.get("EP_ID"), body.get("reason"))
+        if errors:
+            return jsonify({"ok": False, "errors": errors}), 400
+        return jsonify({"ok": True, "result": out})
+    except sqlite3.OperationalError as e:
+        return jsonify({"ok": False, "errors": ["DB에 쓸 수 없습니다: %s" % e]}), 500
+    finally:
+        conn.close()
+
+
 # ── 약속 납기 · 발주 상태 API ─────────────────────
 # 발주를 낸 뒤에 일어나는 일 — 납기 변경 통보 · 독촉 · 마감 · 취소 · 재개.
 # 전에는 적을 칸이 없어 전부 시스템 밖에 있었다. db 의 「약속 납기일」 절 참조.
@@ -2100,6 +2156,7 @@ EMBED_CONTEXT = {
     "disburse_request": _ctx_disburse_request,
     "approval":     _ctx_approval,
     # 입출고 작업 화면 3종은 같은 참조 데이터를 공유한다
+    "kaizen":       _ctx_kaizen,
     "inbound":      _ctx_workbench,
     "disburse":     _ctx_workbench,
     "scanner":      _ctx_scanner,

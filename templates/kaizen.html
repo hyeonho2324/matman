@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><i class="ti ti-bulb" style="margin-right:6px;color:var(--fill-accent)"></i>업무 개선</div>
+    <div class="page-subtitle">고칠 거리를 찾아 현상 · 기준 · 차이 · 할 일 · 효과로 적습니다</div>
+  </div>
+  <div class="page-actions">
+      <a href="/report" class="btn"><i class="ti ti-file-text"></i>월간 리포트</a>
+      <a href="/risk-radar" class="btn"><i class="ti ti-radar"></i>리스크 레이더</a>
+  </div>
+</div>
+
+<!-- 이 화면의 인터랙티브 UI는 iframe으로 통합됩니다 -->
+<div style="flex:1;display:flex;flex-direction:column;gap:14px">
+  <div class="embed-box">
+    <iframe
+      src="/embed/kaizen" class="embed-frame"
+      title="업무 개선">
+    </iframe>
+  </div>
+</div>
+{% endblock %}

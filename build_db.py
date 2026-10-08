@@ -561,6 +561,22 @@ CREATE TABLE PO_Event_tb (
     EP_ID        TEXT
 );
 
+DROP TABLE IF EXISTS Kaizen_tb;
+CREATE TABLE Kaizen_tb (
+    -- 개선 제안에 **사람이 내린 판단**만 담는다.
+    -- ⚠️ 제안 목록 자체는 저장하지 않는다 — 탐지는 조회이고, 데이터가 변하면
+    --    답도 변해야 한다. 저장해 두면 이미 해소된 제안이 목록에 남는다.
+    --    Safe_Override_tb(계산을 사람이 덮는다) 와 같은 꼴이다.
+    Kz_ID    TEXT PRIMARY KEY,   -- KZ + YYYYMMDD + 4자리
+    Rule     TEXT NOT NULL,      -- KAIZEN_RULES 의 코드
+    Target   TEXT NOT NULL,      -- 대상 (P_ID · BRN · 발주라인 · 월 …)
+    Status   TEXT NOT NULL,      -- 진행 / 보류 / 해소
+    Reason   TEXT NOT NULL,
+    Set_Date TEXT,
+    End_Date TEXT,               -- 보류 만료 — 없으면 덮어 둔 것이 영구 관행이 된다
+    EP_ID    TEXT
+);
+
 DROP TABLE IF EXISTS FG_tb;
 CREATE TABLE FG_tb (
     FG_ID    TEXT PRIMARY KEY,         -- 완제품 코드 FG001~FG015

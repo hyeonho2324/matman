@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>업무 개선</title>
+<link rel="stylesheet" href="/static/vendor/tabler-icons.css">
+<style>
+:root{
+  --acc:#2a78d6; --ok:#1D9E75; --wn:#EF9F27; --dn:#E24B4A;
+  --s0:#F8F7F4; --s1:#EFEEEA; --s2:#E5E4DF;
+  --border:#D4D3CE; --border-s:#C9C8C3; --txt:#1A1917; --txt3:#898781; --r:6px;
+  --bg-ac:#E8F0FA; --bg-ok:#E9F5F1; --bg-wn:#FDF5E8; --bg-dn:#FDEEEE;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Pretendard','Malgun Gothic',system-ui,sans-serif;background:var(--s1);
+  color:var(--txt);font-size:12px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--s0);border-bottom:0.5px solid var(--border);padding:10px 14px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tt{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.note{font-size:10.5px;line-height:1.65;color:var(--txt3);background:var(--s1);
+  border:0.5px solid var(--border);border-radius:6px;padding:9px 11px}
+.krow{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;padding:11px 14px;
+  background:var(--s0);border-bottom:0.5px solid var(--border)}
+.kc{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;padding:9px 11px}
+.kl{font-size:10px;color:var(--txt3);display:flex;align-items:center;gap:4px}
+.kv{font-size:17px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.kv .u{font-size:10px;font-weight:500;color:var(--txt3);margin-left:2px}
+.ks{font-size:9.5px;color:var(--txt3);margin-top:2px;line-height:1.5}
+.main{flex:1;display:flex;overflow:hidden}
+.left{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.right{width:330px;border-left:0.5px solid var(--border);background:var(--s0);
+  display:flex;flex-direction:column;overflow:hidden}
+.bar{padding:9px 14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+  background:var(--s0);border-bottom:0.5px solid var(--border)}
+.pill{padding:4px 10px;border-radius:999px;font-size:11px;cursor:pointer;
+  border:0.5px solid var(--border);background:var(--s0);white-space:nowrap}
+.pill.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.listwrap{flex:1;overflow:auto;padding:11px 14px}
+.rule{background:var(--s0);border:0.5px solid var(--border);border-radius:8px;
+  margin-bottom:9px;overflow:hidden}
+.rh{padding:9px 11px;display:flex;align-items:center;gap:7px;cursor:pointer;
+  border-bottom:0.5px solid var(--border)}
+.rh:hover{background:var(--s1)}
+.rh .t{font-weight:600;font-size:12px}
+.rh .w{font-size:10px;color:var(--txt3)}
+.rb{padding:0}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th,td{padding:6px 9px;border-bottom:0.5px solid var(--border);text-align:left;vertical-align:top}
+th{background:var(--s1);color:var(--txt3);font-size:10px;font-weight:600}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.pick{cursor:pointer}
+tr.pick:hover > td{background:var(--s1)}
+tr.on > td{background:var(--bg-ac)}
+tr.hid > td{opacity:.5}
+.bg{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:600}
+.bac{background:var(--bg-ac);color:#185FA5}
+.bok{background:var(--bg-ok);color:var(--ok)}
+.bwn{background:var(--bg-wn);color:#9a6a12}
+.bdn{background:var(--bg-dn);color:var(--dn)}
+.bmu{background:var(--s2);color:var(--txt3)}
+.dh{padding:11px 13px;border-bottom:0.5px solid var(--border)}
+.dt{font-size:13px;font-weight:700}
+.ds{font-size:10px;color:var(--txt3);line-height:1.5;margin-top:2px}
+.dbody{flex:1;overflow-y:auto;padding:11px;display:flex;flex-direction:column;gap:9px}
+/* ⚠️ 세로 flex 는 넘치면 자식을 먼저 줄인다 — 줄이지 말고 넘겨라 */
+.dbody > *{flex-shrink:0}
+.pn{background:var(--s1);border:0.5px solid var(--border);border-radius:8px;overflow:hidden}
+.pnh{padding:7px 10px;background:var(--s2);font-size:11px;font-weight:600;
+  display:flex;align-items:center;gap:5px}
+.pnh-t{flex:1}
+.ir{display:flex;gap:8px;padding:6px 11px;border-bottom:0.5px solid var(--border);font-size:11px}
+.ir:last-child{border-bottom:0}
+.ik{color:var(--txt3);min-width:52px;flex-shrink:0}
+.iv{flex:1;text-align:right;word-break:break-all}
+.step{display:flex;gap:8px;padding:7px 11px;border-bottom:0.5px solid var(--border);font-size:11px}
+.step:last-child{border-bottom:0}
+.step .n{width:40px;color:var(--txt3);font-size:10px;flex-shrink:0}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r);
+  font-size:11px;cursor:pointer;border:0.5px solid var(--border-s);background:transparent;
+  color:var(--txt);font-family:inherit;white-space:nowrap;text-decoration:none}
+.btn:hover{background:var(--s2)}
+.btnp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.btn:disabled{opacity:.45;cursor:default}
+.empty{padding:26px;text-align:center;color:var(--txt3);font-size:11px}
+/* 모달 — .ovl 은 embed-mobile 의 MODAL_SEL 에 이미 있다 */
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:60;
+  align-items:center;justify-content:center;padding:16px}
+.ovl.on{display:flex}
+.ovb{background:var(--s0);border:0.5px solid var(--border);border-radius:10px;
+  width:430px;max-width:100%;max-height:90vh;display:flex;flex-direction:column}
+.ovh{padding:12px 14px;border-bottom:0.5px solid var(--border);font-size:12px;font-weight:700}
+.ovc{padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:9px}
+.ovc > *{flex-shrink:0}
+.ovf{padding:11px 14px;border-top:0.5px solid var(--border);display:flex;gap:7px;
+  justify-content:flex-end}
+.fl{display:flex;flex-direction:column;gap:4px;font-size:11px}
+.fl > span{color:var(--txt3);font-size:10px}
+.fl input,.fl select,.fl textarea{font-family:inherit;font-size:11px;padding:6px 8px;
+  border:0.5px solid var(--border);border-radius:5px;background:var(--s0);color:var(--txt)}
+.fl textarea{resize:vertical;min-height:50px}
+.err{font-size:10.5px;line-height:1.6;color:var(--dn);border:0.5px solid var(--dn);
+  border-radius:6px;padding:9px 10px;white-space:pre-line}
+@media(max-width:860px){ .krow{grid-template-columns:repeat(2,1fr)} }
+</style>
+<link rel="stylesheet" href="/static/css/embed-mobile.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="tt"><i class="ti ti-bulb"></i>업무 개선</div>
+    <span class="bg bmu" id="basetag"></span>
+    <div style="flex:1"></div>
+    <button class="btn" id="hidebtn" onclick="toggleHidden()">
+      <i class="ti ti-eye-off"></i>보류한 것 보기</button>
+    <button class="btn" onclick="openSet()"><i class="ti ti-adjustments"></i>판정 기준</button>
+  </div>
+
+  <div class="krow" id="kpis"></div>
+
+  <div class="main">
+    <div class="left">
+      <div class="bar" id="cats"></div>
+      <div class="listwrap" id="list"></div>
+    </div>
+    <div class="right">
+      <div class="dh"><div class="dt" id="dt">제안을 고르세요</div>
+        <div class="ds" id="ds">왼쪽에서 한 줄을 누르면 현상 · 기준 · 차이 · 원인 · 할 일 · 효과가 펼쳐집니다.</div></div>
+      <div class="dbody" id="db"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ovl" id="ovl">
+  <div class="ovb">
+    <div class="ovh" id="ovt">판단</div>
+    <div class="ovc" id="ovc"></div>
+    <div class="ovf" id="ovf"></div>
+  </div>
+</div>
+
+<script>
+const K        = {{ items|tojson }};
+const BYRULE   = {{ by_rule|tojson }};
+const BYCAT    = {{ by_cat|tojson }};
+const MONEY    = {{ money|tojson }};
+const ASSET    = {{ asset|tojson }};
+const STUCKPCT = {{ stuck_pct|tojson }};
+const BASE     = {{ base|tojson }};
+const CATS     = {{ by_cat|tojson }};
+const HIDDEN_N = {{ hidden|tojson }};
+const INPROG   = {{ in_progress|tojson }};
+const SETS     = {{ settings|tojson }};
+const STATUS   = {{ status_opts|tojson }};
+const NMIN     = {{ note_min|tojson }};
+const WRK      = {{ workers|tojson }};
+const APPR     = {{ approvers|tojson }};
+const LOG      = {{ log|tojson }};
+const NEWLINE  = String.fromCharCode(10);
+
+let cat = '전체', sel = null, showHidden = false, ITEMS = K;
+
+const nf  = n => (n==null ? '-' : Math.round(Number(n)).toLocaleString());
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = n => !n ? '-' : (Math.abs(n)>=100000000 ? (n/100000000).toFixed(2)+'억'
+                  : (Math.abs(n)>=10000 ? nf(n/10000)+'만' : nf(n)));
+
+function kinds(m){ return ['창고','현장','리스크','비용'].map(function(k){
+  return {k:k, v:(m && m[k]) || 0}; }); }
+
+function drawKpi(){
+  document.getElementById('basetag').textContent = '기준일 ' + BASE;
+  document.getElementById('kpis').innerHTML =
+      '<div class="kc"><div class="kl"><i class="ti ti-bulb"></i>고칠 거리</div>'
+    +   '<div class="kv">' + nf(ITEMS.length) + '<span class="u">건</span></div>'
+    +   '<div class="ks">규칙 ' + BYRULE.filter(function(r){return r.n;}).length
+    +     '종이 잡았습니다' + (INPROG ? ' · 진행 중 ' + INPROG : '') + '</div></div>'
+
+    + '<div class="kc"><div class="kl"><i class="ti ti-building-warehouse"></i>창고에 묶인 돈</div>'
+    +   '<div class="kv" style="color:var(--dn)">' + won(MONEY['창고']) + '<span class="u">원</span></div>'
+    +   '<div class="ks">재고자산 ' + won(ASSET) + '의 <b>' + STUCKPCT + '%</b> · 자재 '
+    +     MONEY._stuck_n + '종</div></div>'
+
+    + '<div class="kc"><div class="kl"><i class="ti ti-arrow-back-up"></i>현장에 나가 있는 돈</div>'
+    +   '<div class="kv" style="color:var(--wn)">' + won(MONEY['현장']) + '<span class="u">원</span></div>'
+    +   '<div class="ks">반납하면 그대로 가용 재고가 됩니다</div></div>'
+
+    + '<div class="kc"><div class="kl"><i class="ti ti-alert-triangle"></i>리스크</div>'
+    +   '<div class="kv">' + won(MONEY['리스크']) + '<span class="u">원</span></div>'
+    +   '<div class="ks">안 들어왔거나 모자란 금액</div></div>'
+
+    + '<div class="kc"><div class="kl"><i class="ti ti-coin"></i>앞으로 더 나갈 돈</div>'
+    +   '<div class="kv">' + won(MONEY['비용']) + '<span class="u">원</span></div>'
+    +   '<div class="ks">단가 인상 · 계획 밖 지출</div></div>';
+}
+
+function drawCats(){
+  const all = ['전체'].concat(Object.keys(CATS));
+  document.getElementById('cats').innerHTML =
+      all.map(function(c){
+        const n = (c === '전체') ? ITEMS.length
+                : ITEMS.filter(function(o){ return o.cat === c; }).length;
+        return '<div class="pill' + (cat===c?' on':'') + '" onclick="setCat(&quot;'
+             + c + '&quot;)">' + c + ' ' + n + '</div>';
+      }).join('')
+    + '<div style="flex:1"></div>'
+    + (HIDDEN_N ? '<span class="bg bmu">보류 ' + HIDDEN_N + '건</span>' : '');
+}
+function setCat(c){ cat = c; draw(); }
+
+function view(){
+  return ITEMS.filter(function(o){ return cat === '전체' || o.cat === cat; });
+}
+
+function draw(){
+  drawKpi(); drawCats();
+  const rows = view();
+  if(!rows.length){
+    document.getElementById('list').innerHTML =
+      '<div class="empty"><b>고칠 거리가 없습니다.</b><br>'
+      + '판정 기준을 좁혀 보거나, 보류한 것을 펴 보세요.</div>';
+    return;
+  }
+  // 규칙별로 묶어서 보여준다 — 134건을 한 줄로 쏟으면 못 읽는다
+  const grp = {};
+  rows.forEach(function(o){ (grp[o.rule] = grp[o.rule] || []).push(o); });
+  document.getElementById('list').innerHTML = BYRULE.filter(function(r){
+      return grp[r.rule] && grp[r.rule].length;
+    }).map(function(r){
+      const g = grp[r.rule];
+      const amt = g.reduce(function(a,o){ return a + (o.amount||0); }, 0);
+      return '<div class="rule">'
+        + '<div class="rh" onclick="this.nextElementSibling.style.display='
+        +   '(this.nextElementSibling.style.display===&quot;none&quot;?&quot;&quot;:&quot;none&quot;)">'
+        +   '<span class="bg ' + (r.cat==='구매'?'bac':(r.cat==='자재'?'bwn':'bmu')) + '">'
+        +     r.cat + '</span>'
+        +   '<span class="t">' + esc(r.title) + '</span>'
+        +   '<span class="w">' + esc(r.why) + '</span>'
+        +   '<div style="flex:1"></div>'
+        +   (amt ? '<span class="bg bdn">' + won(amt) + '원</span>' : '')
+        +   '<span class="bg bmu">' + g.length + '건</span>'
+        + '</div>'
+        + '<div class="rb"><table><thead><tr>'
+        +   '<th style="width:80px">대상</th><th>현상</th><th style="width:88px">기준</th>'
+        +   '<th style="width:74px">차이</th><th class="num" style="width:86px">효과</th>'
+        + '</tr></thead><tbody>'
+        + g.map(function(o){
+            return '<tr class="pick' + (sel===key(o)?' on':'') + (o.hidden?' hid':'') + '"'
+              + ' onclick="pick(&quot;' + key(o) + '&quot;)">'
+              + '<td><b>' + esc(o.target) + '</b>'
+              +   (o.status ? ' <span class="bg ' + (o.status==='진행'?'bok':'bmu') + '">'
+                    + o.status + '</span>' : '')
+              +   '<div style="font-size:9.5px;color:var(--txt3)">' + esc((o.label||'').slice(0,14)) + '</div></td>'
+              + '<td>' + esc(o.now) + '</td>'
+              + '<td style="color:var(--txt3)">' + esc(o.base) + '</td>'
+              + '<td><b style="color:var(--dn)">' + esc(o.gap) + '</b></td>'
+              + '<td class="num">' + (o.amount ? won(o.amount)+'원' : '-') + '</td>'
+              + '</tr>';
+          }).join('')
+        + '</tbody></table></div></div>';
+    }).join('');
+}
+
+function key(o){ return o.rule + '|' + o.target; }
+
+function pick(k){
+  sel = k;
+  const o = ITEMS.filter(function(x){ return key(x) === k; })[0];
+  draw();
+  if(!o) return;
+  document.getElementById('dt').innerHTML = esc(o.target)
+    + (o.status ? ' <span class="bg ' + (o.status==='진행'?'bok':'bmu') + '">'
+        + o.status + '</span>' : '');
+  document.getElementById('ds').innerHTML = esc(o.label || '') + '<br>'
+    + '<b>' + esc(o.title) + '</b> · ' + esc(o.cat);
+
+  // 개선안은 여섯 칸이 다 차야 그대로 보고가 된다
+  document.getElementById('db').innerHTML =
+      '<div class="pn">'
+    +   '<div class="pnh"><i class="ti ti-list-check"></i><span class="pnh-t">개선안</span>'
+    +     (o.kind ? '<span class="bg bmu">' + o.kind + '</span>' : '') + '</div>'
+    +   '<div class="step"><span class="n">현상</span><span>' + esc(o.now) + '</span></div>'
+    +   '<div class="step"><span class="n">기준</span><span>' + esc(o.base) + '</span></div>'
+    +   '<div class="step"><span class="n">차이</span><span><b style="color:var(--dn)">'
+    +     esc(o.gap) + '</b></span></div>'
+    +   '<div class="step"><span class="n">원인</span><span>' + esc(o.cause) + '</span></div>'
+    +   '<div class="step"><span class="n">할 일</span><span><b>' + esc(o.todo) + '</b></span></div>'
+    +   '<div class="step"><span class="n">효과</span><span>'
+    +     (o.amount ? '<b style="font-size:13px">' + nf(o.amount) + '원</b> (' + o.kind + ')'
+                    : '<span style="color:var(--txt3)">금액으로 말할 수 없습니다 — '
+                      + '기준값·절차 문제입니다</span>') + '</span></div>'
+    + '</div>'
+
+    + '<div class="pn">'
+    +   '<div class="pnh"><i class="ti ti-ruler"></i><span class="pnh-t">왜 걸렸나</span></div>'
+    +   '<div class="ir"><span class="ik">규칙</span><span class="iv">' + esc(o.rule)
+    +     ' — ' + esc(o.title) + '</span></div>'
+    +   '<div class="ir"><span class="ik">판정</span><span class="iv">' + esc(o.why) + '</span></div>'
+    + '</div>'
+
+    + (o.status
+        ? '<div class="pn"><div class="pnh"><i class="ti ti-user-check"></i>'
+          + '<span class="pnh-t">판단</span></div>'
+          + '<div class="ir"><span class="ik">상태</span><span class="iv">' + esc(o.status)
+          + (o.act_until ? ' · ' + esc(o.act_until) + ' 까지' : '') + '</span></div>'
+          + '<div class="ir"><span class="ik">사유</span><span class="iv">'
+          + esc(o.act_note || '') + ' <span style="color:var(--txt3)">'
+          + esc(o.act_by || '') + '</span></span></div></div>'
+        : '')
+
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +   '<a class="btn" href="' + esc(o.link) + '" target="_top">'
+    +     '<i class="ti ti-external-link"></i>근거 화면</a>'
+    +   '<button class="btn btnp" onclick="openAct(&quot;진행&quot;)">'
+    +     '<i class="ti ti-player-play"></i>진행</button>'
+    +   '<button class="btn" onclick="openAct(&quot;보류&quot;)">'
+    +     '<i class="ti ti-clock-pause"></i>보류</button>'
+    +   '<button class="btn" onclick="openAct(&quot;해소&quot;)">'
+    +     '<i class="ti ti-check"></i>해소</button>'
+    + '</div>';
+}
+
+// ── 판단 ───────────────────────────────────────────────────
+let ACT = null;
+function openAct(st){
+  const o = ITEMS.filter(function(x){ return key(x) === sel; })[0];
+  if(!o) return;
+  ACT = st;
+  document.getElementById('ovt').textContent = st + ' · ' + o.target;
+  document.getElementById('ovc').innerHTML =
+      '<div class="note">' + (st === '보류'
+        ? '<b>이번엔 안 봅니다.</b> 덮어 둔 제안은 기간이 지나면 다시 올라옵니다 — '
+          + '만료가 없으면 덮어 둔 것이 영구 관행이 됩니다.'
+        : (st === '진행' ? '<b>고치기로 했습니다.</b> 목록에 진행 표시가 붙습니다.'
+                         : '<b>끝났습니다.</b> 다음 탐지에서 조건이 사라졌으면 목록에서도 빠집니다.'))
+    + '</div>'
+    + '<div class="note" style="background:var(--s0)"><b>' + esc(o.title) + '</b><br>'
+    + esc(o.now) + ' / 기준 ' + esc(o.base) + ' / 차이 ' + esc(o.gap) + '</div>'
+    + '<label class="fl"><span>사유 (' + NMIN + '자 이상)</span>'
+    +   '<textarea id="an" placeholder="' + (st === '보류'
+          ? '예) 설계 변경분이라 이번 분기에는 손대지 않습니다'
+          : '예) 리드타임을 실측값으로 고쳤습니다') + '"></textarea></label>'
+    + '<label class="fl"><span>담당자</span><select id="ae">'
+    +   WRK.map(function(w){ return '<option value="' + w.EP_ID + '">' + esc(w.Name)
+          + ' ' + esc(w.Position) + '</option>'; }).join('')
+    + '</select></label>'
+    + '<div id="ae2"></div>';
+  document.getElementById('ovf').innerHTML =
+      '<button class="btn" onclick="closeOv()">닫기</button>'
+    + '<button class="btn btnp" onclick="doAct()">' + st + '</button>';
+  document.getElementById('ovl').classList.add('on');
+}
+
+function closeOv(){ document.getElementById('ovl').classList.remove('on'); }
+
+async function doAct(){
+  const o = ITEMS.filter(function(x){ return key(x) === sel; })[0];
+  const r = await fetch('/api/kaizen/act', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({rule:o.rule, target:o.target, status:ACT,
+      reason: document.getElementById('an').value,
+      EP_ID: document.getElementById('ae').value})});
+  const d = await r.json();
+  if(!d.ok){
+    document.getElementById('ae2').innerHTML =
+      '<div class="err">' + esc((d.errors||['실패했습니다.']).join(NEWLINE)) + '</div>';
+    return;
+  }
+  document.getElementById('ovc').innerHTML =
+    '<div class="note" style="border-color:var(--ok)"><b>' + ACT + ' 했습니다.</b> '
+    + esc(d.result.Kz_ID) + (d.result.until ? ' · ' + esc(d.result.until) + ' 까지' : '')
+    + '</div>';
+  document.getElementById('ovf').innerHTML =
+    '<button class="btn btnp" onclick="location.reload()">다시 찾기</button>';
+}
+
+function toggleHidden(){
+  showHidden = !showHidden;
+  location.href = '/embed/kaizen';   // 보류분은 서버가 걸러서 내려준다
+}
+
+function openSet(){
+  document.getElementById('ovt').textContent = '판정 기준';
+  document.getElementById('ovc').innerHTML =
+      '<div class="note"><b>기준값은 코드에 박혀 있지 않습니다.</b> "180일" 이 맞는 '
+    + '기준인지는 자재마다 업종마다 다릅니다 — 자동 발주 한도와 같은 설정 테이블에 '
+    + '있고, 바꾸면 누가 왜 바꿨는지가 남습니다.</div>'
+    + SETS.map(function(s){
+        return '<div class="pn"><div class="pnh"><span class="pnh-t">'
+          + esc(s.meta.label) + '</span><span class="bg bac">' + nf(s.value)
+          + esc(s.meta.unit) + '</span></div>'
+          + '<div class="ir"><span class="ik">뜻</span><span class="iv">'
+          + esc(s.meta.desc) + '</span></div>'
+          + '<div class="ir"><span class="ik">정한 이</span><span class="iv">'
+          + (s.is_default ? '기본값 (아직 아무도 안 바꿨습니다)'
+              : esc((s.worker||'') + ' ' + (s.worker_pos||'') + ' · ' + (s.Set_Date||'')))
+          + '</span></div></div>';
+      }).join('');
+  document.getElementById('ovf').innerHTML =
+      '<button class="btn" onclick="closeOv()">닫기</button>'
+    + '<a class="btn" href="/order-plan" target="_top">설정 화면에서 바꾸기</a>';
+  document.getElementById('ovl').classList.add('on');
+}
+
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeOv(); });
+document.getElementById('ovl').addEventListener('click', function(e){
+  if(e.target.id === 'ovl') closeOv();
+});
+
+draw();
+</script>
+<script src="/static/js/embed-mobile.js"></script>
+</body>
+</html>

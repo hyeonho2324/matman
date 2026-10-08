@@ -1641,6 +1641,9 @@ def worklist(conn):
     #   말할 수가 없었기 때문이다.
     watch = due_watch(conn)
 
+    # 고칠 거리 — 오늘 당장 할 일은 아니지만 달마다 들여다봐야 한다
+    kz = kaizen_cnt(conn)
+
     # 현장에 오래 묶여 있는 자재 — 밀린 일이 아니라 정기 점검이다
     site = [r for r in return_targets(conn, base) if r["is_long"]]
     site_long, site_amt = len(site), sum(r["amount"] for r in site)
@@ -1670,6 +1673,9 @@ def worklist(conn):
         {"key": "disburse", "label": "불출 대기",    "n": sum(1 for r in opens if r["left_qty"] > 0), "unit": "건",
          "sub": "잔여 %s개" % format(sum(r["left_qty"] for r in opens), ","), "url": "/disburse",
          "tone": "ac" if opens else "mu"},
+        {"key": "kaizen",   "label": "개선 제안",    "n": kz, "unit": "건",
+         "sub": "고칠 거리 — 묶인 돈 · 늦는 납기 · 낡은 기준값",
+         "url": "/kaizen", "tone": "mu"},
         {"key": "safety",   "label": "안전재고 재검토", "n": due,           "unit": "종",
          "sub": ("조정 만료 임박 %d종" % ovr_soon) if ovr_soon else "등급별 주기 도래",
          "url": "/wizard", "tone": "wn" if due else "mu"},
@@ -1703,12 +1709,14 @@ ALERT_MENU = {
     "safety":   "wizard",
     "site":     "site_return",
     "due":      "purchase",
+    "kaizen":   "kaizen",
 }
 
 # 정기 점검은 '밀린 일' 이 아니다. 199종이 주기 도래라고 종에 199가 뜨면
 # 다른 숫자가 묻힌다. 목록에는 두되 배지 합계에서는 뺀다
 # (대시보드 todo_total 이 이미 같은 기준을 쓴다).
-ALERT_ROUTINE = ("safety", "site")
+# 개선 제안도 '밀린 일' 이 아니다 — 134건이 종에 더해지면 나머지가 묻힌다.
+ALERT_ROUTINE = ("safety", "site", "kaizen")
 
 _TONE_RANK = {"mu": 0, "ac": 1, "wn": 2, "dn": 3}
 
@@ -4546,11 +4554,50 @@ SETTINGS = {
     "AUTO_MAX_AMT": {
         "label": "자동 발주 한도",
         "unit": "원",
+        "money": True,          # 금액이라 **자기 결재 한도** 안에서만 올릴 수 있다
         "default": AUTO_MAX_DEFAULT,
         "min": 0,
         "max": AUTO_MAX_CEIL,
         "desc": "C등급 자동 발주가 사람 결재 없이 나갈 수 있는 한 건 금액입니다. "
                 "넘으면 자동이 멈추고 승인 대기로 돌아옵니다.",
+    },
+    # ── 업무 개선 판정 기준 ──────────────────────────────────
+    # ⚠️ 코드에 박으면 현장이 못 바꾼다. "180일" 이 맞는 기준인지는 자재마다
+    #    업종마다 다르고, 그때마다 개발자를 부를 수는 없다 — 자동 발주 한도를
+    #    설정으로 뺀 것과 같은 판단이다. 금액이 아니므로 결재 한도는 안 본다.
+    "KZ_DEAD_DAYS": {
+        "label": "잠자는 재고 기준", "unit": "일", "default": 180, "min": 30, "max": 1095,
+        "desc": "이 기간 동안 한 번도 안 나갔는데 재고가 남아 있으면 '잠자는 재고' 로 봅니다.",
+    },
+    "KZ_LEAD_GAP": {
+        "label": "리드타임 괴리 기준", "unit": "일", "default": 2, "min": 1, "max": 60,
+        "desc": "계획 리드타임이 실측 평균보다 이만큼 짧으면 기준값이 틀린 것으로 봅니다. "
+                "협력사를 쪼아도 안 바뀝니다.",
+    },
+    "KZ_SUPPLIER_PCT": {
+        "label": "협력사 준수율 기준", "unit": "%", "default": 75, "min": 0, "max": 100,
+        "desc": "입고 종합 준수율이 이 아래면 개선 대상으로 올립니다.",
+    },
+    "KZ_TURN": {
+        "label": "재고 회전율 기준", "unit": "회/년", "default": 2, "min": 1, "max": 50,
+        "desc": "연간 사용량 ÷ 현재고가 이 아래면 재고가 과하게 묶인 것으로 봅니다.",
+    },
+    "KZ_PKG_PCT": {
+        "label": "포장단위 과다 기준", "unit": "%", "default": 150, "min": 100, "max": 1000,
+        "desc": "요청 수량이 소요량의 이 배율을 넘으면 포장단위가 소요에 비해 큰 것입니다.",
+    },
+    "KZ_PRICE_PCT": {
+        "label": "단가 급등 기준", "unit": "%", "default": 15, "min": 1, "max": 200,
+        "desc": "한 번에 이만큼 넘게 오른 단가는 재협상·대체품 검토 대상으로 올립니다.",
+    },
+    "KZ_MAVERICK_PCT": {
+        "label": "비계획 구매 기준", "unit": "%", "default": 20, "min": 0, "max": 100,
+        "desc": "계획에 없던 품목이 그달 발주액의 이 비중을 넘으면 계획이 현장을 못 따라간 것입니다.",
+    },
+    "KZ_HIDE_DAYS": {
+        "label": "제안 보류 기간", "unit": "일", "default": 90, "min": 7, "max": 730,
+        "desc": "'이번엔 안 본다' 로 덮어 둔 제안이 다시 올라오기까지의 기간입니다. "
+                "만료가 없으면 덮어 둔 것이 영구 관행이 됩니다.",
     },
 }
 
@@ -4628,11 +4675,15 @@ def set_setting(conn, date, key, value, reason, ep_id):
         return None, ["%s는 %s ~ %s %s 사이여야 합니다."
                       % (meta["label"], format(meta["min"], ","),
                          format(meta["max"], ","), meta["unit"])]
-    lim = approval_limit(w["Position"])
-    if lim is not None and v > lim:
-        return None, ["%s %s의 결재 한도(%s원)까지만 올릴 수 있습니다. "
-                      "한도를 %s원으로 두려면 그 금액을 결재할 수 있는 사람이 정해야 합니다."
-                      % (w["Name"], w["Position"], format(lim, ","), format(v, ","))]
+    # ⚠️ **금액 설정에만** 자기 결재 한도를 건다. 일수·비율에 결재 한도를 대면
+    #    "180일" 이 "한도 300만원" 과 비교돼 통과해 버린다 — 단위가 다른 수를
+    #    같은 자로 재는 꼴이다.
+    if meta.get("money"):
+        lim = approval_limit(w["Position"])
+        if lim is not None and v > lim:
+            return None, ["%s %s의 결재 한도(%s원)까지만 올릴 수 있습니다. "
+                          "한도를 %s원으로 두려면 그 금액을 결재할 수 있는 사람이 정해야 합니다."
+                          % (w["Name"], w["Position"], format(lim, ","), format(v, ","))]
     reason = str(reason or "").strip()
     if len(reason) < 5:
         return None, ["왜 바꾸는지 5자 이상 적어주세요. 기준값은 근거가 남아야 합니다."]
@@ -9679,3 +9730,540 @@ def po_detail_extra(conn, hid):
             "reasons": [{"cd": k, "blame": v["blame"], "label": v["label"]}
                         for k, v in DUE_REASONS.items()],
             "note_min": DUE_NOTE_MIN, "urge_min": EXPEDITE_NOTE_MIN}, []
+
+
+# ══════════════════════════════════════════════════════════════
+#  업무 개선 제안 — 현황이 아니라 "뭘 고칠까"
+# ══════════════════════════════════════════════════════════════
+#
+# 화면 28개가 **현황**은 잘 말하는데, "그래서 뭘 고쳐야 하나" 는 사람이 여러
+# 화면을 돌며 읽어서 판단해야 했다. 구매·자재 담당자가 "개선안 가져와" 라는
+# 말을 들을 때마다 처음부터 뒤지는 셈이다.
+#
+# ⚠️ **현황과 개선안은 형식이 다르다.** 숫자만 띄우면 현황이고, 아래 여섯 칸이
+#    다 차야 그대로 보고가 된다.
+#
+#      현상 → 기준 → 차이 → 원인(가설) → 할 일 → 효과(금액)
+#
+# ⚠️ **제안 자체는 저장하지 않는다.** 탐지는 조회다 — 데이터가 변하면 답도
+#    변해야 한다. 저장해 두면 이미 해소된 제안이 목록에 남는다. 저장하는 것은
+#    **사람이 내린 판단**(진행·보류)뿐이고, 그것도 만료를 둔다.
+#    `Safe_Override_tb`(계산을 사람이 덮는다) · `Order_Policy_tb`(등급 기본값을
+#    사람이 덮는다) 와 같은 꼴이다.
+#
+# ⚠️ **숫자를 여기서 다시 세지 않는다.** `supplier_list` · `lot_list` ·
+#    `due_watch` · `plan_actual` · `safety_stock_list` 가 이미 낸 값을 가져다
+#    쓴다. 개선 화면이 따로 세면 두 화면이 다른 말을 한다.
+KAIZEN_ID_PRE = "KZ"
+# ⚠️ **표본이 적으면 올리지 않는다.** 입고 1건이 늦었다고 협력사 준수율 0% 를
+#    개선안으로 내면, 거래가 한 번뿐인 곳이 늘 최악으로 보인다. 리드타임 괴리·
+#    포장단위 과다도 같은 이유로 같은 기준을 쓴다 — 한 곳에 적어 둔다.
+KAIZEN_MIN_SAMPLE = 5
+KAIZEN_CATS = ("구매", "자재", "프로세스")
+KAIZEN_STATUS = ("진행", "보류", "해소")
+KAIZEN_NOTE_MIN = 5
+
+
+def kaizen_limits(conn):
+    """판정 기준값. 전부 설정에서 읽는다 — 코드에 박지 않는다."""
+    return {k: int(get_setting(conn, k)["value"])
+            for k in SETTINGS if k.startswith("KZ_")}
+
+
+def next_kaizen_id(conn, date):
+    pre = KAIZEN_ID_PRE + date.replace("-", "")
+    last = conn.execute(
+        "SELECT MAX(Kz_ID) FROM Kaizen_tb WHERE Kz_ID LIKE ?", (pre + "%",)).fetchone()[0]
+    return "%s%04d" % (pre, (int(last[-4:]) + 1) if last else 1)
+
+
+# ── 규칙들 ───────────────────────────────────────────────────
+# 규칙 하나 = 탐지 함수 하나. 새 규칙은 여기 한 줄과 함수 하나를 더하면 된다
+# (거래 유형을 TX_TYPES 한 곳에 모은 것과 같은 생각).
+#   낸다: target(대상 키) · label · now(현상) · base(기준) · gap(차이)
+#         cause(원인 가설) · todo(할 일) · amount(효과 금액, 없으면 None) · link
+
+def _kz_leadtime(conn, ctx):
+    """계획 리드타임이 실측보다 짧다 — **협력사 탓이 아니다.**"""
+    gap = ctx["lim"]["KZ_LEAD_GAP"]
+    out = []
+    for r in _rows(conn, """
+        SELECT d.P_ID, p.P_N, s.Lead_Time plan,
+               ROUND(AVG(julianday(l.Lot_Date) - julianday(h.P_Date)), 1) real,
+               COUNT(*) n,
+               SUM(CASE WHEN l.Lot_Date > d.Due_First THEN 1 ELSE 0 END) late
+          FROM Purchase_Detail_tb d
+          JOIN Purchase_Header_tb h ON d.H_ID = h.H_ID
+          JOIN Lot_tb l  ON l.H_ID = d.H_ID AND l.P_ID = d.P_ID
+          JOIN Safe_tb s ON s.P_ID = d.P_ID
+          JOIN Product_tb p ON p.P_ID = d.P_ID
+         GROUP BY d.P_ID
+        HAVING n >= ? AND real >= plan + ?
+         ORDER BY (real - plan) DESC""", (KAIZEN_MIN_SAMPLE, gap)):
+        out.append({
+            "target": r["P_ID"], "label": r["P_N"],
+            "now": "실측 평균 %.1f일 · %d건 중 %d건 지연" % (r["real"], r["n"], r["late"]),
+            "base": "계획 리드타임 %d일" % r["plan"],
+            "gap": "+%.1f일" % (r["real"] - r["plan"]),
+            "cause": "기준값이 실제보다 짧다 — 제때 와도 지연으로 찍힌다",
+            "todo": "리드타임을 %d일로 고치세요. 안전재고·발주 시점이 함께 맞아집니다"
+                    % int(round(r["real"])),
+            "amount": None, "cnt": r["late"],
+            "link": "/products/%s" % r["P_ID"]})
+    return out
+
+
+def _kz_due_late(conn, ctx):
+    """약속한 날이 지났는데 안 들어왔다."""
+    return [{
+        "target": "%s-%s" % (r["H_ID"], r["Purchase_num"]),
+        "label": "%s %s" % (r["H_ID"], r["P_N"] or ""),
+        "now": "%d일 지남 · %s" % (r["due_days"], r["supplier"] or "-"),
+        "base": "약속 %s" % (r["Due_Date"] or r["Due_First"]),
+        "gap": "%d일" % r["due_days"],
+        "cause": "독촉 %s" % ("%d회 (마지막 %s)" % (r["urged"], r["last_urge"])
+                              if r["urged"] else "한 번도 안 함"),
+        "todo": "독촉하거나 납기를 다시 받으세요. 못 받을 물건이면 발주를 마감하세요",
+        "amount": r["amount"], "cnt": 1,
+        "link": "/purchase?id=%s" % r["H_ID"]} for r in ctx["watch"]["late"]]
+
+
+def _kz_supplier(conn, ctx):
+    """입고 준수율이 낮은 협력사."""
+    base = ctx["lim"]["KZ_SUPPLIER_PCT"]
+    out = []
+    for c in ctx["sup"]:
+        pct = c.get("comply_pct")
+        # 판정이 끝난 라인이 KAIZEN_MIN_SAMPLE 건은 돼야 본다.
+        # (comply_pct 는 recv 가 0 이면 None 이다 — '판정할 게 없다' 와
+        #  '다 틀렸다' 는 다르다)
+        if pct is None or pct >= base:
+            continue
+        if (c.get("recv_lines") or 0) < KAIZEN_MIN_SAMPLE:
+            continue
+        out.append({
+            "target": c["BRN"], "label": c["CP_N"],
+            "now": "종합 %.1f%% (수량 %.1f · 납기 %.1f)"
+                   % (pct, c.get("qty_pct") or 0, c.get("due_pct") or 0),
+            "base": "기준 %d%%" % base,
+            "gap": "-%.1f%%p" % (base - pct),
+            "cause": "입고 판정 %d라인 · 납기 변경 %d줄"
+                     % (c.get("recv_lines") or 0, c.get("due_moved") or 0),
+            "todo": "납기·수량 개선을 요청하고, 안 되면 **복수 소싱**을 검토하세요",
+            "amount": c.get("amount"), "cnt": c.get("po_lines") or 0,
+            "link": "/suppliers"})
+    return out
+
+
+def _kz_priceup(conn, ctx):
+    """한 번에 크게 오른 단가 — 재협상·대체품 검토."""
+    pct = ctx["lim"]["KZ_PRICE_PCT"]
+    return [{
+        "target": r["P_ID"], "label": r["P_N"],
+        "now": "%s원 → %s원 (%+.1f%%)"
+               % (format(int(r["Old_Price"] or 0), ","),
+                  format(int(r["New_Price"] or 0), ","), r["Diff_Pct"] or 0),
+        "base": "급등 기준 %d%%" % pct,
+        "gap": "%+.1f%%" % (r["Diff_Pct"] or 0),
+        "cause": "%s · %s" % (r["Reason_Cd"] or "-", r["Start_Date"]),
+        "todo": "재협상하거나 대체품을 찾으세요. 연간 사용량에 그대로 곱해집니다",
+        "amount": int(round((r["Diff"] or 0) * (r["used"] or 0))), "cnt": 1,
+        "link": "/products/%s" % r["P_ID"]} for r in _rows(conn, f"""
+        SELECT g.*, p.P_N, COALESCE(u.q, 0) AS used
+          FROM Price_Log_tb g JOIN Product_tb p ON p.P_ID = g.P_ID
+          LEFT JOIN (SELECT l.P_ID, SUM(t.T_Num) q FROM Transaction_tb t
+                       JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                      WHERE {DEMAND_T} GROUP BY l.P_ID) u ON u.P_ID = g.P_ID
+         WHERE g.Diff_Pct >= ? ORDER BY g.Diff_Pct DESC""", (pct,))]
+
+
+def _kz_dead(conn, ctx):
+    """잠자는 재고 — 오래 안 나갔는데 창고에 있다."""
+    days = ctx["lim"]["KZ_DEAD_DAYS"]
+    out = []
+    for r in _rows(conn, f"""
+        WITH st AS ({STOCK_SQL}),
+             last AS (SELECT l.P_ID, MAX(t.T_Date) d FROM Transaction_tb t
+                        JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                       WHERE {DEMAND_T} GROUP BY l.P_ID)
+        SELECT p.P_ID, p.P_N, st.stock, ROUND(st.stock * p.P_Price) amt,
+               last.d AS last_out,
+               CAST(julianday(?) - julianday(last.d) AS INT) days
+          FROM st JOIN Product_tb p ON p.P_ID = st.P_ID
+          LEFT JOIN last ON last.P_ID = st.P_ID
+         WHERE st.stock > 0
+           AND (last.d IS NULL OR julianday(?) - julianday(last.d) > ?)
+         ORDER BY amt DESC""", (ctx["base"], ctx["base"], days)):
+        out.append({
+            "target": r["P_ID"], "label": r["P_N"],
+            "now": "%s개 · %s원 묶임" % (format(r["stock"], ","), format(int(r["amt"]), ",")),
+            "base": "%d일 무불출" % days,
+            "gap": "%s일째" % (r["days"] if r["days"] is not None else "불출 이력 없음"),
+            "cause": "설계 변경 · 단종 · 과다 발주 중 하나입니다 — LOT 이력을 보세요",
+            "todo": "협력사 반품 협의 / 다른 라인 전용 / 손실 확정 중 하나를 고르세요",
+            "amount": int(r["amt"]), "cnt": 1,
+            "link": "/products/%s" % r["P_ID"]})
+    ctx["dead_ids"] = {o["target"] for o in out}
+    return out
+
+
+def _kz_turn(conn, ctx):
+    """회전율이 낮은 고액 자재. 잠자는 재고로 이미 잡힌 것은 뺀다(두 번 세지 않는다)."""
+    turn = ctx["lim"]["KZ_TURN"]
+    dead = ctx.get("dead_ids") or set()
+    out = []
+    for r in _rows(conn, f"""
+        WITH st AS ({STOCK_SQL}),
+             use AS (SELECT l.P_ID, SUM(t.T_Num) q FROM Transaction_tb t
+                       JOIN Lot_tb l ON t.Lot_ID = l.Lot_ID
+                      WHERE {DEMAND_T} AND t.T_Date >= date(?, '-365 days')
+                      GROUP BY l.P_ID)
+        SELECT p.P_ID, p.P_N, st.stock, ROUND(st.stock * p.P_Price) amt,
+               COALESCE(use.q, 0) used,
+               ROUND(COALESCE(use.q, 0) * 1.0 / NULLIF(st.stock, 0), 2) turn
+          FROM st JOIN Product_tb p ON p.P_ID = st.P_ID
+          LEFT JOIN use ON use.P_ID = st.P_ID
+         WHERE st.stock > 0 AND st.stock * p.P_Price >= 10000000
+         ORDER BY turn ASC""", (ctx["base"],)):
+        if r["P_ID"] in dead or (r["turn"] or 0) >= turn:
+            continue
+        out.append({
+            "target": r["P_ID"], "label": r["P_N"],
+            "now": "재고 %s원 · 1년 사용 %s개" % (format(int(r["amt"]), ","),
+                                                format(int(r["used"]), ",")),
+            "base": "회전 %d회/년" % turn,
+            "gap": "%.2f회" % (r["turn"] or 0),
+            "cause": "안전재고가 과하거나 발주 수량이 큽니다",
+            "todo": "안전재고를 다시 재고, MOQ·포장단위를 협력사와 조정하세요",
+            "amount": int(r["amt"]), "cnt": 1,
+            "link": "/safety-stock"})
+    return out
+
+
+def _kz_fifo(conn, ctx):
+    """FIFO 를 건너뛰어 묶인 LOT — 자재 단위로 묶어서 본다."""
+    agg = {}
+    for l in ctx["lots"]:
+        if not l.get("fifo_skipped") or (l.get("remain") or 0) <= 0:
+            continue
+        a = agg.setdefault(l["P_ID"], {"n": 0, "qty": 0, "days": 0})
+        a["n"] += 1
+        a["qty"] += l["remain"]
+        a["days"] = max(a["days"], l.get("age_days") or 0)
+    price = {r["P_ID"]: r["P_Price"] for r in _rows(
+        conn, "SELECT P_ID, P_Price FROM Product_tb")}
+    name = {r["P_ID"]: r["P_N"] for r in _rows(
+        conn, "SELECT P_ID, P_N FROM Product_tb")}
+    out = []
+    for pid, a in agg.items():
+        out.append({
+            "target": pid, "label": name.get(pid),
+            "now": "LOT %d건 · %s개 묶임" % (a["n"], format(a["qty"], ",")),
+            "base": "선입선출",
+            "gap": "최장 %d일 체류" % a["days"],
+            "cause": "피킹 때 앞 LOT 을 건너뛰었습니다 — 선반 배치나 지시 미준수",
+            "todo": "피킹 지시서의 LOT 을 그대로 집도록 하고, 오래된 LOT 을 앞으로 빼세요",
+            "amount": int(round(a["qty"] * (price.get(pid) or 0))), "cnt": a["n"],
+            "link": "/lot"})
+    out.sort(key=lambda o: -(o["amount"] or 0))
+    return out
+
+
+def _kz_site(conn, ctx):
+    """현장에 오래 묶여 있는 자재 — 창고로 되돌릴 것."""
+    rows = [r for r in ctx["site"] if r.get("is_long")]
+    agg = {}
+    for r in rows:
+        a = agg.setdefault(r["P_ID"], {"n": 0, "qty": 0, "amt": 0, "days": 0})
+        a["n"] += 1
+        a["qty"] += r.get("site") or 0
+        a["amt"] += r.get("amount") or 0
+        a["days"] = max(a["days"], r.get("days") or 0)
+    return sorted([{
+        "target": pid, "label": a.get("P_N"),
+        "now": "LOT %d건 · %s개 · %s원" % (a["n"], format(a["qty"], ","),
+                                           format(int(a["amt"]), ",")),
+        "base": "%d일" % SITE_LONG_DAYS,
+        "gap": "최장 %d일" % a["days"],
+        "cause": "생산이 끝났는데 반납하지 않았거나, 요청 수량이 과했습니다",
+        "todo": "현장 반납으로 되돌리세요. 반복되면 요청 수량·포장단위를 보세요",
+        "amount": int(a["amt"]), "cnt": a["n"],
+        "link": "/return"} for pid, a in agg.items()],
+        key=lambda o: -(o["amount"] or 0))
+
+
+def _kz_safe_gap(conn, ctx):
+    """저장된 안전재고가 공식값과 다르다 — 갱신이 밀렸다는 뜻이다."""
+    out = []
+    for r in ctx["safe"]:
+        cur, calc = r.get("Sf_Num"), r.get("calc_num")
+        if calc is None or cur is None or abs(cur - calc) <= max(1, calc * 0.1):
+            continue
+        out.append({
+            "target": r["P_ID"], "label": r["P_N"],
+            "now": "저장값 %s개" % format(int(cur), ","),
+            "base": "공식값 %s개" % format(int(calc), ","),
+            "gap": "%+d개" % (cur - calc),
+            "cause": "사용량·리드타임이 변했는데 재검토 주기가 안 돌았습니다",
+            "todo": "안전재고 일괄 갱신을 돌리세요. 근거가 `Update_Log_tb` 에 남습니다",
+            "amount": None, "cnt": 1,
+            "link": "/wizard"})
+    out.sort(key=lambda o: -o["cnt"])
+    return out
+
+
+def _kz_under(conn, ctx):
+    """안전재고 미달 — 지금 모자란 것."""
+    out = []
+    for r in ctx["safe"]:
+        short = (r.get("Sf_Num") or 0) - (r.get("stock") or 0)
+        if short <= 0:
+            continue
+        out.append({
+            "target": r["P_ID"], "label": r["P_N"],
+            "now": "현재고 %s개" % format(int(r.get("stock") or 0), ","),
+            "base": "안전재고 %s개" % format(int(r["Sf_Num"] or 0), ","),
+            "gap": "-%s개" % format(int(short), ","),
+            "cause": "발주가 늦었거나 소비가 늘었습니다",
+            "todo": "수요 예측의 권장 발주량으로 발주하세요",
+            "amount": int(round(short * (r.get("P_Price") or 0))), "cnt": 1,
+            "link": "/forecast"})
+    out.sort(key=lambda o: -(o["amount"] or 0))
+    return out
+
+
+def _kz_pkg(conn, ctx):
+    """포장단위가 소요에 비해 크다 — 나갈 때마다 현장에 쌓인다."""
+    pct = ctx["lim"]["KZ_PKG_PCT"]
+    return [{
+        "target": r["P_ID"], "label": r["P_N"],
+        "now": "요청이 소요의 %.2f배 (%d건 평균)" % (r["ratio"], r["n"]),
+        "base": "기준 %d%%" % pct,
+        "gap": "+%d%%p" % round(r["ratio"] * 100 - pct),
+        "cause": "포장단위 %s개가 한 번 소요량보다 큽니다" % format(r["PkgUnit"] or 0, ","),
+        "todo": "협력사와 포장단위를 줄이는 협의를 하거나, 요청을 직접 입력으로 조정하세요",
+        "amount": None, "cnt": r["n"],
+        "link": "/disburse-request"} for r in _rows(conn, """
+        SELECT i.P_ID, p.P_N, p.PkgUnit, COUNT(*) n,
+               ROUND(AVG(CAST(i.Req_Qty AS REAL) / NULLIF(i.Need_Qty, 0)), 2) ratio
+          FROM Disburse_Req_Item_tb i JOIN Product_tb p ON p.P_ID = i.P_ID
+         WHERE i.Need_Qty > 0 AND COALESCE(i.Is_Manual,'') <> 'Y'
+         GROUP BY i.P_ID HAVING n >= ? AND ratio >= ? / 100.0
+         ORDER BY ratio DESC""", (KAIZEN_MIN_SAMPLE, pct))]
+
+
+def _kz_maverick(conn, ctx):
+    """계획에 없던 걸 샀다 — 계획이 현장을 못 따라간다."""
+    pct = ctx["lim"]["KZ_MAVERICK_PCT"]
+    out = []
+    for m in (ctx["plan"] or {}).get("months", []):
+        if m.get("partial") or (m.get("mav_pct") or 0) < pct:
+            continue
+        out.append({
+            "target": m["month"], "label": "%s 구매" % m["month"],
+            "now": "계획 외 %s원 (%.1f%%)" % (format(int(m.get("mav_amt") or 0), ","),
+                                              m.get("mav_pct") or 0),
+            "base": "기준 %d%%" % pct,
+            "gap": "+%.1f%%p" % ((m.get("mav_pct") or 0) - pct),
+            "cause": "급한 소요가 계획에 안 잡혔거나, 계획 품목 선정이 좁습니다",
+            "todo": "그달 계획 외 품목을 보고 다음 달 계획에 넣으세요",
+            "amount": int(m.get("mav_amt") or 0), "cnt": m.get("mav_cnt") or 0,
+            "link": "/report"})
+    out.sort(key=lambda o: o["target"], reverse=True)
+    return out[:6]
+
+
+# ⚠️ **금액을 하나로 더하면 안 된다.** 처음에 전부 합쳤더니 48.5억이 나왔는데
+#    재고자산이 58억이다 — 같은 재고를 잠자는 재고·회전율·FIFO 가 **세 번 센 것**
+#    이다. 성격이 다른 돈이기도 하다. 그래서 규칙마다 금액의 성격을 적고,
+#    요약은 성격별로 따로 내며 **창고에 묶인 돈은 자재 단위로 중복을 거른다.**
+#
+#      창고   지금 창고에 묶여 있는 재고 금액 (회수·처분 대상)
+#      현장   현장에 나가 있는 금액 (반납하면 그대로 가용 재고가 된다)
+#      리스크 아직 안 들어왔거나 모자란 금액 (결품으로 번질 돈)
+#      비용   앞으로 더 나갈 돈 (단가 인상 · 계획 밖 지출)
+#      —      금액으로 말할 수 없는 것 (기준값 · 절차 문제)
+KAIZEN_RULES = [
+    ("LEADTIME", "구매", "계획 리드타임이 실측보다 짧다",
+     "협력사를 쪼아도 안 바뀝니다 — 기준값이 틀린 것입니다", None, _kz_leadtime),
+    ("DUE_LATE", "구매", "약속한 날이 지났다",
+     "독촉하거나 납기를 다시 받아야 합니다", "리스크", _kz_due_late),
+    ("SUPPLIER", "구매", "입고 준수율이 낮은 협력사",
+     "납기·수량·품번을 약속대로 못 지키는 곳입니다", "리스크", _kz_supplier),
+    ("PRICEUP", "구매", "단가가 크게 올랐다",
+     "연간 사용량에 그대로 곱해집니다", "비용", _kz_priceup),
+    ("DEAD", "자재", "잠자는 재고",
+     "오래 안 나갔는데 창고에 돈이 묶여 있습니다", "창고", _kz_dead),
+    ("TURN", "자재", "회전율이 낮은 고액 자재",
+     "쓰는 속도에 비해 너무 많이 들고 있습니다", "창고", _kz_turn),
+    ("FIFO", "자재", "선입선출을 건너뛴 LOT",
+     "오래된 LOT 이 남은 채 새 LOT 이 먼저 나갔습니다", "창고", _kz_fifo),
+    ("SITE_LONG", "자재", "현장에 오래 묶인 자재",
+     "창고로 되돌리면 그대로 가용 재고가 됩니다", "현장", _kz_site),
+    ("SAFE_GAP", "자재", "안전재고가 공식값과 다르다",
+     "재검토 주기가 안 돌아 기준값이 낡았습니다", None, _kz_safe_gap),
+    ("UNDER", "자재", "안전재고 미달",
+     "지금 모자랍니다", "리스크", _kz_under),
+    ("PKG", "프로세스", "포장단위가 소요에 비해 크다",
+     "나갈 때마다 현장에 쌓입니다", None, _kz_pkg),
+    ("MAVERICK", "프로세스", "계획에 없던 구매가 많다",
+     "계획이 현장을 못 따라가고 있습니다", "비용", _kz_maverick),
+]
+KAIZEN_RULE_MAP = {c: (c, cat, t, w, k, f) for c, cat, t, w, k, f in KAIZEN_RULES}
+KAIZEN_KINDS = ("창고", "현장", "리스크", "비용")
+
+
+def kaizen_money(items):
+    """성격별 금액. **창고에 묶인 돈은 자재 단위로 한 번만 센다.**
+
+    잠자는 재고 · 회전율 · FIFO 는 같은 자재의 같은 재고를 다른 각도에서
+    가리킨다. 그대로 더하면 재고자산보다 큰 숫자가 나온다 — 재고 지도에서
+    겪은 「LOT 을 그대로 조인하면 중복 합산된다」 와 같은 함정이다.
+    """
+    out = {k: 0 for k in KAIZEN_KINDS}
+    stuck = {}
+    for o in items:
+        kind, amt = o.get("kind"), o.get("amount") or 0
+        if not kind or not amt:
+            continue
+        if kind == "창고":
+            stuck[o["target"]] = max(stuck.get(o["target"], 0), amt)
+        else:
+            out[kind] += amt
+    out["창고"] = sum(stuck.values())
+    out["_stuck_n"] = len(stuck)
+    return out
+
+
+def kaizen_acts(conn, base=None):
+    """사람이 내린 판단. 보류는 **만료되면 다시 올라온다.**"""
+    base = base or user_base(conn)
+    out = {}
+    for r in _rows(conn, """
+        SELECT k.*, u.Name AS worker, u.Position AS pos FROM Kaizen_tb k
+          LEFT JOIN User_tb u ON k.EP_ID = u.EP_ID
+         ORDER BY k.Kz_ID"""):
+        d = dict(r)
+        d["expired"] = 1 if (d["Status"] == "보류" and d["End_Date"]
+                             and d["End_Date"] < base) else 0
+        out[(d["Rule"], d["Target"])] = d           # 나중 것이 이긴다
+    return out
+
+
+def kaizen_scan(conn, show_hidden=False):
+    """지금 고칠 거리를 전부 찾는다. **조회만 한다.**"""
+    base = user_base(conn)
+    lim = kaizen_limits(conn)
+    ctx = {"base": base, "lim": lim}
+    # 공용 재료 — 규칙마다 다시 세지 않는다
+    ctx["watch"] = due_watch(conn, base)
+    ctx["sup"] = supplier_list(conn)
+    ctx["lots"] = lot_list(conn, None)
+    ctx["site"] = return_targets(conn, base)
+    ctx["safe"] = safety_stock_list(conn)
+    try:
+        ctx["plan"] = plan_actual(conn)
+    except Exception:
+        ctx["plan"] = None
+
+    acts = kaizen_acts(conn, base)
+    items, by_rule = [], []
+    for code, cat, title, why, kind, fn in KAIZEN_RULES:
+        try:
+            found = fn(conn, ctx) or []
+        except Exception as ex:                     # 규칙 하나가 깨져도 나머지는 산다
+            found = []
+            by_rule.append({"rule": code, "cat": cat, "title": title, "why": why,
+                            "kind": kind, "n": 0, "amount": 0,
+                            "error": repr(ex)[:120]})
+            continue
+        live = []
+        for o in found:
+            a = acts.get((code, o["target"]))
+            o.update({"rule": code, "cat": cat, "title": title, "why": why,
+                      "kind": kind,
+                      "status": (a or {}).get("Status"),
+                      "act_note": (a or {}).get("Reason"),
+                      "act_by": (a or {}).get("worker"),
+                      "act_until": (a or {}).get("End_Date"),
+                      "hidden": 1 if (a and a["Status"] == "보류"
+                                      and not a["expired"]) else 0})
+            if o["hidden"] and not show_hidden:
+                continue
+            live.append(o)
+        items.extend(live)
+        by_rule.append({"rule": code, "cat": cat, "title": title, "why": why,
+                        "kind": kind, "n": len(live),
+                        "amount": sum(o["amount"] or 0 for o in live)})
+    # 금액이 큰 것부터. 금액이 없는 제안은 건수로 줄 세운다
+    items.sort(key=lambda o: (-(o["amount"] or 0), -(o["cnt"] or 0)))
+    by_cat = {c: {"n": sum(1 for o in items if o["cat"] == c),
+                  "amount": kaizen_money([o for o in items if o["cat"] == c])}
+              for c in KAIZEN_CATS}
+    money = kaizen_money(items)
+    # 창고에 묶인 돈이 재고자산의 몇 %인가 — 이 비율이 이 화면의 요점이다
+    asset = conn.execute(f"""
+        SELECT ROUND(COALESCE(SUM(st.stock * p.P_Price), 0))
+          FROM ({STOCK_SQL}) st JOIN Product_tb p ON p.P_ID = st.P_ID
+         WHERE st.stock > 0""").fetchone()[0]
+    hidden = sum(1 for a in acts.values()
+                 if a["Status"] == "보류" and not a["expired"])
+    return {"items": items, "by_rule": by_rule, "by_cat": by_cat, "base": base,
+            "cnt": len(items), "money": money, "asset": int(asset or 0),
+            "stuck_pct": _pct(money["창고"], asset) if asset else None,
+            "kinds": list(KAIZEN_KINDS),
+            "hidden": hidden, "limits": lim,
+            "settings": [dict(get_setting(conn, k), **{"meta": SETTINGS[k]})
+                         for k in SETTINGS if k.startswith("KZ_")],
+            "rules": [{"code": c, "cat": cat, "title": t, "why": w, "kind": k}
+                      for c, cat, t, w, k, _ in KAIZEN_RULES],
+            "in_progress": sum(1 for a in acts.values() if a["Status"] == "진행")}
+
+
+def kaizen_act(conn, date, rule, target, status, ep_id, reason=None):
+    """제안에 판단을 남긴다 — 진행 / 보류 / 해소.
+
+    ⚠️ **보류에 만료를 둔다.** 만료가 없으면 덮어 둔 것이 영구 관행이 되고,
+       그러면 아무도 이 화면을 안 본다 — 안전재고 수동 조정과 같은 판단이다.
+    """
+    rule = str(rule or "").strip()
+    if rule not in KAIZEN_RULE_MAP:
+        return None, ["없는 개선 규칙입니다: %s" % (rule or "(빈값)")]
+    target = str(target or "").strip()
+    if not target:
+        return None, ["대상을 지정하세요."]
+    status = str(status or "").strip()
+    if status not in KAIZEN_STATUS:
+        return None, ["상태는 %s 중 하나여야 합니다." % " · ".join(KAIZEN_STATUS)]
+    w, e = _worker(conn, ep_id)          # 적는 일이라 직급을 묻지 않는다
+    if e:
+        return None, e
+    why = str(reason or "").strip()
+    if len(why) < KAIZEN_NOTE_MIN:
+        return None, ["왜 그렇게 정했는지 %d자 이상 적어주세요." % KAIZEN_NOTE_MIN]
+    end = (_add_days(date, int(get_setting(conn, "KZ_HIDE_DAYS")["value"]))
+           if status == "보류" else None)
+    kid = next_kaizen_id(conn, date)
+    with conn:
+        conn.execute(
+            "INSERT INTO Kaizen_tb (Kz_ID, Rule, Target, Status, Reason,"
+            " Set_Date, End_Date, EP_ID) VALUES (?,?,?,?,?,?,?,?)",
+            (kid, rule, target, status, why, date, end, w["EP_ID"]))
+    return {"Kz_ID": kid, "rule": rule, "target": target, "status": status,
+            "until": end, "reason": why, "worker": w, "date": date}, []
+
+
+def kaizen_log(conn, limit=60):
+    """개선 판단 이력."""
+    return _rows(conn, """
+        SELECT k.*, u.Name AS worker, u.Position AS pos FROM Kaizen_tb k
+          LEFT JOIN User_tb u ON k.EP_ID = u.EP_ID
+         ORDER BY k.Kz_ID DESC LIMIT ?""", (limit,))
+
+
+def kaizen_cnt(conn):
+    """오늘 할 일에 올릴 건수. 밀린 일이 아니라 **정기 점검**이다."""
+    try:
+        return kaizen_scan(conn)["cnt"]
+    except Exception:
+        return 0

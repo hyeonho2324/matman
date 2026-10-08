@@ -207,6 +207,7 @@ Web 탭의 **Source code** · **Working directory** 가 `/home/hyeonhomatman1/ma
 |---|---|---|
 | [/purchase-plan](https://hyeonhomatman1.pythonanywhere.com/purchase-plan) | **월간 구매계획** | `2026-11 · 44품목 · 4.88억 · 작성` 과 **[자재 추가] [수정 반영]** 버튼.<br>수량 칸이 입력칸이고, 고치면 사유를 묻는다 |
 | [/report](https://hyeonhomatman1.pythonanywhere.com/report) | 월간 리포트 | 2026-09 에 **구매계획 대비 실적** 네 칸(집행률 72.7% · 오차 27.3% · 적중 49.2% · 비계획 11.9%) |
+| [/kaizen](https://hyeonhomatman1.pythonanywhere.com/kaizen) | **업무 개선** | `고칠 거리 134건` · `창고에 묶인 돈 33.78억 (58.2%)` |
 | [/tx-history](https://hyeonhomatman1.pythonanywhere.com/tx-history) | **입출고 이력** | 불출을 고르면 상세에 **[이 거래 취소]** 버튼 |
 | [/purchase](https://hyeonhomatman1.pythonanywhere.com/purchase) | **구매 발주** | 발주를 고르면 **약속 납기 · 상태** 패널 + 라인별 판정 + [납기 변경] [독촉] [마감] |
 | [/order-plan](https://hyeonhomatman1.pythonanywhere.com/order-plan) | **발주 제안** | 대기 3건 · 자동 발주 1 · 자동 멈춤 1 · 품목 예외 2 |
@@ -218,11 +219,11 @@ Web 탭의 **Source code** · **Working directory** 가 `/home/hyeonhomatman1/ma
 왼쪽 메뉴 **구매/협력사**에 `월간 구매계획` · `발주 제안` 이 보이고, 대시보드
 '오늘 할 일' 에 `구매계획 결재 1` · `발주 제안 3` 칸이 생기면 된 것입니다.
 
-> ⚠️ **이번 갱신은 테이블이 늘고 칸도 늘어납니다** — `Cancel_tb`(거래 취소 전표) ·
-> `PO_Event_tb`(발주 이벤트)가 새로 생기고, `Purchase_Detail_tb` 에 약속 납기
-> 세 칸, `Purchase_Header_tb` 에 상태, `Purchase_Plan_Item_tb` 에 두 칸이 붙습니다.
-> 받은 `data/erp.db` 를 그대로 쓰면 그만입니다 — 옛 DB 를 남겨 두면
-> `no such table` / `no such column` 으로 터집니다.
+> ⚠️ **이번 갱신은 테이블이 셋 늘고 칸도 늘어납니다** — `Cancel_tb`(거래 취소
+> 전표) · `PO_Event_tb`(발주 이벤트) · `Kaizen_tb`(개선 판단)가 새로 생기고,
+> `Purchase_Detail_tb` 에 약속 납기 세 칸, `Purchase_Header_tb` 에 상태,
+> `Purchase_Plan_Item_tb` 에 두 칸이 붙습니다. 받은 `data/erp.db` 를 그대로 쓰면
+> 그만입니다 — 옛 DB 를 남겨 두면 `no such table` / `no such column` 으로 터집니다.
 
 > 새로 설치할 라이브러리는 없습니다. 이번 변경은 `flask` · `openpyxl` 밖에
 > 안 씁니다.

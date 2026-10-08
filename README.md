@@ -14,11 +14,11 @@ python app.py
 > `requirements.txt` 의 waitress 가 로컬 서버로 쓰입니다 — 개발 서버는 큰 응답을
 > 간헐적으로 멈춰서 화면이 빈 채로 굳습니다.
 
-데이터베이스(`data/erp.db`, 30테이블 45,072행)는 받은 그대로 들어 있어 따로 만들 필요가
+데이터베이스(`data/erp.db`, 31테이블 45,072행)는 받은 그대로 들어 있어 따로 만들 필요가
 없습니다. `build_db.py` 는 원본 `ERP.accdb` · CSV 에서 이 파일을 다시 만드는 스크립트라
 원본(`../ProductManager`, `../DB_csv`)이 있어야 돌아갑니다.
 
-## 화면 목록 (28개)
+## 화면 목록 (29개)
 
 | 경로 | 화면 |
 |------|------|
@@ -48,6 +48,7 @@ python app.py
 | /forecast | 수요 예측 |
 | /simulator | 발주 시뮬레이터 ★ |
 | /report | 월간 리포트 |
+| /kaizen | 업무 개선 ★ ✎ |
 | /wizard | 안전재고 일괄 갱신 ✎ |
 | /users | 사용자 관리 |
 
@@ -97,19 +98,19 @@ LOT 잔여 = 입고 − (불출 + 불량 + 폐기 − 반납)
 ## 프로젝트 구조
 ```
 matman/
-├── app.py              Flask 앱 · 라우트 111개 (화면 29 · embed 1 · API 81 — 그중 쓰기 61)
+├── app.py              Flask 앱 · 라우트 114개 (화면 30 · embed 1 · API 83 — 그중 쓰기 62)
 ├── db.py               SQL 전부 — 화면은 SQL 을 모릅니다
 ├── build_db.py         원본 accdb·CSV → data/erp.db 재생성
 ├── barcode.py          Code128 / QR 생성 (외부 라이브러리 없음)
 ├── requirements.txt
-├── data/erp.db         30테이블 45,072행
+├── data/erp.db         31테이블 45,072행
 ├── static/
 │   ├── css/main.css    전역 스타일 (사이드바/헤더/카드/테이블)
 │   └── js/main.js      사이드바 토글 · 검색 · Toast
 └── templates/
     ├── base.html       공통 레이아웃
-    ├── *.html (30개)   각 화면의 겉틀
-    └── embed/ (27개)   iframe 안에 들어가는 알맹이
+    ├── *.html (31개)   각 화면의 겉틀
+    └── embed/ (28개)   iframe 안에 들어가는 알맹이
 ```
 
 ## 문서
